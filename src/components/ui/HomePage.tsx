@@ -1,0 +1,643 @@
+import { useState, useEffect, useRef } from 'react'
+import { Layers, Type, Car, Paintbrush, Download, Pen, Star, Undo2, Image, Printer, SunDim, Columns2 } from 'lucide-react'
+import { HeroCarScene } from '../scene/HeroCarScene'
+import { isSupabaseConfigured, supabaseSignIn, supabaseSignOut, supabaseSignUp, supabase } from '../../lib/supabase'
+
+type HomePageProps = {
+  onEnter: () => void
+  onOpenProfile: () => void
+  onContinueAsGuest?: () => void
+  onContinueEditing?: () => void
+  onStartNewProject?: () => void
+}
+
+type AuthMode = 'login' | 'signup'
+
+type AuthUser = {
+  name: string
+  email: string
+}
+
+// These localStorage keys keep TopBar/ProfilePage working without changes.
+// Supabase session is the source of truth; we mirror name+email here for fast reads.
+const AUTH_LOCAL_KEY = 'mygarage-auth-local'
+const AUTH_SESSION_KEY = 'mygarage-auth-session'
+const LAST_CAR_KEY = 'mygarage-last-car'
+
+function isRememberedUser(): boolean {
+  return localStorage.getItem(AUTH_LOCAL_KEY) !== null
+}
+
+function readLastCarName(): string | null {
+  try {
+    const raw = localStorage.getItem(LAST_CAR_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { fileName?: string; name?: string }
+    if (parsed.name) return parsed.name
+    if (parsed.fileName) {
+      return parsed.fileName
+        .replace(/\.glb$/i, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+const FEATURES = [
+  {
+    icon: <Car size={22} />,
+    title: '3D Car Editor',
+    desc: 'Load real-scale GLB models and customize every panel in a live 3D viewport.',
+  },
+  {
+    icon: <Paintbrush size={22} />,
+    title: 'Paint & Decals',
+    desc: 'Project decals and stripes directly onto geometry with full UV control.',
+  },
+  {
+    icon: <Columns2 size={22} />,
+    title: 'Racing Stripes & Split Paint',
+    desc: 'Add racing stripes, two-tone split paint, and gradient fills across any panel combination.',
+  },
+  {
+    icon: <SunDim size={22} />,
+    title: 'Window Tinting',
+    desc: 'Dial in any tint shade on all windows with a real-time preview.',
+  },
+  {
+    icon: <Image size={22} />,
+    title: 'Print Layers',
+    desc: 'Apply tiled image prints to the full car, hood or trunk with scale, opacity and tint controls.',
+  },
+  {
+    icon: <Pen size={22} />,
+    title: 'SVG Maker',
+    desc: 'Draw logos and graphics from scratch with shapes, text, pen paths and a full layer stack.',
+  },
+  {
+    icon: <Layers size={22} />,
+    title: 'Layer System',
+    desc: 'Non-destructive layers with visibility, lock, drag-to-reorder and grouping.',
+  },
+  {
+    icon: <Type size={22} />,
+    title: 'Text Library',
+    desc: '18 custom fonts, bold, italic, multi-line, live inline editing on the canvas.',
+  },
+  {
+    icon: <Star size={22} />,
+    title: 'Shape Library',
+    desc: 'Rectangles, circles, triangles, stars, arrows, freehand paths — all vectorized.',
+  },
+  {
+    icon: <Printer size={22} />,
+    title: 'Export',
+    desc: 'Download final artwork as PNG, SVG, or share directly as a social card.',
+  },
+  {
+    icon: <Download size={22} />,
+    title: 'Import Your Own Car',
+    desc: 'Drop in any GLB file and classify meshes yourself — paint, rims, glass and more.',
+  },
+  {
+    icon: <Undo2 size={22} />,
+    title: 'Full Undo/Redo',
+    desc: 'Deep 80-step history stack across the 3D editor and SVG Maker.',
+  },
+]
+
+const TAGLINES = [
+  'Design. Build. Drive.',
+  'Your ride, your rules.',
+  'From blank canvas to showstopper.',
+  'Make it yours.',
+]
+
+function cacheAuthLocally(user: AuthUser, remember: boolean) {
+  const value = JSON.stringify(user)
+  if (remember) {
+    localStorage.setItem(AUTH_LOCAL_KEY, value)
+    sessionStorage.removeItem(AUTH_SESSION_KEY)
+  } else {
+    sessionStorage.setItem(AUTH_SESSION_KEY, value)
+    localStorage.removeItem(AUTH_LOCAL_KEY)
+  }
+}
+
+function readCachedAuth(): AuthUser | null {
+  try {
+    const fromLocal = localStorage.getItem(AUTH_LOCAL_KEY)
+    if (fromLocal) return JSON.parse(fromLocal) as AuthUser
+    const fromSession = sessionStorage.getItem(AUTH_SESSION_KEY)
+    if (fromSession) return JSON.parse(fromSession) as AuthUser
+    return null
+  } catch {
+    return null
+  }
+}
+
+function clearCachedAuth() {
+  localStorage.removeItem(AUTH_LOCAL_KEY)
+  sessionStorage.removeItem(AUTH_SESSION_KEY)
+}
+
+export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject }: HomePageProps) {
+  const [taglineIdx, setTaglineIdx] = useState(0)
+  const [fading, setFading] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode>('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authConfirmPending, setAuthConfirmPending] = useState(false)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => readCachedAuth())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.32)
+  const drawerRef = useRef<HTMLDivElement | null>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const touchStartYRef = useRef<number | null>(null)
+
+  function openDrawer() {
+    setDrawerOpen(true)
+  }
+  function closeDrawer() {
+    setDrawerOpen(false)
+  }
+  function toggleDrawer() {
+    setDrawerOpen((open) => !open)
+  }
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFading(true)
+      setTimeout(() => {
+        setTaglineIdx((i) => (i + 1) % TAGLINES.length)
+        setFading(false)
+      }, 400)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (!drawerOpen) return
+      const target = e.target as Node | null
+      if (!target) return
+      if (drawerRef.current?.contains(target)) return
+      if (drawerTriggerRef.current?.contains(target)) return
+      setDrawerOpen(false)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [drawerOpen])
+
+  useEffect(() => {
+    const sampleBrightness = () => {
+      const canvas = document.querySelector<HTMLCanvasElement>('.hero-car-canvas')
+      if (!canvas || canvas.width === 0 || canvas.height === 0) return
+
+      const probe = document.createElement('canvas')
+      const probeW = 42
+      const probeH = 24
+      probe.width = probeW
+      probe.height = probeH
+      const ctx = probe.getContext('2d')
+      if (!ctx) return
+
+      const srcW = Math.max(1, Math.floor(canvas.width * 0.22))
+      const srcH = Math.max(1, Math.floor(canvas.height * 0.2))
+      const srcX = Math.max(0, Math.floor(canvas.width * 0.39))
+      const srcY = Math.max(0, Math.floor(canvas.height * 0.24))
+
+      try {
+        ctx.drawImage(canvas, srcX, srcY, srcW, srcH, 0, 0, probeW, probeH)
+        const { data } = ctx.getImageData(0, 0, probeW, probeH)
+        let total = 0
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] / 255
+          const g = data[i + 1] / 255
+          const b = data[i + 2] / 255
+          total += 0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        const avg = total / (data.length / 4)
+        const targetAlpha = Math.min(0.56, Math.max(0.2, 0.52 - avg * 0.36))
+        setHeroOverlayAlpha((prev) => prev * 0.7 + targetAlpha * 0.3)
+      } catch {
+        // Ignore transient canvas read errors while WebGL frame is initializing.
+      }
+    }
+
+    sampleBrightness()
+    const id = window.setInterval(sampleBrightness, 1300)
+    return () => window.clearInterval(id)
+  }, [])
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartYRef.current = e.touches[0]?.clientY ?? null
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    const startY = touchStartYRef.current
+    touchStartYRef.current = null
+    if (startY === null) return
+    const endY = e.changedTouches[0]?.clientY ?? startY
+    const dy = endY - startY
+    if (dy <= -26) setDrawerOpen(true)
+    if (dy >= 34) setDrawerOpen(false)
+  }
+
+  // Sync Supabase session on mount (handles page refresh with an active session).
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data.session?.user
+      if (user && !currentUser) {
+        const synced: AuthUser = {
+          name: (user.user_metadata?.name as string | undefined) ?? user.email?.split('@')[0] ?? 'User',
+          email: user.email ?? '',
+        }
+        setCurrentUser(synced)
+        cacheAuthLocally(synced, true)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearCachedAuth()
+        setCurrentUser(null)
+      } else if (session?.user) {
+        const u = session.user
+        const synced: AuthUser = {
+          name: (u.user_metadata?.name as string | undefined) ?? u.email?.split('@')[0] ?? 'User',
+          email: u.email ?? '',
+        }
+        setCurrentUser(synced)
+        cacheAuthLocally(synced, true)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function openAuth(mode: AuthMode) {
+    setAuthMode(mode)
+    setAuthError(null)
+    setAuthConfirmPending(false)
+    setAuthOpen(true)
+  }
+
+  function resetForm() {
+    setName('')
+    setEmail('')
+    setPassword('')
+    setRememberMe(true)
+    setAuthError(null)
+  }
+
+  function closeAuth() {
+    setAuthOpen(false)
+    resetForm()
+  }
+
+  async function handleAuthSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setAuthError(null)
+    setAuthConfirmPending(false)
+
+    if (!isSupabaseConfigured) {
+      setAuthError('Auth is not configured yet. Add your Supabase credentials to .env.local and restart the dev server.')
+      return
+    }
+
+    const safeName = name.trim()
+    const safeEmail = email.trim().toLowerCase()
+    const safePassword = password.trim()
+
+    if (!safeEmail || !safePassword) {
+      setAuthError('Email and password are required.')
+      return
+    }
+
+    setAuthLoading(true)
+    try {
+      if (authMode === 'signup') {
+        if (!safeName) { setAuthError('Name is required for sign up.'); return }
+        const result = await supabaseSignUp(safeEmail, safePassword, safeName)
+        if (!result.ok) { setAuthError(result.error); return }
+        if (result.needsConfirmation) {
+          setAuthConfirmPending(true)
+          return
+        }
+        cacheAuthLocally({ name: result.user.name, email: result.user.email }, rememberMe)
+        setCurrentUser({ name: result.user.name, email: result.user.email })
+        closeAuth()
+        return
+      }
+
+      const result = await supabaseSignIn(safeEmail, safePassword)
+      if (!result.ok) { setAuthError(result.error); return }
+      cacheAuthLocally({ name: result.user.name, email: result.user.email }, rememberMe)
+      setCurrentUser({ name: result.user.name, email: result.user.email })
+      closeAuth()
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function handleLogout() {
+    await supabaseSignOut()
+    clearCachedAuth()
+    setCurrentUser(null)
+  }
+
+  return (
+    <div className="home-page">
+      {/* ── Hero ─────────────────────────────────────────────── */}
+      <section className="home-hero">
+        <div className="home-hero-bg" aria-hidden="true">
+          <HeroCarScene />
+        </div>
+        <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
+
+        <div className="home-auth-actions">
+          {currentUser ? (
+            <>
+              <button type="button" className="home-avatar-bubble" onClick={onOpenProfile} aria-label="Open profile">
+                {(() => {
+                  const av = localStorage.getItem('mygarage-profile-avatar')
+                  if (av) return <img src={av} alt={currentUser.name} className="home-avatar-img" />
+                  const initials = currentUser.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                  return <span className="home-avatar-initials">{initials}</span>
+                })()}
+              </button>
+              <button type="button" className="home-auth-btn" onClick={handleLogout}>Log Out</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="home-auth-btn" onClick={() => openAuth('login')}>Log In</button>
+              <button type="button" className="home-auth-btn primary" onClick={() => openAuth('signup')}>Sign Up</button>
+            </>
+          )}
+        </div>
+
+        <div className="home-hero-stats-bar">
+          <div className="home-stat">
+            <span className="home-stat-num">6</span>
+            <span className="home-stat-label">Built-in Cars</span>
+          </div>
+          <div className="home-stat-divider" />
+          <div className="home-stat">
+            <span className="home-stat-num">18</span>
+            <span className="home-stat-label">Fonts</span>
+          </div>
+          <div className="home-stat-divider" />
+          <div className="home-stat">
+            <span className="home-stat-num">7</span>
+            <span className="home-stat-label">Shape types</span>
+          </div>
+          <div className="home-stat-divider" />
+          <div className="home-stat">
+            <span className="home-stat-num">80</span>
+            <span className="home-stat-label">Undo steps</span>
+          </div>
+          <div className="home-stat-divider" />
+          <div className="home-stat">
+            <span className="home-stat-num">100%</span>
+            <span className="home-stat-label">In-browser</span>
+          </div>
+        </div>
+
+        <div className="home-hero-content">
+          <h1 className="home-title">
+            My<span className="home-title-accent">Garage</span>
+          </h1>
+          <p className={`home-tagline${fading ? ' fade-out' : ''}`}>
+            {currentUser && isRememberedUser() ? `Welcome back, ${currentUser.name.split(' ')[0]}` : TAGLINES[taglineIdx]}
+          </p>
+          {!(currentUser && isRememberedUser()) && (
+          <p className="home-sub">
+            A full-featured browser-based studio for designing, painting and
+            exporting custom car liveries — no installs, no plugins required.
+          </p>
+          )}
+
+          <div className="home-cta-row">
+            {currentUser && isRememberedUser() ? (
+              <>
+                <button type="button" className="home-cta-primary home-cta-returning" onClick={onContinueEditing ?? onEnter}>
+                  <span className="home-cta-label home-cta-label--warm">Continue Editing →</span>
+                  {readLastCarName() && (
+                    <span className="home-cta-sub">{readLastCarName()}</span>
+                  )}
+                </button>
+                <button type="button" className="home-cta-secondary" onClick={onStartNewProject ?? onEnter}>
+                  Start New Project
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="home-cta-prompt">Ready to build your dream livery?</p>
+                <button type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
+                  <span className="home-cta-label">Continue as Guest →</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features grid ────────────────────────────────────── */}
+      {/* ── Drawer trigger zone ──────────────────────────────── */}
+      <button
+        ref={drawerTriggerRef}
+        type="button"
+        className={`home-drawer-trigger${drawerOpen ? ' open' : ''}`}
+        onMouseEnter={openDrawer}
+        onClick={toggleDrawer}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        aria-expanded={drawerOpen}
+        aria-controls="home-drawer-panel"
+        aria-label={drawerOpen ? 'Hide details panel' : 'Show details panel'}
+      >
+        <span className="home-drawer-trigger-pill" aria-hidden="true">
+          <span className="home-drawer-trigger-chevron" />
+        </span>
+      </button>
+
+      {drawerOpen && (
+        <button
+          type="button"
+          className="home-drawer-backdrop"
+          onClick={closeDrawer}
+          aria-label="Close details panel"
+        />
+      )}
+
+      {/* ── Slide-up drawer ──────────────────────────────────── */}
+      <div
+        id="home-drawer-panel"
+        ref={drawerRef}
+        className={`home-drawer${drawerOpen ? ' home-drawer--open' : ''}`}
+        role="region"
+        aria-label="Features and quick actions"
+        onMouseEnter={openDrawer}
+        onMouseLeave={closeDrawer}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <button
+          type="button"
+          className="home-drawer-handle"
+          onClick={toggleDrawer}
+          aria-label={drawerOpen ? 'Collapse details panel' : 'Expand details panel'}
+        />
+
+        {/* ── Features grid ──────────────────────────────────── */}
+        <section className="home-features">
+          <h2 className="home-section-title">Everything you need</h2>
+          <p className="home-section-sub">
+            Built with React, Three.js and pure SVG — no external render services.
+          </p>
+          <div className="home-features-grid">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="home-feature-card">
+                <div className="home-feature-icon">{f.icon}</div>
+                <h3 className="home-feature-title">{f.title}</h3>
+                <p className="home-feature-desc">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Bottom CTA ─────────────────────────────────────── */}
+        <section className="home-bottom-cta">
+          <h2>Ready to build your dream livery?</h2>
+          <p>Pick a car, open the editor and start designing in seconds.</p>
+          <button type="button" className="home-cta-primary large" onClick={currentUser && isRememberedUser() ? onEnter : onContinueAsGuest}>
+            <span className="home-cta-label">{currentUser && isRememberedUser() ? 'Open the Garage →' : 'Continue as Guest →'}</span>
+          </button>
+        </section>
+
+        {/* ── Footer ─────────────────────────────────────────── */}
+        <footer className="home-footer">
+          <span>MyGarage &copy; {new Date().getFullYear()}</span>
+          <span className="home-footer-sep">·</span>
+          <span>Built with React + Three.js + Vite</span>
+        </footer>
+      </div>
+
+      {authOpen && (
+        <div className="home-auth-backdrop" role="dialog" aria-modal="true" aria-label="Authentication">
+          <div className="home-auth-modal">
+            <div className="home-auth-header">
+              <div className="home-auth-tabs">
+                <button
+                  type="button"
+                  className={`home-auth-tab${authMode === 'login' ? ' active' : ''}`}
+                  onClick={() => { setAuthMode('login'); setAuthError(null) }}
+                >
+                  Log In
+                </button>
+                <button
+                  type="button"
+                  className={`home-auth-tab${authMode === 'signup' ? ' active' : ''}`}
+                  onClick={() => { setAuthMode('signup'); setAuthError(null) }}
+                >
+                  Sign Up
+                </button>
+              </div>
+              <button type="button" className="home-auth-close" aria-label="Close" onClick={closeAuth}>✕</button>
+            </div>
+
+            <h3 className="home-auth-title">{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h3>
+            <p className="home-auth-subtitle">
+              {authMode === 'login' ? 'Log in to continue customizing your garage.' : 'Sign up and keep your workspace synced.'}
+            </p>
+
+            <form className="home-auth-form" onSubmit={handleAuthSubmit}>
+              {authMode === 'signup' && (
+                <label className="home-auth-field">
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Alex Rivera"
+                    autoComplete="name"
+                  />
+                </label>
+              )}
+
+              <label className="home-auth-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+              </label>
+
+              <label className="home-auth-field">
+                <span>Password</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                />
+              </label>
+
+              <label className="home-auth-remember">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <span>Remember me on this device</span>
+              </label>
+
+              {authError && <p className="home-auth-error">{authError}</p>}
+              {authConfirmPending && (
+                <p className="home-auth-confirm">
+                  Check your email for a confirmation link, then log in.
+                </p>
+              )}
+
+              {!authConfirmPending && (
+                <button type="submit" className="home-auth-submit" disabled={authLoading}>
+                  {authLoading ? 'Please wait…' : authMode === 'login' ? 'Log In' : 'Sign Up'}
+                </button>
+              )}
+            </form>
+
+            <div className="home-auth-divider"><span>or</span></div>
+            <button type="button" className="home-auth-guest" onClick={() => { closeAuth(); onContinueAsGuest?.() }}>
+              Continue as Guest
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

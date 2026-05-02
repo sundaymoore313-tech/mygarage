@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-05-02T08:15:02.298Z",
+  "items": [
+    {
+      "name": "2011 lexus lfa",
+      "fileName": "2011_lexus_lfa.glb",
+      "modelUrl": "/models/2011_lexus_lfa.glb"
+    },
+    {
+      "name": "2012 dodge charger rt sedan 4d (1)",
+      "fileName": "2012_dodge_charger_rt_sedan_4d (1).glb",
+      "modelUrl": "/models/2012_dodge_charger_rt_sedan_4d%20(1).glb"
+    },
+    {
+      "name": "2017 chevrolet camaro zl1",
+      "fileName": "2017_chevrolet_camaro_zl1.glb",
+      "modelUrl": "/models/2017_chevrolet_camaro_zl1.glb"
+    },
+    {
+      "name": "2018 ford mustang gt",
+      "fileName": "2018_ford_mustang_gt.glb",
+      "modelUrl": "/models/2018_ford_mustang_gt.glb"
+    },
+    {
+      "name": "2019 ford mustang rtr spec5",
+      "fileName": "2019_ford_mustang_rtr_spec5.glb",
+      "modelUrl": "/models/2019_ford_mustang_rtr_spec5.glb"
+    },
+    {
+      "name": "2020 Dodge Challenger SRT Super Stock",
+      "fileName": "2020_dodge_challenger_srt_super_stock.glb",
+      "modelUrl": "/models/2020_dodge_challenger_srt_super_stock.glb"
+    },
+    {
+      "name": "2021 ram 1500 trx (1)",
+      "fileName": "2021_ram_1500_trx (1).glb",
+      "modelUrl": "/models/2021_ram_1500_trx%20(1).glb"
+    },
+    {
+      "name": "BMW M3 G80 2025",
+      "fileName": "bmw_m3_g80_2025.glb",
+      "modelUrl": "/models/bmw_m3_g80_2025.glb"
+    },
+    {
+      "name": "Chrysler 300 SRT Hellcat",
+      "fileName": "chrysler_300_srt_hellcat.glb",
+      "modelUrl": "/models/chrysler_300_srt_hellcat.glb"
+    },
+    {
+      "name": "Dodge Charger SRT Hellcat",
+      "fileName": "dodge_charger_srt_hellcat__high_quality.glb",
+      "modelUrl": "/models/dodge_charger_srt_hellcat__high_quality.glb"
+    },
+    {
+      "name": "dodge durango srt 392",
+      "fileName": "dodge_durango_srt_392.glb",
+      "modelUrl": "/models/dodge_durango_srt_392.glb"
+    },
+    {
+      "name": "Jeep Grand Cherokee Trackhawk",
+      "fileName": "jeep_grand_cherokee_trackhawk.glb",
+      "modelUrl": "/models/jeep_grand_cherokee_trackhawk.glb"
+    }
+  ]
+}
