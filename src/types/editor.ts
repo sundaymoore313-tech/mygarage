@@ -199,6 +199,10 @@ export type WrapPanelTemplate = {
   bleedMm: number
   overlapMm: number
   orientation: WrapPanelOrientation
+  templateImageUrl?: string | null
+  templateFitMode?: 'cover' | 'contain' | 'stretch'
+  templateBlendMode?: 'normal' | 'multiply'
+  templateOverlayOpacity?: number
   installOrder: number
   enabled: boolean
 }

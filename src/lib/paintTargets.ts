@@ -253,14 +253,26 @@ const PERSONAL_CLASSIFY_PREFIX = 'mygarage-personal-classify-'
 
 // Cars listed here use built-in presets as editable factory defaults.
 // Users can override these meshes, and "reset classify" returns to this map.
-const EDITABLE_FACTORY_PRESET_FILES = new Set([
-  'dodge_charger_srt_hellcat__high_quality.glb',
-  '2018_ford_mustang_gt.glb',
-])
+// (Currently empty — all cars are either system-locked or freely editable.)
+const EDITABLE_FACTORY_PRESET_FILES = new Set<string>([])
 
 // Cars listed here are true admin/system locked presets.
 // Their mesh classes cannot be overridden by user personal classify.
-const SYSTEM_LOCKED_PRESET_FILES = new Set<string>([])
+const SYSTEM_LOCKED_PRESET_FILES = new Set<string>([
+  // Two Dodge Chargers locked from original setup
+  'dodge_charger_srt_hellcat__high_quality.glb',
+  '2012_dodge_charger_rt_sedan_4d%20(1).glb',
+  // All remaining cars locked after classify pass — corvette is NOT listed here
+  '2011_lexus_lfa.glb',
+  '2017_chevrolet_camaro_zl1.glb',
+  '2018_ford_mustang_gt.glb',
+  '2020_dodge_challenger_srt_super_stock.glb',
+  '2021_ram_1500_trx%20(1).glb',
+  'bmw_m3_g80_2025.glb',
+  'chrysler_300_srt_hellcat.glb',
+  'dodge_durango_srt_392.glb',
+  'jeep_grand_cherokee_trackhawk.glb',
+])
 
 // ── Built-in factory presets (survive hard reset / localStorage clear) ────────
 // These are the source-of-truth for pre-configured cars.  They are used as a
@@ -547,6 +559,10 @@ export function getLockedClassifications(fileName: string): Record<string, MeshC
     return null
   }
 
+  // Cars that are not system-locked should remain editable by default even if
+  // they have built-in classify presets as baselines.
+  const isSystemLocked = isSystemLockedPresetFile(fileName)
+
   const primary = readStoredClassifications(CLASSIFY_LOCK_PREFIX, fileName)
   if (primary !== null) {
     return primary
@@ -565,7 +581,7 @@ export function getLockedClassifications(fileName: string): Record<string, MeshC
 
   // Both localStorage keys are gone (hard reset / clear site data).
   // Fall back to the built-in factory preset baked into the source code.
-  const builtIn = getBuiltInPresetForFile(fileName)
+  const builtIn = isSystemLocked ? getBuiltInPresetForFile(fileName) : undefined
   if (builtIn !== undefined) {
     const serialized = JSON.stringify(builtIn)
     try {

@@ -1,8 +1,8 @@
-import { Suspense, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import { Camera, User } from 'lucide-react'
-import { readSavedProjects, removeSavedProject, type SavedProjectCard } from '../../lib/savedProjects'
+import { readSavedProjects, removeSavedProject, syncCloudProjectsToLocal, type SavedProjectCard } from '../../lib/savedProjects'
 import * as THREE from 'three'
 import { DEFAULT_TARGET_PAINT, getMergedClassifications, getResolvedPaintForLabel } from '../../lib/paintTargets'
 import type { MeshClass } from '../../types/editor'
@@ -276,6 +276,15 @@ export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePage
       .slice(0, 2)
       .toUpperCase()
   }, [user])
+
+  useEffect(() => {
+    void (async () => {
+      const result = await syncCloudProjectsToLocal()
+      if (result.ok && result.count >= 0) {
+        setProjects(readSavedProjects())
+      }
+    })()
+  }, [])
 
   function readFileAsDataUrl(file: File, onDone: (url: string) => void) {
     const reader = new FileReader()

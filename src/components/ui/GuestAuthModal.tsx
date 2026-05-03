@@ -1,34 +1,18 @@
 import { useState } from 'react'
+import { isSupabaseConfigured, supabaseSignIn, supabaseSignUp } from '../../lib/supabase'
+import { LegalDocsModal } from './LegalDocsModal'
 
 type AuthMode = 'login' | 'signup'
+type LegalDocId = 'terms' | 'privacy' | 'acceptable'
 
 type AuthUser = {
   name: string
   email: string
 }
 
-type StoredUser = AuthUser & {
-  password: string
-}
-
-const USERS_STORAGE_KEY = 'mygarage-users'
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
-
-function readUsers(): StoredUser[] {
-  try {
-    const raw = localStorage.getItem(USERS_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as StoredUser[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeUsers(users: StoredUser[]) {
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
-}
+const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
 
 function saveAuth(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
@@ -54,6 +38,11 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authConfirmPending, setAuthConfirmPending] = useState(false)
+  const [legalAccepted, setLegalAccepted] = useState(() => localStorage.getItem(LEGAL_ACCEPTANCE_KEY) === '1')
+  const [legalDoc, setLegalDoc] = useState<LegalDocId>('terms')
+  const [legalOpen, setLegalOpen] = useState(false)
 
   const resetForm = () => {
     setName('')
@@ -61,6 +50,7 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
     setPassword('')
     setRememberMe(true)
     setAuthError(null)
+    setAuthConfirmPending(false)
   }
 
   const handleClose = () => {
@@ -68,9 +58,20 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
     onClose()
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const openLegal = (doc: LegalDocId) => {
+    setLegalDoc(doc)
+    setLegalOpen(true)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setAuthError(null)
+    setAuthConfirmPending(false)
+
+    if (!isSupabaseConfigured) {
+      setAuthError('Auth is not configured yet. Add Supabase credentials to .env.local and restart dev server.')
+      return
+    }
 
     const safeName = name.trim()
     const safeEmail = email.trim().toLowerCase()
@@ -80,35 +81,48 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
       setAuthError('Email and password are required.')
       return
     }
+    if (!legalAccepted) {
+      setAuthError('Please accept the Terms, Privacy, and Acceptable Use notice to continue.')
+      return
+    }
 
-    const users = readUsers()
+    setAuthLoading(true)
+    try {
+      if (authMode === 'signup') {
+        if (!safeName) {
+          setAuthError('Name is required for sign up.')
+          return
+        }
 
-    if (authMode === 'signup') {
-      if (!safeName) {
-        setAuthError('Name is required for sign up.')
+        const result = await supabaseSignUp(safeEmail, safePassword, safeName)
+        if (!result.ok) {
+          setAuthError(result.error)
+          return
+        }
+
+        if (result.needsConfirmation) {
+          setAuthConfirmPending(true)
+          return
+        }
+
+        saveAuth({ name: result.user.name, email: result.user.email }, rememberMe)
+        localStorage.setItem(LEGAL_ACCEPTANCE_KEY, '1')
+        onSuccess()
         return
       }
-      if (users.some((u) => u.email === safeEmail)) {
-        setAuthError('An account with this email already exists.')
+
+      const result = await supabaseSignIn(safeEmail, safePassword)
+      if (!result.ok) {
+        setAuthError(result.error)
         return
       }
 
-      const created: StoredUser = { name: safeName, email: safeEmail, password: safePassword }
-      writeUsers([...users, created])
-      const signedIn: AuthUser = { name: created.name, email: created.email }
-      saveAuth(signedIn, rememberMe)
+      saveAuth({ name: result.user.name, email: result.user.email }, rememberMe)
+      localStorage.setItem(LEGAL_ACCEPTANCE_KEY, '1')
       onSuccess()
-      return
+    } finally {
+      setAuthLoading(false)
     }
-
-    const found = users.find((u) => u.email === safeEmail && u.password === safePassword)
-    if (!found) {
-      setAuthError('Invalid email or password.')
-      return
-    }
-    const signedIn: AuthUser = { name: found.name, email: found.email }
-    saveAuth(signedIn, rememberMe)
-    onSuccess()
   }
 
   if (!isOpen) return null
@@ -122,14 +136,14 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
           <button
             type="button"
             className={`guest-auth-tab${authMode === 'login' ? ' active' : ''}`}
-            onClick={() => { setAuthMode('login'); setAuthError(null) }}
+            onClick={() => { setAuthMode('login'); setAuthError(null); setAuthConfirmPending(false) }}
           >
             Log In
           </button>
           <button
             type="button"
             className={`guest-auth-tab${authMode === 'signup' ? ' active' : ''}`}
-            onClick={() => { setAuthMode('signup'); setAuthError(null) }}
+            onClick={() => { setAuthMode('signup'); setAuthError(null); setAuthConfirmPending(false) }}
           >
             Sign Up
           </button>
@@ -185,13 +199,42 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
             <span>Remember me on this device</span>
           </label>
 
-          {authError && <p className="guest-auth-error">{authError}</p>}
+          <label className="guest-auth-remember">
+            <input
+              type="checkbox"
+              checked={legalAccepted}
+              onChange={(e) => setLegalAccepted(e.target.checked)}
+            />
+            <span>
+              I agree to the
+              {' '}
+              <button type="button" className="home-auth-link" onClick={() => openLegal('terms')}>Terms</button>
+              {', '}
+              <button type="button" className="home-auth-link" onClick={() => openLegal('privacy')}>Privacy</button>
+              {' and '}
+              <button type="button" className="home-auth-link" onClick={() => openLegal('acceptable')}>Acceptable Use</button>
+            </span>
+          </label>
 
-          <button type="submit" className="guest-auth-submit">
-            {authMode === 'login' ? 'Log In' : 'Sign Up'}
+          {authError && <p className="guest-auth-error">{authError}</p>}
+          {authConfirmPending && (
+            <p className="guest-auth-error" style={{ background: 'rgba(37,99,235,0.15)', borderColor: '#3b82f6', color: '#bfdbfe' }}>
+              Confirm your email from the Supabase message, then log in.
+            </p>
+          )}
+
+          <button type="submit" className="guest-auth-submit" disabled={authLoading}>
+            {authLoading ? 'Please wait…' : authMode === 'login' ? 'Log In' : 'Sign Up'}
           </button>
         </form>
       </div>
+
+      <LegalDocsModal
+        isOpen={legalOpen}
+        initialDoc={legalDoc}
+        onSelectDoc={setLegalDoc}
+        onClose={() => setLegalOpen(false)}
+      />
     </div>
   )
 }

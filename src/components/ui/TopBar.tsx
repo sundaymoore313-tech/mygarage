@@ -2,8 +2,11 @@ import { useRef, useState } from 'react'
 import { Home, Redo2, Undo2 } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
 import { saveFullProjectToProfile } from '../../lib/savedProjects'
+import { LegalDocsModal } from './LegalDocsModal'
 import type { CameraViewId, EditorProject } from '../../types/editor'
 import type { LightPresetId } from '../scene/EditorCanvas'
+
+type LegalDocId = 'terms' | 'privacy' | 'acceptable'
 
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
@@ -45,6 +48,8 @@ type TopBarProps = {
   onGuestSignIn?: () => void
   isGuest?: boolean
   onCaptureProfilePreview?: () => string | null
+  cloudStatusLabel?: string
+  cloudStatusTone?: 'neutral' | 'ok' | 'warn' | 'error'
 }
 
 const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
@@ -67,7 +72,10 @@ function FileMenu({ onScreenshot, onSocialExport, onVideoRecord, onPrintExport, 
     if (isGuest) { onGuestSignIn?.(); return }
     if (selectedCar) {
       const previewImageUrl = onCaptureProfilePreview?.() ?? null
-      saveFullProjectToProfile(project, selectedCar, targetPaints, targetPrints, previewImageUrl)
+      const result = saveFullProjectToProfile(project, selectedCar, targetPaints, targetPrints, previewImageUrl)
+      if (!result.ok || !result.fullSaved) {
+        alert(result.error ?? 'Project save completed with warnings.')
+      }
     }
     setOpen(false)
   }
@@ -294,6 +302,8 @@ export function TopBar({
   onGuestSignIn,
   isGuest = false,
   onCaptureProfilePreview,
+  cloudStatusLabel,
+  cloudStatusTone = 'neutral',
 }: TopBarProps) {
   const cameraView = useEditorStore((state) => state.cameraView)
   const setCameraView = useEditorStore((state) => state.setCameraView)
@@ -307,6 +317,13 @@ export function TopBar({
   const setAutoRotate = useEditorStore((state) => state.setAutoRotate)
   const [avatarUrl] = useState<string | null>(() => localStorage.getItem(PROFILE_AVATAR_KEY))
   const [avatarInitials] = useState(() => readAvatarInitials())
+  const [legalOpen, setLegalOpen] = useState(false)
+  const [legalDoc, setLegalDoc] = useState<LegalDocId>('terms')
+
+  const openLegal = (doc: LegalDocId) => {
+    setLegalDoc(doc)
+    setLegalOpen(true)
+  }
 
   return (
     <header className="top-bar">
@@ -424,6 +441,25 @@ export function TopBar({
         <LightingMenu lightPreset={lightPreset} onLightPreset={onLightPreset} />
 
         <div className="top-bar-divider" />
+        <button
+          type="button"
+          className="top-plain-btn"
+          onClick={() => openLegal('terms')}
+          title="Open legal and licensing documents"
+        >
+          Legal
+        </button>
+
+        {cloudStatusLabel && (
+          <>
+            <div className="top-bar-divider" />
+            <span className={`top-cloud-status top-cloud-status-${cloudStatusTone}`} title={cloudStatusLabel}>
+              {cloudStatusLabel}
+            </span>
+          </>
+        )}
+
+        <div className="top-bar-divider" />
         {isGuest ? (
           <button
             type="button"
@@ -450,6 +486,13 @@ export function TopBar({
           </button>
         )}
       </div>
+
+      <LegalDocsModal
+        isOpen={legalOpen}
+        initialDoc={legalDoc}
+        onSelectDoc={setLegalDoc}
+        onClose={() => setLegalOpen(false)}
+      />
     </header>
   )
 }

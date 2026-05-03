@@ -1,4 +1,4 @@
-import { Canvas, useLoader } from '@react-three/fiber'
+import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import { Environment, Html, MeshReflectorMaterial, OrbitControls, useGLTF } from '@react-three/drei'
@@ -1420,7 +1420,7 @@ function MeshInspector({ scene }: { scene: THREE.Object3D }) {
 }
 
 // ── Mesh Classify Overlay ─────────────────────────────────────────────────────
-const CLASSIFY_CYCLE: Array<MeshClass | null> = [null, 'paintable', 'excluded', 'window', 'rims']
+const CLASSIFY_CYCLE: MeshClass[] = ['paintable', 'excluded', 'window', 'rims']
 
 function meshEffectiveClass(
   mesh: THREE.Mesh,
@@ -1513,8 +1513,8 @@ function MeshClassifyOverlay({
                 onClassify(label, 'excluded')
                 return
               }
-              // Cycle: auto(null) → paintable → excluded → window → rims → null
-              const idx = CLASSIFY_CYCLE.indexOf(current)
+              // Cycle concrete classes only so classify never clears to auto/null.
+              const idx = current ? CLASSIFY_CYCLE.indexOf(current) : -1
               const next = CLASSIFY_CYCLE[(idx + 1) % CLASSIFY_CYCLE.length]
               onClassify(label, next)
             }}
@@ -2203,6 +2203,7 @@ type EditorCanvasProps = {
   classifyWindowClickThrough?: boolean
   orbitEnabled?: boolean
   lightPreset?: LightPresetId
+  isRecording?: boolean
   onRendererReady?: (fn: () => string) => void
   onPrintCaptureReady?: (fn: PrintCaptureFn) => void
   onResetCameraReady?: (fn: ResetCameraFn) => void
@@ -2257,7 +2258,7 @@ function RendererExposer({
 
   useEffect(() => {
     if (onVideoRecorderReady) {
-      onVideoRecorderReady(() => (gl.domElement as HTMLCanvasElement).captureStream(60))
+      onVideoRecorderReady(() => (gl.domElement as HTMLCanvasElement).captureStream(30))
     }
   }, [gl, onVideoRecorderReady])
 
@@ -2371,7 +2372,42 @@ function RendererExposer({
   return null
 }
 
-export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, orbitEnabled = true, lightPreset = 'studio', onRendererReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady }: EditorCanvasProps) {
+// Drives smooth camera orbit during video recording using absolute clock time,
+// bypassing OrbitControls delta-based autoRotate which jitters under variable frame rate.
+function RecordingRotator({ active }: { active: boolean }) {
+  const { camera } = useThree()
+  const startRef = useRef<{ time: number; angle: number; radius: number; y: number } | null>(null)
+  // autoRotateSpeed=2.4 → one full orbit every 60/2.4 = 25 seconds
+  const ORBIT_PERIOD = 60 / 2.4
+
+  useFrame(({ clock }) => {
+    if (!active) {
+      startRef.current = null
+      return
+    }
+    const elapsed = clock.getElapsedTime()
+    if (!startRef.current) {
+      // Capture current camera position relative to scene origin (orbit target is approx [0,y,0])
+      const dx = camera.position.x
+      const dz = camera.position.z
+      startRef.current = {
+        time: elapsed,
+        angle: Math.atan2(dx, dz),
+        radius: Math.sqrt(dx * dx + dz * dz),
+        y: camera.position.y,
+      }
+    }
+    const { time, angle: startAngle, radius, y } = startRef.current
+    const omega = (2 * Math.PI) / ORBIT_PERIOD
+    const a = startAngle + omega * (elapsed - time)
+    camera.position.set(radius * Math.sin(a), y, radius * Math.cos(a))
+    camera.lookAt(0, y * 0.45, 0) // look at roughly the car center
+  })
+
+  return null
+}
+
+export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, orbitEnabled = true, lightPreset = 'studio', isRecording = false, onRendererReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady }: EditorCanvasProps) {
   const preset = LIGHT_PRESETS[lightPreset]
   const resetCameraRef = useRef<ResetCameraFn | null>(null)
   const cameraView = useEditorStore((state) => state.cameraView)
@@ -2383,6 +2419,7 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
     <Canvas
       shadows
       camera={{ position: CAMERA_START_POSITION, fov: 35 }}
+      dpr={isRecording ? 2 : [1, 2]}
       gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
       onPointerMissed={() => {
         setSelectedLayer(null)
@@ -2439,6 +2476,7 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         <LoadedCarModel modelUrl={modelUrl} groundOffsetY={groundOffsetY} classifyWindowClickThrough={classifyWindowClickThrough} />
       </Suspense>
 
+      <RecordingRotator active={isRecording && autoRotate} />
       <OrbitControls
         ref={controlsRef as never}
         makeDefault
@@ -2446,11 +2484,11 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         minDistance={2.5}
         maxDistance={5}
         maxPolarAngle={Math.PI / 2 - 0.05}
-        enableDamping
+        enableDamping={!isRecording}
         dampingFactor={0.08}
-        enabled={orbitEnabled}
-        autoRotate={autoRotate}
-        autoRotateSpeed={1.2}
+        enabled={isRecording ? false : orbitEnabled}
+        autoRotate={isRecording ? false : autoRotate}
+        autoRotateSpeed={2.4}
         onChange={() => {
           const ctrl = controlsRef.current as unknown as { target: THREE.Vector3 } | null
           if (ctrl && ctrl.target.y < 0) ctrl.target.y = 0

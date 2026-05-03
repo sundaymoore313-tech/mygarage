@@ -9,9 +9,15 @@ type Props = {
 }
 
 const DURATIONS = [5, 10, 15, 30]
+const FORMATS = [
+  { id: 'landscape', label: '▬ 16:9', title: 'Landscape (fullscreen)' },
+  { id: 'portrait',  label: '▮ 9:16', title: 'Portrait (vertical / Reels)' },
+] as const
+type Format = typeof FORMATS[number]['id']
 
 export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Props) {
   const [duration, setDuration] = useState(10)
+  const [format, setFormat] = useState<Format>('landscape')
   const [recording, setRecording] = useState(false)
   const [progress, setProgress] = useState(0) // 0–100
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
@@ -19,21 +25,29 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number>(0)
+  const extRef = useRef<string>('webm')
+  const rafRef = useRef<number | null>(null)
+  const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      if (hiddenVideoRef.current) { hiddenVideoRef.current.srcObject = null; hiddenVideoRef.current = null }
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
   }, [blobUrl])
 
-  function pickMimeType() {
+  function pickMimeType(): { mimeType: string; ext: string } {
     const candidates = [
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
-      'video/webm',
+      { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
+      { mimeType: 'video/mp4', ext: 'mp4' },
+      { mimeType: 'video/webm;codecs=vp9', ext: 'webm' },
+      { mimeType: 'video/webm;codecs=vp8', ext: 'webm' },
+      { mimeType: 'video/webm', ext: 'webm' },
     ]
-    return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
+    return candidates.find((c) => MediaRecorder.isTypeSupported(c.mimeType)) ?? { mimeType: '', ext: 'webm' }
   }
 
   function startRecording() {
@@ -43,41 +57,93 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
     }
     chunksRef.current = []
     setProgress(0)
-
-    const stream = getStream()
-    const mimeType = pickMimeType()
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-    recorderRef.current = recorder
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data)
-    }
-
-    recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
-      setBlobUrl(URL.createObjectURL(blob))
-      setRecording(false)
-      setProgress(100)
-      onRecordingChange?.(false)
-    }
-
-    recorder.start(100)
     setRecording(true)
     onRecordingChange?.(true)
-    startTimeRef.current = performance.now()
 
-    timerRef.current = setInterval(() => {
-      const elapsed = (performance.now() - startTimeRef.current) / 1000
-      const pct = Math.min((elapsed / duration) * 100, 100)
-      setProgress(pct)
-      if (elapsed >= duration) {
-        stopRecording()
+    // Wait two animation frames so the 4K dpr resize takes effect before capturing
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const rawStream = getStream()
+
+      // For portrait 9:16 — draw center-cropped frames from source onto an offscreen canvas
+      let captureStream = rawStream
+      if (format === 'portrait') {
+        const oc = document.createElement('canvas')
+        oc.width = 1080
+        oc.height = 1920
+        offscreenRef.current = oc
+        const ctx = oc.getContext('2d')!
+        const vid = document.createElement('video')
+        vid.srcObject = rawStream
+        vid.muted = true
+        hiddenVideoRef.current = vid
+        void vid.play()
+        const PORTRAIT_FPS = 30
+        const PORTRAIT_INTERVAL = 1000 / PORTRAIT_FPS
+        let lastDrawTime = 0
+        const draw = (now: number) => {
+          if (now - lastDrawTime >= PORTRAIT_INTERVAL) {
+            lastDrawTime = now
+            if (vid.readyState >= 2) {
+              const vw = vid.videoWidth || oc.width
+              const vh = vid.videoHeight || oc.height
+              // Center-crop source to 9:16
+              const targetAspect = 9 / 16
+              let sw = vw
+              let sh = Math.round(vw / targetAspect)
+              if (sh > vh) { sh = vh; sw = Math.round(vh * targetAspect) }
+              const sx = (vw - sw) / 2
+              const sy = (vh - sh) / 2
+              ctx.drawImage(vid, sx, sy, sw, sh, 0, 0, 1080, 1920)
+            }
+          }
+          rafRef.current = requestAnimationFrame(draw)
+        }
+        rafRef.current = requestAnimationFrame(draw)
+        captureStream = oc.captureStream(30)
       }
-    }, 100)
+
+      const { mimeType, ext } = pickMimeType()
+      const recorderOptions: MediaRecorderOptions = {
+        videoBitsPerSecond: 8_000_000,
+        ...(mimeType ? { mimeType } : {}),
+      }
+      const recorder = new MediaRecorder(captureStream, recorderOptions)
+      recorderRef.current = recorder
+      extRef.current = ext
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+
+      recorder.onstop = () => {
+        // Cleanup portrait resources
+        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+        if (hiddenVideoRef.current) { hiddenVideoRef.current.srcObject = null; hiddenVideoRef.current = null }
+        offscreenRef.current = null
+        const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
+        setBlobUrl(URL.createObjectURL(blob))
+        setRecording(false)
+        setProgress(100)
+        onRecordingChange?.(false)
+      }
+
+      recorder.start(100)
+      startTimeRef.current = performance.now()
+
+      timerRef.current = setInterval(() => {
+        const elapsed = (performance.now() - startTimeRef.current) / 1000
+        const pct = Math.min((elapsed / duration) * 100, 100)
+        setProgress(pct)
+        if (elapsed >= duration) {
+          stopRecording()
+        }
+      }, 100)
+    }))
   }
 
   function stopRecording() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     recorderRef.current?.stop()
   }
 
@@ -85,7 +151,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
     if (!blobUrl) return
     const a = document.createElement('a')
     a.href = blobUrl
-    a.download = `mygarage-${duration}s-${Date.now()}.webm`
+    a.download = `mygarage-${duration}s-${Date.now()}.${extRef.current}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -107,6 +173,23 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
         <p className="video-record-hint">
           Picks up the live 3D scene. Enable <strong>⟳ Spin</strong> before recording for a smooth turntable.
         </p>
+
+        <div className="video-duration-row">
+          <span className="video-duration-label">Format</span>
+          {FORMATS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              disabled={recording}
+              className={`social-format-chip${f.id === format ? ' active' : ''}`}
+              style={{ flex: '1', padding: '8px 0', textAlign: 'center' }}
+              title={f.title}
+              onClick={() => setFormat(f.id)}
+            >
+              <span className="social-format-label">{f.label}</span>
+            </button>
+          ))}
+        </div>
 
         <div className="video-duration-row">
           <span className="video-duration-label">Duration</span>
@@ -157,7 +240,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
           {blobUrl && (
             <>
               <button type="button" className="social-download-btn" onClick={handleDownload}>
-                Download WebM
+                Download {extRef.current.toUpperCase()} 🎬
               </button>
               <button type="button" className="social-cancel-btn" onClick={() => { setBlobUrl(null); setProgress(0) }}>
                 Re-record

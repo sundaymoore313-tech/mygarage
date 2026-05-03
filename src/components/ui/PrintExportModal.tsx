@@ -6,6 +6,10 @@ import { useEditorStore } from '../../store/editorStore'
 const PRINT_W = 2560
 const PRINT_H = 1440
 const MODEL_MAX_DIM_UNITS = 3.8
+const EXPORT_RIGHTS_ACK_KEY = 'mygarage-export-rights-ack-v1'
+const MAX_TEMPLATE_FILE_BYTES = 12 * 1024 * 1024
+const MAX_TEMPLATE_DIMENSION_PX = 4096
+const MAX_TEMPLATE_DATAURL_BYTES = 8 * 1024 * 1024
 
 const PRINT_VIEWS: PrintViewSpec[] = [
   { id: 'side-left', label: 'Driver Side (Left)', position: [-12, 0.65, 0], target: [0, 0.65, 0], orthoHeight: 1.6 },
@@ -62,6 +66,13 @@ function parseNullableNumber(value: string): number | null {
   return Math.max(0, n)
 }
 
+function estimateDataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',')
+  if (comma === -1) return 0
+  const base64 = dataUrl.slice(comma + 1)
+  return Math.floor((base64.length * 3) / 4)
+}
+
 function toPanelId(label: string): string {
   const base = label
     .trim()
@@ -91,6 +102,7 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [livePreview, setLivePreview] = useState(true)
   const [includeGuidesInExport, setIncludeGuidesInExport] = useState(false)
+  const [exportRightsConfirmed, setExportRightsConfirmed] = useState(() => localStorage.getItem(EXPORT_RIGHTS_ACK_KEY) === '1')
   const [lastCaptureAt, setLastCaptureAt] = useState<number | null>(null)
   const [activePanelId, setActivePanelId] = useState(PRINT_VIEWS[0].id)
   const [combinedSheetDataUrl, setCombinedSheetDataUrl] = useState<string | null>(null)
@@ -140,6 +152,13 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
           heightMm: template?.heightMm ?? fallbackHeightMm,
           bleedMm: template?.bleedMm ?? production.defaultBleedMm,
           overlapMm: template?.overlapMm ?? production.tileOverlapMm,
+          templateImageUrl: template?.templateImageUrl ?? null,
+          templateFitMode:
+            template?.templateFitMode === 'contain' || template?.templateFitMode === 'stretch'
+              ? template.templateFitMode
+              : 'cover',
+          templateBlendMode: template?.templateBlendMode === 'multiply' ? 'multiply' : 'normal',
+          templateOverlayOpacity: Math.max(0, Math.min(100, template?.templateOverlayOpacity ?? 100)),
         }
       })
       .filter((entry) => entry.enabled)
@@ -272,6 +291,125 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
     })
   }, [])
 
+  const readFileAsDataUrl = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : null
+        if (!result) {
+          reject(new Error('Template file could not be read'))
+          return
+        }
+        resolve(result)
+      }
+      reader.onerror = () => reject(new Error('Template file could not be read'))
+      reader.readAsDataURL(file)
+    })
+  }, [])
+
+  const readFileAsImage = useCallback((file: File) => {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl)
+        resolve(img)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('Template image could not be decoded'))
+      }
+      img.src = objectUrl
+    })
+  }, [])
+
+  const optimizeTemplateFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Template must be an image file (PNG, WEBP, JPG).')
+    }
+    if (file.size > MAX_TEMPLATE_FILE_BYTES) {
+      throw new Error('Template is too large. Maximum file size is 12MB.')
+    }
+
+    const img = await readFileAsImage(file)
+    const sourceW = Math.max(1, img.naturalWidth)
+    const sourceH = Math.max(1, img.naturalHeight)
+    if (sourceW < 64 || sourceH < 64) {
+      throw new Error('Template image is too small. Minimum size is 64x64 px.')
+    }
+
+    const shouldResize = Math.max(sourceW, sourceH) > MAX_TEMPLATE_DIMENSION_PX
+    if (!shouldResize && file.size <= 4 * 1024 * 1024) {
+      const directDataUrl = await readFileAsDataUrl(file)
+      if (estimateDataUrlBytes(directDataUrl) > MAX_TEMPLATE_DATAURL_BYTES) {
+        throw new Error('Template is still too large after import. Please use a smaller image.')
+      }
+      return directDataUrl
+    }
+
+    const scale = Math.min(1, MAX_TEMPLATE_DIMENSION_PX / Math.max(sourceW, sourceH))
+    const outW = Math.max(1, Math.round(sourceW * scale))
+    const outH = Math.max(1, Math.round(sourceH * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = outW
+    canvas.height = outH
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error('Could not process template image.')
+    }
+
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, outW, outH)
+    const optimized = canvas.toDataURL('image/webp', 0.9)
+    if (estimateDataUrlBytes(optimized) > MAX_TEMPLATE_DATAURL_BYTES) {
+      throw new Error('Template is too detailed for browser storage. Reduce resolution or simplify the image.')
+    }
+    return optimized
+  }, [readFileAsDataUrl, readFileAsImage])
+
+  const handleTemplateFileSelected = useCallback((panel: (typeof wrapPanels)[number], file: File | null | undefined) => {
+    if (!file) return
+    void optimizeTemplateFile(file)
+      .then((templateImageUrl) => {
+        upsertWrapPanel({ ...panel, templateImageUrl })
+        setError(null)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Could not import that template image.'
+        setError(message)
+      })
+  }, [optimizeTemplateFile, upsertWrapPanel])
+
+  const drawImageByFitMode = useCallback((
+    ctx: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    fitMode: 'cover' | 'contain' | 'stretch',
+  ) => {
+    if (fitMode === 'stretch') {
+      ctx.drawImage(img, 0, 0, PRINT_W, PRINT_H)
+      return
+    }
+
+    const canvasAspect = PRINT_W / PRINT_H
+    const imageAspect = img.width / Math.max(1, img.height)
+    const useContain = fitMode === 'contain'
+
+    let drawW: number
+    let drawH: number
+    if (useContain ? imageAspect > canvasAspect : imageAspect < canvasAspect) {
+      drawW = PRINT_W
+      drawH = PRINT_W / imageAspect
+    } else {
+      drawH = PRINT_H
+      drawW = PRINT_H * imageAspect
+    }
+
+    const x = (PRINT_W - drawW) / 2
+    const y = (PRINT_H - drawH) / 2
+    ctx.drawImage(img, x, y, drawW, drawH)
+  }, [])
+
   const getAdjustedPanelDataUrl = useCallback(async (
     panel: PrintCaptureResult,
     settings: PanelAdjustments,
@@ -289,6 +427,20 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, PRINT_W, PRINT_H)
 
+    const plan = plannedPanelById.get(panel.id)
+    if (plan?.templateImageUrl) {
+      const templateImg = await loadImage(plan.templateImageUrl)
+      const templateFitMode: 'cover' | 'contain' | 'stretch' =
+        plan.templateFitMode === 'contain' || plan.templateFitMode === 'stretch'
+          ? plan.templateFitMode
+          : 'cover'
+      ctx.save()
+      ctx.globalAlpha = 1
+      ctx.globalCompositeOperation = 'source-over'
+      drawImageByFitMode(ctx, templateImg, templateFitMode)
+      ctx.restore()
+    }
+
     ctx.save()
     ctx.translate(
       PRINT_W / 2 + (settings.offsetX / 100) * PRINT_W,
@@ -297,11 +449,12 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
     ctx.rotate((settings.rotationDeg * Math.PI) / 180)
     const scale = Math.max(0.3, settings.scale / 100)
     ctx.scale(scale, scale)
+    ctx.globalAlpha = (Math.max(0, Math.min(100, plan?.templateOverlayOpacity ?? 100))) / 100
+    ctx.globalCompositeOperation = plan?.templateBlendMode === 'multiply' ? 'multiply' : 'source-over'
     ctx.drawImage(img, -PRINT_W / 2, -PRINT_H / 2, PRINT_W, PRINT_H)
     ctx.restore()
 
     if (drawGuides) {
-      const plan = plannedPanelById.get(panel.id)
       const panelWidthMm = Math.max(1, plan?.widthMm ?? Math.max(900, Math.round(production.mediaWidthMm * 0.9)))
       const panelHeightMm = Math.max(1, plan?.heightMm ?? Math.max(700, Math.round(panelWidthMm * (PRINT_H / PRINT_W))))
       const bleedMm = Math.max(0, plan?.bleedMm ?? production.defaultBleedMm)
@@ -343,9 +496,13 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
     }
 
     return canvas.toDataURL('image/png')
-  }, [loadImage, plannedPanelById, production.defaultBleedMm, production.defaultSafeMm, production.mediaWidthMm, production.tileOverlapMm])
+  }, [drawImageByFitMode, loadImage, plannedPanelById, production.defaultBleedMm, production.defaultSafeMm, production.mediaWidthMm, production.tileOverlapMm])
 
   const handleDownloadPanel = async (panel: PrintCaptureResult) => {
+    if (!exportRightsConfirmed) {
+      setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
+      return
+    }
     const slug = project.meta.name.replace(/\s+/g, '-')
     const settings = getPanelSettings(panel.id)
     const dataUrl = await getAdjustedPanelDataUrl(panel, settings, includeGuidesInExport)
@@ -356,6 +513,10 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleDownloadAll = () => {
+    if (!exportRightsConfirmed) {
+      setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
+      return
+    }
     if (!panels) return
     const enabledPanels = getPlannedPanels(panels)
     enabledPanels.forEach(({ panel }, i) => {
@@ -502,6 +663,10 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }, [panels, getAdjustedPanelDataUrl, getPanelSettings, includeGuidesInExport, loadImage, project.meta.name, getPlannedPanels])
 
   const handleDownloadCombinedSheet = async () => {
+    if (!exportRightsConfirmed) {
+      setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
+      return
+    }
     if (!panels) return
     const slug = project.meta.name.replace(/\s+/g, '-')
     const dataUrl = await buildCombinedSheetDataUrl()
@@ -512,6 +677,10 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleExportCombinedPDF = async () => {
+    if (!exportRightsConfirmed) {
+      setError('Confirm export rights before exporting. You must have legal rights to all marks and assets in this design.')
+      return
+    }
     if (!panels) return
     const dataUrl = await buildCombinedSheetDataUrl()
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' })
@@ -525,6 +694,10 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleExportPDF = async () => {
+    if (!exportRightsConfirmed) {
+      setError('Confirm export rights before exporting. You must have legal rights to all marks and assets in this design.')
+      return
+    }
     if (!panels) return
     const enabledPanels = getPlannedPanels(panels)
     if (enabledPanels.length === 0) {
@@ -649,9 +822,17 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }, [activePanelId, panels, buildCombinedSheetDataUrl])
 
   const activePanel = panels?.find((panel) => panel.id === activePanelId) ?? null
+  const activeTemplatePanel = activePanelId === 'one-page'
+    ? null
+    : (panelTemplateByViewId.get(activePanelId) ?? null)
   const activePanelPlan = plannedPanelById.get(activePanelId) ?? null
   const activePanelLabel = plannedPanels.find(({ panel }) => panel.id === activePanelId)?.exportLabel ?? activePanel?.label ?? ''
   const activeSettings = getPanelSettings(activePanelId)
+  const activeOverlayOpacity = Math.max(0, Math.min(100, activePanelPlan?.templateOverlayOpacity ?? 100))
+  const activeBlendMode = activePanelPlan?.templateBlendMode === 'multiply' ? 'multiply' : 'normal'
+  const activeFitMode = activePanelPlan?.templateFitMode === 'contain' || activePanelPlan?.templateFitMode === 'stretch'
+    ? activePanelPlan.templateFitMode
+    : 'cover'
   const activeGuideStyle = useMemo(() => {
     const widthMm = Math.max(1, activePanelPlan?.widthMm ?? Math.max(900, Math.round(production.mediaWidthMm * 0.9)))
     const heightMm = Math.max(1, activePanelPlan?.heightMm ?? Math.max(700, Math.round(widthMm * (PRINT_H / PRINT_W))))
@@ -760,11 +941,21 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
                 <>
                   <div className="print-editor-stage-label">{activePanelLabel}</div>
                   <div className="print-editor-canvas-wrap">
+                    {activePanelPlan?.templateImageUrl && (
+                      <img
+                        src={activePanelPlan.templateImageUrl}
+                        alt={`${activePanelLabel} imported template`}
+                        className="print-editor-image"
+                        style={{ objectFit: activeFitMode === 'stretch' ? 'fill' : activeFitMode }}
+                      />
+                    )}
                     <img
                       src={activePanel.dataUrl}
                       alt={activePanel.label}
                       className="print-editor-image"
                       style={{
+                        mixBlendMode: activeBlendMode === 'multiply' ? 'multiply' : 'normal',
+                        opacity: activeOverlayOpacity / 100,
                         transform: `translate(${activeSettings.offsetX}%, ${activeSettings.offsetY}%) scale(${activeSettings.scale / 100}) rotate(${activeSettings.rotationDeg}deg)`,
                       }}
                     />
@@ -965,6 +1156,86 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
                         />
                       </label>
 
+                      <label className="print-tool-row">
+                        <span>2D Template Image</span>
+                        <input
+                          type="file"
+                          className="print-tool-input"
+                          accept="image/png,image/webp,image/jpeg,image/jpg"
+                          onChange={(e) => {
+                            handleTemplateFileSelected(panel, e.target.files?.[0])
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+
+                      <div className="print-wrap-panel-actions">
+                        <span className="print-tool-row">
+                          <span>{panel.templateImageUrl ? 'Template loaded' : 'No template loaded'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="print-wrap-panel-remove"
+                          disabled={!panel.templateImageUrl}
+                          onClick={() => upsertWrapPanel({ ...panel, templateImageUrl: null })}
+                          title={panel.templateImageUrl ? 'Remove imported template' : 'No template to remove'}
+                        >
+                          Remove Template
+                        </button>
+                      </div>
+
+                      <div className="print-wrap-panel-grid2">
+                        <label className="print-tool-row">
+                          <span>Template Fit</span>
+                          <select
+                            className="print-tool-input"
+                            value={panel.templateFitMode === 'contain' || panel.templateFitMode === 'stretch' ? panel.templateFitMode : 'cover'}
+                            onChange={(e) => upsertWrapPanel({
+                              ...panel,
+                              templateFitMode:
+                                e.target.value === 'contain' || e.target.value === 'stretch'
+                                  ? e.target.value
+                                  : 'cover',
+                            })}
+                          >
+                            <option value="cover">Cover (crop edges)</option>
+                            <option value="contain">Contain (show all)</option>
+                            <option value="stretch">Stretch (fill)</option>
+                          </select>
+                        </label>
+
+                        <label className="print-tool-row">
+                          <span>Bake Blend</span>
+                          <select
+                            className="print-tool-input"
+                            value={panel.templateBlendMode === 'multiply' ? 'multiply' : 'normal'}
+                            onChange={(e) => upsertWrapPanel({
+                              ...panel,
+                              templateBlendMode: e.target.value === 'multiply' ? 'multiply' : 'normal',
+                            })}
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="multiply">Multiply</option>
+                          </select>
+                        </label>
+
+                        <label className="print-tool-row">
+                          <span>Bake Opacity</span>
+                          <input
+                            type="number"
+                            className="print-tool-input"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={Math.max(0, Math.min(100, panel.templateOverlayOpacity ?? 100))}
+                            onChange={(e) => upsertWrapPanel({
+                              ...panel,
+                              templateOverlayOpacity: Math.max(0, Math.min(100, Math.round(parsePositiveNumber(e.target.value, panel.templateOverlayOpacity ?? 100)))),
+                            })}
+                          />
+                        </label>
+                      </div>
+
                       <div className="print-wrap-panel-grid2">
                         <label className="print-tool-row">
                           <span>Width (mm)</span>
@@ -1099,6 +1370,10 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
                     bleedMm: production.defaultBleedMm,
                     overlapMm: production.tileOverlapMm,
                     orientation: 'normal',
+                    templateImageUrl: null,
+                    templateFitMode: 'cover',
+                    templateBlendMode: 'normal',
+                    templateOverlayOpacity: 100,
                     installOrder: nextOrder,
                     enabled: true,
                   })
@@ -1108,6 +1383,88 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
               </button>
 
               <div className="print-panel-tab-divider" />
+
+              {activeTemplatePanel && (
+                <>
+                  <div className="print-tool-title">Active Panel Template</div>
+                  <label className="print-tool-row">
+                    <span>Upload Template for {activePanelLabel || activeTemplatePanel.label}</span>
+                    <input
+                      type="file"
+                      className="print-tool-input"
+                      accept="image/png,image/webp,image/jpeg,image/jpg"
+                      onChange={(e) => {
+                        handleTemplateFileSelected(activeTemplatePanel, e.target.files?.[0])
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+
+                  <div className="print-wrap-panel-grid2">
+                    <label className="print-tool-row">
+                      <span>Template Fit</span>
+                      <select
+                        className="print-tool-input"
+                        value={activeTemplatePanel.templateFitMode === 'contain' || activeTemplatePanel.templateFitMode === 'stretch' ? activeTemplatePanel.templateFitMode : 'cover'}
+                        onChange={(e) => upsertWrapPanel({
+                          ...activeTemplatePanel,
+                          templateFitMode:
+                            e.target.value === 'contain' || e.target.value === 'stretch'
+                              ? e.target.value
+                              : 'cover',
+                        })}
+                      >
+                        <option value="cover">Cover (crop edges)</option>
+                        <option value="contain">Contain (show all)</option>
+                        <option value="stretch">Stretch (fill)</option>
+                      </select>
+                    </label>
+
+                    <label className="print-tool-row">
+                      <span>Bake Blend</span>
+                      <select
+                        className="print-tool-input"
+                        value={activeTemplatePanel.templateBlendMode === 'multiply' ? 'multiply' : 'normal'}
+                        onChange={(e) => upsertWrapPanel({
+                          ...activeTemplatePanel,
+                          templateBlendMode: e.target.value === 'multiply' ? 'multiply' : 'normal',
+                        })}
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="multiply">Multiply</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="print-tool-row">
+                    <span>Bake Opacity</span>
+                    <input
+                      type="number"
+                      className="print-tool-input"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.max(0, Math.min(100, activeTemplatePanel.templateOverlayOpacity ?? 100))}
+                      onChange={(e) => upsertWrapPanel({
+                        ...activeTemplatePanel,
+                        templateOverlayOpacity: Math.max(0, Math.min(100, Math.round(parsePositiveNumber(e.target.value, activeTemplatePanel.templateOverlayOpacity ?? 100)))),
+                      })}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className="print-wrap-panel-remove"
+                    disabled={!activeTemplatePanel.templateImageUrl}
+                    onClick={() => upsertWrapPanel({ ...activeTemplatePanel, templateImageUrl: null })}
+                    title={activeTemplatePanel.templateImageUrl ? 'Remove imported template' : 'No template to remove'}
+                  >
+                    Remove Active Template
+                  </button>
+
+                  <div className="print-panel-tab-divider" />
+                </>
+              )}
 
               {activePanelId === 'one-page' ? (
                 <>
@@ -1223,6 +1580,22 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
         )}
 
         <div className="print-actions">
+          <label className="print-export-guides-toggle">
+            <input
+              type="checkbox"
+              checked={exportRightsConfirmed}
+              onChange={(e) => {
+                setExportRightsConfirmed(e.target.checked)
+                if (e.target.checked) {
+                  localStorage.setItem(EXPORT_RIGHTS_ACK_KEY, '1')
+                  setError(null)
+                } else {
+                  localStorage.removeItem(EXPORT_RIGHTS_ACK_KEY)
+                }
+              }}
+            />
+            I confirm I have legal rights/licenses for all trademarks, logos, and assets in this export
+          </label>
           <label className="print-export-guides-toggle">
             <input
               type="checkbox"

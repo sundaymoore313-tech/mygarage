@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Layers, Type, Car, Paintbrush, Download, Pen, Star, Undo2, Image, Printer, SunDim, Columns2 } from 'lucide-react'
 import { HeroCarScene } from '../scene/HeroCarScene'
 import { isSupabaseConfigured, supabaseSignIn, supabaseSignOut, supabaseSignUp, supabase } from '../../lib/supabase'
+import { LegalDocsModal } from './LegalDocsModal'
 
 type HomePageProps = {
   onEnter: () => void
@@ -12,6 +13,7 @@ type HomePageProps = {
 }
 
 type AuthMode = 'login' | 'signup'
+type LegalDocId = 'terms' | 'privacy' | 'acceptable'
 
 type AuthUser = {
   name: string
@@ -23,6 +25,7 @@ type AuthUser = {
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const LAST_CAR_KEY = 'mygarage-last-car'
+const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
 
 function isRememberedUser(): boolean {
   return localStorage.getItem(AUTH_LOCAL_KEY) !== null
@@ -117,6 +120,13 @@ const TAGLINES = [
   'Make it yours.',
 ]
 
+const LEGAL_NOTICE_ITEMS = [
+  'Vehicle brand names, model names, logos, and trade dress are trademarks of their respective owners. MyGarage is an independent design tool and is not affiliated with or endorsed by those companies.',
+  'You must have the legal rights to use any uploaded logos, decals, fonts, photos, templates, and other artwork. Do not upload or export content you do not have permission to use.',
+  'Commercial wrapping, printing, and resale may require written permission or a license from trademark and copyright owners. Rights clearance is your responsibility.',
+  '3D car models and imported assets may carry separate license terms from their creators. Verify and comply with those license terms before commercial use.',
+]
+
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
   if (remember) {
@@ -157,7 +167,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   const [authError, setAuthError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   const [authConfirmPending, setAuthConfirmPending] = useState(false)
+  const [legalDoc, setLegalDoc] = useState<LegalDocId>('terms')
+  const [legalOpen, setLegalOpen] = useState(false)
+  const [legalAccepted, setLegalAccepted] = useState(() => localStorage.getItem(LEGAL_ACCEPTANCE_KEY) === '1')
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => readCachedAuth())
+  const [carCount, setCarCount] = useState(12)
+  const [fontCount, setFontCount] = useState(49)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.32)
   const drawerRef = useRef<HTMLDivElement | null>(null)
@@ -296,11 +311,48 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const [carsRes, fontsRes] = await Promise.all([
+          fetch('/models/manifest.json'),
+          fetch('/fonts/manifest.json'),
+        ])
+
+        if (carsRes.ok) {
+          const carsData = await carsRes.json() as { items?: unknown[] }
+          if (!cancelled && Array.isArray(carsData.items) && carsData.items.length > 0) {
+            setCarCount(carsData.items.length)
+          }
+        }
+
+        if (fontsRes.ok) {
+          const fontsData = await fontsRes.json() as { items?: unknown[] }
+          if (!cancelled && Array.isArray(fontsData.items) && fontsData.items.length > 0) {
+            setFontCount(fontsData.items.length)
+          }
+        }
+      } catch {
+        // Keep baked fallback stats when manifests are unavailable.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function openAuth(mode: AuthMode) {
     setAuthMode(mode)
     setAuthError(null)
     setAuthConfirmPending(false)
     setAuthOpen(true)
+  }
+
+  function openLegal(doc: LegalDocId) {
+    setLegalDoc(doc)
+    setLegalOpen(true)
   }
 
   function resetForm() {
@@ -334,6 +386,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
       setAuthError('Email and password are required.')
       return
     }
+    if (!legalAccepted) {
+      setAuthError('Please accept the Terms, Privacy, and Acceptable Use notice to continue.')
+      return
+    }
 
     setAuthLoading(true)
     try {
@@ -346,6 +402,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           return
         }
         cacheAuthLocally({ name: result.user.name, email: result.user.email }, rememberMe)
+        localStorage.setItem(LEGAL_ACCEPTANCE_KEY, '1')
         setCurrentUser({ name: result.user.name, email: result.user.email })
         closeAuth()
         return
@@ -354,6 +411,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
       const result = await supabaseSignIn(safeEmail, safePassword)
       if (!result.ok) { setAuthError(result.error); return }
       cacheAuthLocally({ name: result.user.name, email: result.user.email }, rememberMe)
+      localStorage.setItem(LEGAL_ACCEPTANCE_KEY, '1')
       setCurrentUser({ name: result.user.name, email: result.user.email })
       closeAuth()
     } finally {
@@ -367,6 +425,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
     setCurrentUser(null)
   }
 
+  const cloudStatus = !isSupabaseConfigured
+    ? { label: 'Local Mode', tone: 'warn' as const }
+    : currentUser
+      ? { label: 'Cloud Sync Active', tone: 'ok' as const }
+      : { label: 'Sign In For Cloud Backup', tone: 'neutral' as const }
+
   return (
     <div className="home-page">
       {/* ── Hero ─────────────────────────────────────────────── */}
@@ -377,34 +441,37 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
 
         <div className="home-auth-actions">
-          {currentUser ? (
-            <>
-              <button type="button" className="home-avatar-bubble" onClick={onOpenProfile} aria-label="Open profile">
-                {(() => {
-                  const av = localStorage.getItem('mygarage-profile-avatar')
-                  if (av) return <img src={av} alt={currentUser.name} className="home-avatar-img" />
-                  const initials = currentUser.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-                  return <span className="home-avatar-initials">{initials}</span>
-                })()}
-              </button>
-              <button type="button" className="home-auth-btn" onClick={handleLogout}>Log Out</button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="home-auth-btn" onClick={() => openAuth('login')}>Log In</button>
-              <button type="button" className="home-auth-btn primary" onClick={() => openAuth('signup')}>Sign Up</button>
-            </>
-          )}
+          <div className="home-auth-actions-row">
+            {currentUser ? (
+              <>
+                <button type="button" className="home-avatar-bubble" onClick={onOpenProfile} aria-label="Open profile">
+                  {(() => {
+                    const av = localStorage.getItem('mygarage-profile-avatar')
+                    if (av) return <img src={av} alt={currentUser.name} className="home-avatar-img" />
+                    const initials = currentUser.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+                    return <span className="home-avatar-initials">{initials}</span>
+                  })()}
+                </button>
+                <button type="button" className="home-auth-btn" onClick={handleLogout}>Log Out</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="home-auth-btn" onClick={() => openAuth('login')}>Log In</button>
+                <button type="button" className="home-auth-btn primary" onClick={() => openAuth('signup')}>Sign Up</button>
+              </>
+            )}
+          </div>
+          <span className={`home-cloud-pill home-cloud-pill-${cloudStatus.tone}`}>{cloudStatus.label}</span>
         </div>
 
         <div className="home-hero-stats-bar">
           <div className="home-stat">
-            <span className="home-stat-num">6</span>
+            <span className="home-stat-num">{carCount}</span>
             <span className="home-stat-label">Built-in Cars</span>
           </div>
           <div className="home-stat-divider" />
           <div className="home-stat">
-            <span className="home-stat-num">18</span>
+            <span className="home-stat-num">{fontCount}</span>
             <span className="home-stat-label">Fonts</span>
           </div>
           <div className="home-stat-divider" />
@@ -460,6 +527,9 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
               </>
             )}
           </div>
+          <p className="home-legal-inline">
+            For visualization and design planning. Commercial use requires rights clearance for trademarks, logos, and licensed assets.
+          </p>
         </div>
       </section>
 
@@ -527,6 +597,18 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </div>
         </section>
 
+        <section className="home-legal">
+          <h2 className="home-section-title">Legal and Licensing Notice</h2>
+          <p className="home-section-sub">
+            Please review before using imported assets or exporting files for print and commercial wraps.
+          </p>
+          <ul className="home-legal-list">
+            {LEGAL_NOTICE_ITEMS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
         {/* ── Bottom CTA ─────────────────────────────────────── */}
         <section className="home-bottom-cta">
           <h2>Ready to build your dream livery?</h2>
@@ -541,6 +623,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           <span>MyGarage &copy; {new Date().getFullYear()}</span>
           <span className="home-footer-sep">·</span>
           <span>Built with React + Three.js + Vite</span>
+          <div className="home-footer-links">
+            <button type="button" className="home-auth-link" onClick={() => openLegal('terms')}>Terms</button>
+            <span className="home-footer-sep">·</span>
+            <button type="button" className="home-auth-link" onClick={() => openLegal('privacy')}>Privacy</button>
+            <span className="home-footer-sep">·</span>
+            <button type="button" className="home-auth-link" onClick={() => openLegal('acceptable')}>Acceptable Use</button>
+          </div>
         </footer>
       </div>
 
@@ -617,6 +706,23 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
                 <span>Remember me on this device</span>
               </label>
 
+              <label className="home-auth-remember">
+                <input
+                  type="checkbox"
+                  checked={legalAccepted}
+                  onChange={(e) => setLegalAccepted(e.target.checked)}
+                />
+                <span>
+                  I agree to the
+                  {' '}
+                  <button type="button" className="home-auth-link" onClick={() => openLegal('terms')}>Terms</button>
+                  {', '}
+                  <button type="button" className="home-auth-link" onClick={() => openLegal('privacy')}>Privacy</button>
+                  {' and '}
+                  <button type="button" className="home-auth-link" onClick={() => openLegal('acceptable')}>Acceptable Use</button>
+                </span>
+              </label>
+
               {authError && <p className="home-auth-error">{authError}</p>}
               {authConfirmPending && (
                 <p className="home-auth-confirm">
@@ -638,6 +744,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </div>
         </div>
       )}
+
+      <LegalDocsModal
+        isOpen={legalOpen}
+        initialDoc={legalDoc}
+        onSelectDoc={setLegalDoc}
+        onClose={() => setLegalOpen(false)}
+      />
     </div>
   )
 }

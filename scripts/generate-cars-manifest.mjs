@@ -10,6 +10,9 @@ const MODEL_OVERRIDES = {
   'bmw_m3_g80_2025.glb': {
     name: 'BMW M3 G80 2025',
   },
+  '2019_chevrolet_corvette_c8_stingray.glb': {
+    name: '2019 Chevrolet Corvette C8 Stingray',
+  },
   '2020_dodge_challenger_srt_super_stock.glb': {
     name: '2020 Dodge Challenger SRT Super Stock',
   },

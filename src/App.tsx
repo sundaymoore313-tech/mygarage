@@ -22,7 +22,8 @@ import { SocialExportModal } from './components/ui/SocialExportModal'
 import { VideoRecordModal } from './components/ui/VideoRecordModal'
 import { GuestAuthModal } from './components/ui/GuestAuthModal'
 import { readResumeSnapshot } from './lib/resumeSnapshot'
-import { loadFullProjectById } from './lib/savedProjects'
+import { loadFullProjectById, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { getCurrentUser, isSupabaseConfigured } from './lib/supabase'
 import './App.css'
 
 function ClassifyLegend({
@@ -116,11 +117,14 @@ function App() {
   const printCaptureRef = useRef<import('./components/scene/EditorCanvas').PrintCaptureFn | null>(null)
   const resetCameraRef = useRef<import('./components/scene/EditorCanvas').ResetCameraFn | null>(null)
   const [videoStreamGetter, setVideoStreamGetter] = useState<(() => MediaStream) | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
   const [printExportOpen, setPrintExportOpen] = useState(false)
   const [svgMakerOpen, setSvgMakerOpen] = useState(false)
   const [socialPreviewUrl, setSocialPreviewUrl] = useState<string | null>(null)
   const [videoRecordOpen, setVideoRecordOpen] = useState(false)
   const [guestAuthOpen, setGuestAuthOpen] = useState(false)
+  const [cloudStatusLabel, setCloudStatusLabel] = useState('Cloud: checking...')
+  const [cloudStatusTone, setCloudStatusTone] = useState<'neutral' | 'ok' | 'warn' | 'error'>('neutral')
   const is2DOpen = printExportOpen
 
   const handleResizeDrag = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -140,6 +144,38 @@ function App() {
   }
 
   const orbitEnabled = !orbitLockToScenePanel || sceneHovered
+
+  useEffect(() => {
+    void (async () => {
+      if (!isSupabaseConfigured) {
+        setCloudStatusLabel('Cloud: off')
+        setCloudStatusTone('warn')
+        return
+      }
+
+      const user = await getCurrentUser()
+      if (!user) {
+        setCloudStatusLabel('Cloud: sign in')
+        setCloudStatusTone('warn')
+        return
+      }
+
+      setCloudStatusLabel('Cloud: syncing...')
+      setCloudStatusTone('neutral')
+
+      const migrated = await migrateLocalProjectsToCloud()
+      const synced = await syncCloudProjectsToLocal()
+
+      if (migrated.ok && synced.ok) {
+        const migratedPart = migrated.migrated > 0 ? `migrated ${migrated.migrated}` : 'up to date'
+        setCloudStatusLabel(`Cloud: synced (${migratedPart}, ${synced.count} cached)`)
+        setCloudStatusTone('ok')
+      } else {
+        setCloudStatusLabel('Cloud: fallback local')
+        setCloudStatusTone('error')
+      }
+    })()
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -288,6 +324,8 @@ function App() {
         onGuestSignIn={handleGuestSignIn}
         isGuest={isGuest}
         onCaptureProfilePreview={() => screenshotRef.current?.() ?? null}
+        cloudStatusLabel={cloudStatusLabel}
+        cloudStatusTone={cloudStatusTone}
       />
 
       {printExportOpen && (
@@ -320,7 +358,8 @@ function App() {
       {videoRecordOpen && videoStreamGetter && (
         <VideoRecordModal
           getStream={videoStreamGetter}
-          onClose={() => setVideoRecordOpen(false)}
+          onClose={() => { setVideoRecordOpen(false); setIsRecording(false) }}
+          onRecordingChange={setIsRecording}
         />
       )}
 
@@ -344,10 +383,11 @@ function App() {
               classifyWindowClickThrough={classifyWindowClickThrough}
               orbitEnabled={orbitEnabled}
               lightPreset={lightPreset}
+              isRecording={isRecording}
               onRendererReady={(fn) => { screenshotRef.current = fn }}
               onPrintCaptureReady={(fn) => { printCaptureRef.current = fn }}
               onResetCameraReady={(fn) => { resetCameraRef.current = fn }}
-              onVideoRecorderReady={setVideoStreamGetter}
+              onVideoRecorderReady={(fn) => setVideoStreamGetter(() => fn)}
             />
             <div className="fab-group">
               <button

@@ -58,11 +58,11 @@ const DEFAULT_WRAP_JOB: WrapJobMeta = {
 }
 
 const DEFAULT_WRAP_PANELS: WrapPanelTemplate[] = [
-  { id: 'hood', label: 'Hood', widthMm: 1700, heightMm: 1200, bleedMm: 10, overlapMm: 12, orientation: 'normal', installOrder: 1, enabled: true },
-  { id: 'roof', label: 'Roof', widthMm: 1700, heightMm: 1400, bleedMm: 10, overlapMm: 12, orientation: 'normal', installOrder: 2, enabled: true },
-  { id: 'trunk', label: 'Trunk', widthMm: 1650, heightMm: 1100, bleedMm: 10, overlapMm: 12, orientation: 'normal', installOrder: 3, enabled: true },
-  { id: 'left-side', label: 'Left Side', widthMm: 4200, heightMm: 1650, bleedMm: 10, overlapMm: 15, orientation: 'normal', installOrder: 4, enabled: true },
-  { id: 'right-side', label: 'Right Side', widthMm: 4200, heightMm: 1650, bleedMm: 10, overlapMm: 15, orientation: 'mirrored', installOrder: 5, enabled: true },
+  { id: 'hood', label: 'Hood', widthMm: 1700, heightMm: 1200, bleedMm: 10, overlapMm: 12, orientation: 'normal', templateImageUrl: null, templateFitMode: 'cover', templateBlendMode: 'normal', templateOverlayOpacity: 100, installOrder: 1, enabled: true },
+  { id: 'roof', label: 'Roof', widthMm: 1700, heightMm: 1400, bleedMm: 10, overlapMm: 12, orientation: 'normal', templateImageUrl: null, templateFitMode: 'cover', templateBlendMode: 'normal', templateOverlayOpacity: 100, installOrder: 2, enabled: true },
+  { id: 'trunk', label: 'Trunk', widthMm: 1650, heightMm: 1100, bleedMm: 10, overlapMm: 12, orientation: 'normal', templateImageUrl: null, templateFitMode: 'cover', templateBlendMode: 'normal', templateOverlayOpacity: 100, installOrder: 3, enabled: true },
+  { id: 'left-side', label: 'Left Side', widthMm: 4200, heightMm: 1650, bleedMm: 10, overlapMm: 15, orientation: 'normal', templateImageUrl: null, templateFitMode: 'cover', templateBlendMode: 'normal', templateOverlayOpacity: 100, installOrder: 4, enabled: true },
+  { id: 'right-side', label: 'Right Side', widthMm: 4200, heightMm: 1650, bleedMm: 10, overlapMm: 15, orientation: 'mirrored', templateImageUrl: null, templateFitMode: 'cover', templateBlendMode: 'normal', templateOverlayOpacity: 100, installOrder: 5, enabled: true },
 ]
 
 const defaultTransform = (): LayerTransform => ({
@@ -1053,7 +1053,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           ...(project.vehicleCalibration ?? {}),
         },
         wrapPanels: Array.isArray(project.wrapPanels) && project.wrapPanels.length > 0
-          ? project.wrapPanels
+          ? project.wrapPanels.map((panel) => ({
+              ...panel,
+              templateImageUrl: panel.templateImageUrl ?? null,
+              templateFitMode: panel.templateFitMode === 'contain' || panel.templateFitMode === 'stretch' ? panel.templateFitMode : 'cover',
+              templateBlendMode: panel.templateBlendMode === 'multiply' ? 'multiply' : 'normal',
+              templateOverlayOpacity: Math.max(0, Math.min(100, panel.templateOverlayOpacity ?? 100)),
+            }))
           : DEFAULT_WRAP_PANELS.map((panel) => ({ ...panel })),
         printProduction: {
           ...DEFAULT_PRINT_PRODUCTION,
