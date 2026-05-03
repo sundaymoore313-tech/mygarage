@@ -33,6 +33,16 @@ type ImportedCarRecord = {
   modelUrl: string
 }
 
+type SaveImportedCarsResult = {
+  ok: boolean
+  error?: string
+}
+
+type SelectorNotice = {
+  tone: 'info' | 'success' | 'warn' | 'error'
+  text: string
+}
+
 const MANIFEST_URL = '/models/manifest.json'
 const HIDDEN_SELECTOR_MODELS = new Set(['car.glb', 'dodge_charger_srt8.glb', 'unmarked_police_jeep_track_hawk.glb'])
 const IMPORTED_CARS_STORAGE_KEY = 'mygarage-imported-cars-v1'
@@ -53,12 +63,16 @@ const THUMBNAIL_PALETTE = [
   '#f9844a',
 ] as const
 const THUMBNAIL_COLOR_BY_FILE: Record<string, string> = {
-  '2012_dodge_charger_rt_sedan_4d (1).glb': '#8ecae6',
-  '2020_dodge_challenger_srt_super_stock.glb': '#66d9ff',
-  'bmw_m3_g80_2025.glb': '#ffd166',
-  'chrysler_300_srt_hellcat.glb': '#ff6b6b',
-  'dodge_charger_srt_hellcat__high_quality.glb': '#7ae582',
-  'jeep_grand_cherokee_trackhawk.glb': '#c77dff',
+  '2012_dodge_charger_rt_sedan_4d (1).glb': '#00aaff', // electric blue
+  '2018_ford_mustang_gt.glb': '#00cc55',               // performance green
+  '2019_chevrolet_corvette_c8_stingray.glb': '#ff4400', // corvette orange-red
+  '2020_dodge_challenger_srt_super_stock.glb': '#9b30ff', // hellcat purple
+  '2021_ram_1500_trx (1).glb': '#e03000',              // TRX red-orange
+  'bmw_m3_g80_2025.glb': '#1166ff',                   // M-sport blue
+  'chrysler_300_srt_hellcat.glb': '#ffffff',           // pearl white
+  'dodge_charger_srt_hellcat__high_quality.glb': '#00dd77', // neon green
+  'dodge_durango_srt_392.glb': '#00cccc',              // teal/cyan
+  'jeep_grand_cherokee_trackhawk.glb': '#dd00aa',      // magenta
 }
 
 function loadImportedCarsFromStorage(): ImportedCarRecord[] {
@@ -78,11 +92,13 @@ function loadImportedCarsFromStorage(): ImportedCarRecord[] {
   }
 }
 
-function saveImportedCarsToStorage(importedCars: ImportedCarRecord[]): void {
+function saveImportedCarsToStorage(importedCars: ImportedCarRecord[]): SaveImportedCarsResult {
   try {
     localStorage.setItem(IMPORTED_CARS_STORAGE_KEY, JSON.stringify(importedCars))
+    return { ok: true }
   } catch {
     // If storage quota is exceeded, keep the session state in memory.
+    return { ok: false, error: 'Storage is full. Imported cars are available only for this session.' }
   }
 }
 
@@ -148,17 +164,30 @@ function getThumbnailFullCarPaint(fileName: string) {
     ...DEFAULT_TARGET_PAINT,
     colorHex: getThumbnailColor(fileName),
     colorRef: null,
+    metallic: 0.45,
+    roughness: 0.22,
+    clearcoat: 1.0,
   }
 }
 
 function getThumbnailAccentPaint() {
   return {
     ...DEFAULT_TARGET_PAINT,
-    colorHex: '#050505',
+    colorHex: '#0a0a0a',
     colorRef: null,
-    metallic: 0.2,
-    roughness: 0.65,
+    metallic: 0.35,
+    roughness: 0.22,
+    clearcoat: 0.9,
   }
+}
+
+function getDisplayCarName(name: string): string {
+  return name
+    .replace(/^\s*\d{4}\s+/, '')
+    .replace(/\s+\d{4}\s*$/, '')
+    .replace(/\s*\(\d+\)\s*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function getClassificationForLabel(
@@ -203,6 +232,7 @@ const SNAP_MESH_LABELS: Record<string, string[]> = {
 
 const THUMBNAIL_ROTATION_Y_BY_FILE: Record<string, number> = {
   '2018_ford_mustang_gt.glb': Math.PI,
+  '2019_chevrolet_corvette_c8_stingray.glb': Math.PI,
 }
 
 function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[]): number {
@@ -297,13 +327,7 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
     const clone = scene.clone(true)
     const mergedClassifications = getMergedClassifications(fileName, {})
     const hasFactoryClassifyPreset = Object.keys(mergedClassifications).length > 0
-    const thumbnailPaint = hasFactoryClassifyPreset
-      ? {
-          ...DEFAULT_TARGET_PAINT,
-          colorHex: '#f5f5f2',
-          colorRef: null,
-        }
-      : getThumbnailFullCarPaint(fileName)
+    const thumbnailPaint = getThumbnailFullCarPaint(fileName)
     const thumbnailAccentPaint = getThumbnailAccentPaint()
 
     const normalizeMaterial = (material: THREE.Material, label: string) => {
@@ -326,12 +350,34 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
           fallbackPaint,
         )
 
-        const shouldKeepOriginal = classify === 'window'
-        const shouldUseThumbnailPaint = classify === 'paintable'
-        const shouldUseAccentPaint = hasFactoryClassifyPreset && (classify === 'excluded' || classify === 'rims')
-        const shouldUseAutoResolvedPaint = classify === undefined && resolvedPaint !== fallbackPaint
+        const labelLower = label.toLowerCase()
+        // Check PBR transmission (physically-based glass — definitive indicator)
+        const physMat = next instanceof THREE.MeshPhysicalMaterial ? next as THREE.MeshPhysicalMaterial & { transmission?: number } : null
+        const hasTransmission = (physMat?.transmission ?? 0) > 0
+        const looksLikeGlass = (
+          classify === 'window' ||
+          /wind(shield|screen)|windshld|window|glass/.test(labelLower) ||
+          /head.?light|tail.?light|fog.?light|turn.?light|indicator|lens|lamp/.test(labelLower) ||
+          hasTransmission ||
+          // Unclassified and already transparent (opacity-based glass)
+          (classify === undefined && next.transparent && next.opacity < 0.85 && next.opacity > 0.05)
+        )
+        const shouldUseThumbnailPaint = !looksLikeGlass && classify === 'paintable'
+        const shouldUseAccentPaint = !looksLikeGlass && hasFactoryClassifyPreset && (classify === 'excluded' || classify === 'rims')
+        const shouldUseAutoResolvedPaint = !looksLikeGlass && classify === undefined && resolvedPaint !== fallbackPaint
 
-        if (!shouldKeepOriginal && (shouldUseThumbnailPaint || shouldUseAccentPaint || shouldUseAutoResolvedPaint)) {
+        if (looksLikeGlass) {
+          // Black tint on all windows and lights for a uniform look
+          next.color.set('#000000')
+          next.metalness = 0.0
+          next.roughness = 0.05
+          next.transparent = true
+          next.opacity = 0.55
+          next.emissive.set('#000000')
+          if (next instanceof THREE.MeshPhysicalMaterial) {
+            next.clearcoat = 0.8
+          }
+        } else if (shouldUseThumbnailPaint || shouldUseAccentPaint || shouldUseAutoResolvedPaint) {
           const paintToUse = shouldUseAccentPaint
             ? thumbnailAccentPaint
             : shouldUseThumbnailPaint
@@ -390,38 +436,42 @@ function CarThumbnail({ modelUrl, fileName, groundOffsetY }: { modelUrl: string;
       gl={{ antialias: true, alpha: true }}
       style={{ width: '100%', height: '100%', borderRadius: 8 }}
     >
-      {/* Brightened studio rig so black cars stay readable */}
-      <color attach="background" args={['#141414']} />
-      <hemisphereLight intensity={1.35} color="#f5f8ff" groundColor="#5e7098" />
-      <ambientLight intensity={0.9} color="#ffffff" />
+      {/* Static showroom rig — fixed lights so gloss reflections are consistent */}
+      <color attach="background" args={['#111111']} />
+      {/* Generous ambient so every car color reads clearly */}
+      <ambientLight intensity={3.0} color="#dde8ff" />
+      {/* Key light — left-front high, sharp specular highlight */}
       <spotLight
         castShadow
-        intensity={3.6}
-        position={[-6, 7, 6]}
-        angle={0.5}
-        penumbra={0.45}
-        distance={30}
+        intensity={14}
+        position={[-5, 8, 5]}
+        angle={0.36}
+        penumbra={0.2}
+        distance={40}
         color="#ffffff"
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
       />
+      {/* Fill light — right side, warm-white */}
       <spotLight
-        intensity={2.8}
-        position={[6, 4, 2]}
-        angle={0.6}
+        intensity={7}
+        position={[6, 5, 3]}
+        angle={0.55}
         penumbra={0.5}
-        distance={24}
+        distance={32}
+        color="#fff6e8"
+      />
+      {/* Rim light — rear high for clearcoat edge glow */}
+      <spotLight
+        intensity={9}
+        position={[0, 7, -9]}
+        angle={0.4}
+        penumbra={0.35}
+        distance={36}
         color="#eef4ff"
       />
-      <spotLight
-        intensity={2.4}
-        position={[0, 6, -8]}
-        angle={0.55}
-        penumbra={0.55}
-        distance={26}
-        color="#ffffff"
-      />
-      <pointLight intensity={1.7} position={[0, -0.9, 2]} color="#9bb6e9" distance={11} />
+      {/* Ground bounce */}
+      <pointLight intensity={2.2} position={[0, -0.5, 1.5]} color="#7ab0dd" distance={12} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow>
         <circleGeometry args={[4.8, 64]} />
@@ -455,6 +505,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
   const [selectorView, setSelectorView] = useState<'preloaded' | 'imported'>('preloaded')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<SelectorNotice | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [renamingFileName, setRenamingFileName] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -467,11 +518,12 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
     async function loadCars() {
       setLoading(true)
       setError(null)
+      setNotice(null)
 
       try {
         const response = await fetch(MANIFEST_URL, { cache: 'no-store' })
         if (!response.ok) {
-          throw new Error('Car manifest not found')
+          throw new Error(`Car manifest request failed (${response.status})`)
         }
 
         const json = (await response.json()) as CarManifest
@@ -504,7 +556,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
       } catch {
         if (mounted) {
           setPreloadedItems([])
-          setError('No cars found. Add .glb files to public/models.')
+          setError('Could not load car library. Check public/models/manifest.json and reload.')
         }
       } finally {
         if (mounted) {
@@ -530,13 +582,20 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
       return
     }
 
-    const glbFiles = Array.from(files).filter((file) => file.name.toLowerCase().endsWith('.glb'))
+    setError(null)
+    setNotice(null)
+
+    const selectedFiles = Array.from(files)
+    const glbFiles = selectedFiles.filter((file) => file.name.toLowerCase().endsWith('.glb'))
+    const invalidCount = selectedFiles.length - glbFiles.length
     if (glbFiles.length === 0) {
+      setNotice({ tone: 'warn', text: 'No valid .glb files selected.' })
       event.target.value = ''
       return
     }
 
     const imported: CarManifestItem[] = []
+    let failedReadCount = 0
     for (const file of glbFiles) {
       try {
         const dataUrl = await readFileAsDataUrl(file)
@@ -547,38 +606,70 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
         })
       } catch {
         // Skip unreadable file and continue processing others.
+        failedReadCount += 1
       }
     }
 
     if (imported.length > 0) {
+      const seenInBatch = new Set<string>()
       const deduped = imported.filter((item) => {
-        return !importedItems.some((existing) => existing.fileName === item.fileName)
+        const key = item.fileName.toLowerCase()
+        if (seenInBatch.has(key)) {
+          return false
+        }
+        seenInBatch.add(key)
+        return !importedItems.some((existing) => existing.fileName.toLowerCase() === key)
       })
 
       const nextImported = [...importedItems, ...deduped]
       setImportedItems(nextImported)
-      saveImportedCarsToStorage(nextImported.map((item) => ({
+      const saveResult = saveImportedCarsToStorage(nextImported.map((item) => ({
         name: item.name,
         fileName: item.fileName,
         modelUrl: item.modelUrl,
       })))
 
+      const duplicateCount = imported.length - deduped.length
+      const parts: string[] = []
+      if (deduped.length > 0) {
+        parts.push(`Imported ${deduped.length}`)
+      }
+      if (duplicateCount > 0) {
+        parts.push(`${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''}`)
+      }
+      if (failedReadCount > 0) {
+        parts.push(`${failedReadCount} failed`)
+      }
+      if (invalidCount > 0) {
+        parts.push(`${invalidCount} invalid type${invalidCount > 1 ? 's' : ''}`)
+      }
+      if (parts.length > 0) {
+        setNotice({
+          tone: deduped.length > 0 ? 'success' : 'warn',
+          text: parts.join(' • '),
+        })
+      }
+      if (!saveResult.ok) {
+        setNotice({ tone: 'warn', text: saveResult.error ?? 'Storage save failed for imported cars.' })
+      }
+
       setSelectorView('imported')
-      setError(null)
       setLoading(false)
 
       // After successful import, jump straight into the 3D editor.
       const firstImported = deduped[0] ?? imported[0]
       if (firstImported) {
-        selectCar({
-          name: firstImported.name,
-          modelUrl: firstImported.modelUrl,
-          groundOffsetY: firstImported.groundOffsetY,
-          realWorldLengthM: firstImported.realWorldLengthM,
-          realWorldWidthM: firstImported.realWorldWidthM,
-          realWorldHeightM: firstImported.realWorldHeightM,
-        })
+        handleSelectCar(firstImported)
       }
+    } else {
+      const parts: string[] = []
+      if (failedReadCount > 0) {
+        parts.push(`${failedReadCount} failed to read`)
+      }
+      if (invalidCount > 0) {
+        parts.push(`${invalidCount} invalid type${invalidCount > 1 ? 's' : ''}`)
+      }
+      setNotice({ tone: 'warn', text: parts.length ? parts.join(' • ') : 'No cars were imported.' })
     }
 
     // Allow selecting the same file again in a later import action.
@@ -600,11 +691,14 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
   const handleDeleteImported = (fileName: string) => {
     const next = importedItems.filter((item) => item.fileName !== fileName)
     setImportedItems(next)
-    saveImportedCarsToStorage(next.map((item) => ({
+    const saveResult = saveImportedCarsToStorage(next.map((item) => ({
       name: item.name,
       fileName: item.fileName,
       modelUrl: item.modelUrl,
     })))
+    if (!saveResult.ok) {
+      setNotice({ tone: 'warn', text: saveResult.error ?? 'Storage save failed for imported cars.' })
+    }
   }
 
   const startRename = (car: CarManifestItem) => {
@@ -620,11 +714,14 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
       item.fileName === renamingFileName ? { ...item, name: trimmed } : item,
     )
     setImportedItems(next)
-    saveImportedCarsToStorage(next.map((item) => ({
+    const saveResult = saveImportedCarsToStorage(next.map((item) => ({
       name: item.name,
       fileName: item.fileName,
       modelUrl: item.modelUrl,
     })))
+    if (!saveResult.ok) {
+      setNotice({ tone: 'warn', text: saveResult.error ?? 'Storage save failed for imported cars.' })
+    }
     setRenamingFileName(null)
   }
 
@@ -721,7 +818,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
 
       {lastUsedCar && (
         <div className="car-resume-banner">
-          <span className="car-resume-label">Last edited: <strong>{lastUsedCar.name}</strong></span>
+          <span className="car-resume-label">Last edited: <strong>{getDisplayCarName(lastUsedCar.name)}</strong></span>
           <button
             type="button"
             className="chip active"
@@ -735,8 +832,9 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
       <div className="car-selector-body">
         {loading ? <p className="selector-hint">Loading cars…</p> : null}
         {!loading && error ? <p className="selector-hint">{error}</p> : null}
+        {!loading && !error && notice ? <p className={`selector-hint selector-hint-${notice.tone}`}>{notice.text}</p> : null}
 
-        {!loading && !hasItems ? (
+        {!loading && !error && !hasItems ? (
           <p className="selector-hint">
             {searchQuery.trim()
               ? `No cars match "${searchQuery}".`
@@ -771,7 +869,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
                   title={selectorView === 'imported' ? 'Double-click to rename' : undefined}
                   onDoubleClick={() => selectorView === 'imported' && startRename(car)}
                 >
-                  {car.name}
+                  {getDisplayCarName(car.name)}
                 </h2>
               )}
               {selectorView === 'imported' && renamingFileName !== car.fileName && (

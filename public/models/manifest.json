@@ -1,20 +1,10 @@
 {
-  "generatedAt": "2026-05-03T07:59:33.144Z",
+  "generatedAt": "2026-05-03T09:24:17.341Z",
   "items": [
-    {
-      "name": "2011 lexus lfa",
-      "fileName": "2011_lexus_lfa.glb",
-      "modelUrl": "/models/2011_lexus_lfa.glb"
-    },
     {
       "name": "2012 dodge charger rt sedan 4d (1)",
       "fileName": "2012_dodge_charger_rt_sedan_4d (1).glb",
       "modelUrl": "/models/2012_dodge_charger_rt_sedan_4d%20(1).glb"
-    },
-    {
-      "name": "2017 chevrolet camaro zl1",
-      "fileName": "2017_chevrolet_camaro_zl1.glb",
-      "modelUrl": "/models/2017_chevrolet_camaro_zl1.glb"
     },
     {
       "name": "2018 ford mustang gt",

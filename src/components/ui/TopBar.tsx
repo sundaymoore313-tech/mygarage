@@ -331,9 +331,8 @@ export function TopBar({
         <button
           type="button"
           className="top-plain-btn top-bar-home"
-          onClick={() => { if (!isGuest) { clearSelectedCar(); onGoHome?.() } }}
-          disabled={isGuest}
-          title={isGuest ? 'Sign in to switch cars' : 'Back to home'}
+          onClick={() => { clearSelectedCar(); onGoHome?.() }}
+          title="Back to home"
           aria-label="Home"
         >
           <Home size={15} />

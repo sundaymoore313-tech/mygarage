@@ -87,8 +87,8 @@ export function LegalDocsModal({ isOpen, initialDoc = 'terms', onClose, onSelect
   if (!isOpen) return null
 
   return (
-    <div className="legal-modal-backdrop" role="dialog" aria-modal="true" aria-label="Legal documents">
-      <div className="legal-modal">
+    <div className="legal-modal-backdrop" role="dialog" aria-modal="true" aria-label="Legal documents" onClick={onClose}>
+      <div className="legal-modal" onClick={(e) => e.stopPropagation()}>
         <div className="legal-modal-header">
           <div className="legal-modal-tabs">
             {DOC_ORDER.map((id) => (
