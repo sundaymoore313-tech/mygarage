@@ -11,6 +11,8 @@ export type WrapSwatch = {
 // Hex values are screen approximations; always confirm against physical swatches.
 export const WRAP_COLOR_SWATCHES: WrapSwatch[] = [
 
+  { id: '3m-solid-black', brand: '3M', code: 'SOLID-BLK', name: 'Solid Black', finish: 'gloss', colorHex: '#000000' },
+
   // ── 3M 2080 Series ──────────────────────────────────────────────────────────
   { id: '3m-2080-g12',   brand: '3M', code: '2080-G12',   name: 'Gloss Black',              finish: 'gloss',    colorHex: '#0f1011' },
   { id: '3m-2080-g10',   brand: '3M', code: '2080-G10',   name: 'Gloss White',              finish: 'gloss',    colorHex: '#f2f3f1' },

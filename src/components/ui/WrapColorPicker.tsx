@@ -12,7 +12,7 @@ type WrapColorPickerProps = {
 
 export function WrapColorPicker({ value, onChange, disabled, label, className }: WrapColorPickerProps) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState({ bottom: 0, left: 0 })
+  const [pos, setPos] = useState({ top: 0, left: 0 })
   const btnRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -20,9 +20,20 @@ export function WrapColorPicker({ value, onChange, disabled, label, className }:
     if (disabled) return
     const rect = btnRef.current?.getBoundingClientRect()
     if (rect) {
+      const gap = 8
+      const pad = 8
+      const popW = 260
+      const popH = 260
+      const preferTop = rect.bottom + gap
+      const fitsBelow = preferTop + popH <= window.innerHeight - pad
+      const top = fitsBelow
+        ? preferTop
+        : Math.max(pad, rect.top - popH - gap)
+      const centeredLeft = rect.left + rect.width / 2 - popW / 2
+      const left = Math.max(pad, Math.min(window.innerWidth - popW - pad, centeredLeft))
       setPos({
-        bottom: window.innerHeight - rect.top + 6,
-        left: rect.left + rect.width / 2,
+        top,
+        left,
       })
     }
     setOpen(true)
@@ -60,9 +71,8 @@ export function WrapColorPicker({ value, onChange, disabled, label, className }:
           ref={popoverRef}
           style={{
             position: 'fixed',
-            bottom: pos.bottom,
+            top: pos.top,
             left: pos.left,
-            transform: 'translateX(-50%)',
             zIndex: 9999,
           }}
         >

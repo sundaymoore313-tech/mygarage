@@ -53,6 +53,7 @@ export function LayerPanel() {
   const reorderLayer = useEditorStore((state) => state.reorderLayer)
   const duplicateLayer = useEditorStore((state) => state.duplicateLayer)
   const groupLayers = useEditorStore((state) => state.groupLayers)
+  const ungroupLayer = useEditorStore((state) => state.ungroupLayer)
   const toggleGroupCollapsed = useEditorStore((state) => state.toggleGroupCollapsed)
   const updateLayer = useEditorStore((state) => state.updateLayer)
   const carSplit = useEditorStore((state) => state.project.carSplit)
@@ -163,10 +164,18 @@ export function LayerPanel() {
     setContextMenu({ x: e.clientX, y: e.clientY, layerId: layer.id })
   }
 
-  function handleContextMenuAction(action: 'delete' | 'duplicate' | 'group') {
+  function handleContextMenuAction(action: 'delete' | 'duplicate' | 'group' | 'ungroup') {
     if (action === 'delete') handleDelete()
     if (action === 'duplicate') handleDuplicate()
     if (action === 'group') handleGroup()
+    if (action === 'ungroup') {
+      for (const id of actionTargetIds) {
+        if (layers.find((layer) => layer.id === id)?.type === 'group') {
+          ungroupLayer(id)
+        }
+      }
+      setCheckedIds(new Set())
+    }
     setContextMenu(null)
   }
 
@@ -175,15 +184,35 @@ export function LayerPanel() {
   const activePrintEntries = (Object.entries(targetPrints) as [PaintTargetId, PrintConfig | null | undefined][])
     .filter(([, config]) => Boolean(config)) as [PaintTargetId, PrintConfig][]
 
+  function getGroupChildren(groupId: string) {
+    return layers.filter((layer) => layer.groupId === groupId)
+  }
+
   function renderRow(layer: Layer, displayIndex: number, isChild: boolean) {
     const isSelected = selectedLayerId === layer.id
     const isDragOver = dragOverDisplayIndex === displayIndex
     const isChecked = checkedIds.has(layer.id)
     const isGroup = layer.type === 'group'
+    const groupChildren = isGroup ? getGroupChildren(layer.id) : []
+    const allChildrenVisible = isGroup ? groupChildren.every((child) => child.visible) : layer.visible
+    const allChildrenLocked = isGroup ? groupChildren.every((child) => child.locked) : layer.locked
+    const anyChildrenVisible = isGroup ? groupChildren.some((child) => child.visible) : layer.visible
+    const anyChildrenLocked = isGroup ? groupChildren.some((child) => child.locked) : layer.locked
+    const metaLabel = isGroup
+      ? `${groupChildren.length} item${groupChildren.length === 1 ? '' : 's'}`
+      : layer.type
 
     return (
       <div
-        className={['layer-row', isSelected && 'selected', isDragOver && 'drag-over', isChild && 'layer-row-child', isGroup && 'layer-row-group'].filter(Boolean).join(' ')}
+        className={[
+          'layer-row',
+          isSelected && 'selected',
+          isDragOver && 'drag-over',
+          isChild && 'layer-row-child',
+          isGroup && 'layer-row-group',
+          (!layer.visible || (isGroup && !anyChildrenVisible)) && 'hidden',
+          (layer.locked || (isGroup && anyChildrenLocked)) && 'locked',
+        ].filter(Boolean).join(' ')}
         draggable
         onDragStart={() => handleDragStart(displayIndex)}
         onDragOver={(e) => handleDragOver(e, displayIndex)}
@@ -235,15 +264,38 @@ export function LayerPanel() {
               title="Double-click to rename"
             >{layer.name}</span>
           )}
-          <span className="layer-meta">{layer.type}</span>
+          <span className="layer-meta">{metaLabel}</span>
         </div>
 
-        <button type="button" className="icon-btn" title={layer.visible ? 'Hide' : 'Show'} onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(layer.id) }}>
-          {layer.visible ? '👁' : '🚫'}
+        <button
+          type="button"
+          className="icon-btn"
+          title={isGroup ? (allChildrenVisible ? 'Hide group' : 'Show group') : (layer.visible ? 'Hide' : 'Show')}
+          onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(layer.id) }}
+        >
+          {isGroup ? (allChildrenVisible ? '👁' : '🚫') : (layer.visible ? '👁' : '🚫')}
         </button>
-        <button type="button" className="icon-btn" title={layer.locked ? 'Unlock' : 'Lock'} onClick={(e) => { e.stopPropagation(); toggleLayerLock(layer.id) }}>
-          {layer.locked ? '🔒' : '🔓'}
+        <button
+          type="button"
+          className="icon-btn"
+          title={isGroup ? (allChildrenLocked ? 'Unlock group' : 'Lock group') : (layer.locked ? 'Unlock' : 'Lock')}
+          onClick={(e) => { e.stopPropagation(); toggleLayerLock(layer.id) }}
+        >
+          {isGroup ? (allChildrenLocked ? '🔒' : '🔓') : (layer.locked ? '🔒' : '🔓')}
         </button>
+        {isGroup && (
+          <button
+            type="button"
+            className="icon-btn"
+            title="Ungroup"
+            onClick={(e) => {
+              e.stopPropagation()
+              ungroupLayer(layer.id)
+            }}
+          >
+            ⊠
+          </button>
+        )}
         <button type="button" className="icon-btn danger" title="Delete" onClick={(e) => { e.stopPropagation(); removeLayer(layer.id) }}>
           ✕
         </button>
@@ -260,6 +312,9 @@ export function LayerPanel() {
         </button>
         <button type="button" className="chip" disabled={actionTargetIds.filter((id) => layers.find((l) => l.id === id)?.type !== 'group').length === 0} title="Group into folder" onClick={handleGroup}>
           Group
+        </button>
+        <button type="button" className="chip" disabled={actionTargetIds.filter((id) => layers.find((l) => l.id === id)?.type === 'group').length === 0} title="Ungroup selected folders" onClick={() => handleContextMenuAction('ungroup')}>
+          Ungroup
         </button>
         <button type="button" className="chip danger" disabled={actionTargetIds.length === 0} title="Delete selected" onClick={handleDelete}>
           Delete
@@ -473,6 +528,16 @@ export function LayerPanel() {
                 title="Group selected layers into folder"
               >
                 Group
+              </button>
+            )}
+            {actionTargetIds.some((id) => layers.find((layer) => layer.id === id)?.type === 'group') && (
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => handleContextMenuAction('ungroup')}
+                title="Ungroup selected folder"
+              >
+                Ungroup
               </button>
             )}
             <button

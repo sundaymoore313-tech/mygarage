@@ -101,6 +101,7 @@ export type TextLayer = LayerBase & {
   finish: PaintFinish
   targetPartId: string | null
   textCurve: number
+  mirroredTextReadable: boolean
 }
 
 export type GroupLayer = {
@@ -344,6 +345,7 @@ export type EditorActions = {
   addStripeLayerPreset: (overrides: Partial<import('./editor').StripeLayer>[]) => void
   duplicateLayer: (layerId: string) => void
   groupLayers: (layerIds: string[], groupName?: string) => void
+  ungroupLayer: (groupId: string) => void
   toggleGroupCollapsed: (groupId: string) => void
   updateLayerTransient: (layerId: string, patch: Partial<Layer>) => void
   updateLayer: (layerId: string, patch: Partial<Layer>) => void

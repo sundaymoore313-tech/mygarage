@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Video, Square } from 'lucide-react'
+import type { ExportQuality } from '../../types/exportQuality'
+import { EXPORT_QUALITY_LABELS, EXPORT_QUALITY_ORDER } from '../../types/exportQuality'
 
 type Props = {
-  getStream: () => MediaStream
+  getStream: (quality?: ExportQuality) => MediaStream
   onClose: () => void
   /** called with true when recording starts so the scene can enable auto-rotate */
   onRecordingChange?: (recording: boolean) => void
+  initialQuality?: ExportQuality
+  onQualityChange?: (quality: ExportQuality) => void
 }
 
 const DURATIONS = [5, 10, 15, 30]
@@ -15,12 +19,14 @@ const FORMATS = [
 ] as const
 type Format = typeof FORMATS[number]['id']
 
-export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Props) {
+export function VideoRecordModal({ getStream, onClose, onRecordingChange, initialQuality = 'high', onQualityChange }: Props) {
   const [duration, setDuration] = useState(10)
   const [format, setFormat] = useState<Format>('landscape')
+  const [quality, setQuality] = useState<ExportQuality>(initialQuality)
   const [recording, setRecording] = useState(false)
   const [progress, setProgress] = useState(0) // 0–100
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -29,6 +35,28 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
   const rafRef = useRef<number | null>(null)
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
   const offscreenRef = useRef<HTMLCanvasElement | null>(null)
+
+  const VIDEO_BITRATE_BY_QUALITY: Record<ExportQuality, number> = {
+    standard: 6_000_000,
+    high: 10_000_000,
+    ultra: 16_000_000,
+  }
+
+  const VIDEO_FPS_BY_QUALITY: Record<ExportQuality, number> = {
+    standard: 30,
+    high: 30,
+    ultra: 45,
+  }
+
+  const PORTRAIT_SIZE_BY_QUALITY: Record<ExportQuality, { width: number; height: number }> = {
+    standard: { width: 720, height: 1280 },
+    high: { width: 900, height: 1600 },
+    ultra: { width: 1080, height: 1920 },
+  }
+
+  useEffect(() => {
+    setQuality(initialQuality)
+  }, [initialQuality])
 
   useEffect(() => {
     return () => {
@@ -41,16 +69,17 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
 
   function pickMimeType(): { mimeType: string; ext: string } {
     const candidates = [
-      { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
-      { mimeType: 'video/mp4', ext: 'mp4' },
       { mimeType: 'video/webm;codecs=vp9', ext: 'webm' },
       { mimeType: 'video/webm;codecs=vp8', ext: 'webm' },
       { mimeType: 'video/webm', ext: 'webm' },
+      { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
+      { mimeType: 'video/mp4', ext: 'mp4' },
     ]
     return candidates.find((c) => MediaRecorder.isTypeSupported(c.mimeType)) ?? { mimeType: '', ext: 'webm' }
   }
 
   function startRecording() {
+    setError(null)
     if (blobUrl) {
       URL.revokeObjectURL(blobUrl)
       setBlobUrl(null)
@@ -62,14 +91,17 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
 
     // Wait two animation frames so the 4K dpr resize takes effect before capturing
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      const rawStream = getStream()
+      const fps = VIDEO_FPS_BY_QUALITY[quality] ?? VIDEO_FPS_BY_QUALITY.high
+      const bitrate = VIDEO_BITRATE_BY_QUALITY[quality] ?? VIDEO_BITRATE_BY_QUALITY.high
+      const rawStream = getStream(quality)
 
       // For portrait 9:16 — draw center-cropped frames from source onto an offscreen canvas
       let captureStream = rawStream
       if (format === 'portrait') {
+        const portraitSize = PORTRAIT_SIZE_BY_QUALITY[quality] ?? PORTRAIT_SIZE_BY_QUALITY.high
         const oc = document.createElement('canvas')
-        oc.width = 1080
-        oc.height = 1920
+        oc.width = portraitSize.width
+        oc.height = portraitSize.height
         offscreenRef.current = oc
         const ctx = oc.getContext('2d')!
         const vid = document.createElement('video')
@@ -77,7 +109,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
         vid.muted = true
         hiddenVideoRef.current = vid
         void vid.play()
-        const PORTRAIT_FPS = 30
+        const PORTRAIT_FPS = fps
         const PORTRAIT_INTERVAL = 1000 / PORTRAIT_FPS
         let lastDrawTime = 0
         const draw = (now: number) => {
@@ -93,23 +125,39 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
               if (sh > vh) { sh = vh; sw = Math.round(vh * targetAspect) }
               const sx = (vw - sw) / 2
               const sy = (vh - sh) / 2
-              ctx.drawImage(vid, sx, sy, sw, sh, 0, 0, 1080, 1920)
+              ctx.drawImage(vid, sx, sy, sw, sh, 0, 0, oc.width, oc.height)
             }
           }
           rafRef.current = requestAnimationFrame(draw)
         }
         rafRef.current = requestAnimationFrame(draw)
-        captureStream = oc.captureStream(30)
+        captureStream = oc.captureStream(fps)
       }
 
       const { mimeType, ext } = pickMimeType()
       const recorderOptions: MediaRecorderOptions = {
-        videoBitsPerSecond: 8_000_000,
+        videoBitsPerSecond: bitrate,
         ...(mimeType ? { mimeType } : {}),
       }
-      const recorder = new MediaRecorder(captureStream, recorderOptions)
+      let recorder: MediaRecorder
+      let effectiveMimeType = mimeType
+      let effectiveExt = ext
+      try {
+        recorder = new MediaRecorder(captureStream, recorderOptions)
+      } catch {
+        try {
+          recorder = new MediaRecorder(captureStream)
+          effectiveMimeType = 'video/webm'
+          effectiveExt = 'webm'
+        } catch {
+          setError('Recording is not supported by this browser/device configuration.')
+          setRecording(false)
+          onRecordingChange?.(false)
+          return
+        }
+      }
       recorderRef.current = recorder
-      extRef.current = ext
+      extRef.current = effectiveExt
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
@@ -120,14 +168,27 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
         if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
         if (hiddenVideoRef.current) { hiddenVideoRef.current.srcObject = null; hiddenVideoRef.current = null }
         offscreenRef.current = null
-        const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' })
+
+        if (chunksRef.current.length === 0) {
+          setError('Video export failed (no frames encoded). Try Standard quality.')
+          setRecording(false)
+          setProgress(0)
+          onRecordingChange?.(false)
+          return
+        }
+
+        const blob = new Blob(chunksRef.current, { type: effectiveMimeType || 'video/webm' })
         setBlobUrl(URL.createObjectURL(blob))
         setRecording(false)
         setProgress(100)
         onRecordingChange?.(false)
       }
 
-      recorder.start(100)
+      recorder.onerror = () => {
+        setError('Video encoder failed. Try Standard quality for maximum compatibility.')
+      }
+
+      recorder.start(250)
       startTimeRef.current = performance.now()
 
       timerRef.current = setInterval(() => {
@@ -175,6 +236,25 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
         </p>
 
         <div className="video-duration-row">
+          <span className="video-duration-label">Quality</span>
+          {EXPORT_QUALITY_ORDER.map((q) => (
+            <button
+              key={q}
+              type="button"
+              disabled={recording}
+              className={`social-format-chip${q === quality ? ' active' : ''}`}
+              style={{ flex: '1', padding: '8px 0', textAlign: 'center' }}
+              onClick={() => {
+                setQuality(q)
+                onQualityChange?.(q)
+              }}
+            >
+              <span className="social-format-label">{EXPORT_QUALITY_LABELS[q]}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="video-duration-row">
           <span className="video-duration-label">Format</span>
           {FORMATS.map((f) => (
             <button
@@ -210,6 +290,12 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange }: Prop
         {recording && (
           <div className="video-progress-wrap">
             <div className="video-progress-bar" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+
+        {error && (
+          <div className="selector-hint selector-hint-warn" role="alert" style={{ marginTop: 10 }}>
+            {error}
           </div>
         )}
 

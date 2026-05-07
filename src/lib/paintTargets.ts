@@ -202,17 +202,56 @@ export function getPaintTargetsForLabel(label: string): PaintTargetId[] {
   return targets
 }
 
+/**
+ * Resolves which PaintConfig to apply to a mesh.
+ *
+ * @param label          - The mesh's name/label string.
+ * @param targetPaints   - The per-target paint overrides from the editor store.
+ * @param fallbackPaint  - The mesh's original/base material color.
+ * @param explicitClass  - Optional: the mesh's explicit MeshClass from the
+ *                         classify preset.  When provided it always takes
+ *                         precedence over name-based auto-detection:
+ *                           'paintable' → receives body/target paint (skips
+ *                                         ALL name-based exclusion heuristics)
+ *                           'rims'      → receives rims paint only
+ *                           'excluded'  → always returns fallback (base color)
+ *                           'window'    → always returns fallback (base color)
+ *                           undefined   → auto-detect via label heuristics
+ */
 export function getResolvedPaintForLabel(
   label: string,
   targetPaints: Partial<Record<PaintTargetId, PaintConfig>>,
   fallbackPaint: PaintConfig,
+  explicitClass?: MeshClass | null,
 ): PaintConfig {
+  // ── Explicit classify wins — always, with no name-heuristic fallthrough ─────
+
+  if (explicitClass === 'excluded' || explicitClass === 'window') {
+    return fallbackPaint
+  }
+
+  if (explicitClass === 'rims') {
+    return targetPaints.rims ?? fallbackPaint
+  }
+
+  if (explicitClass === 'paintable') {
+    // Respect specific-panel overrides (hood / trunk) but bypass the
+    // interior / headlight / non-body exclusion heuristics entirely.
+    const targets = getPaintTargetsForLabel(label)
+    for (const target of ['hood', 'trunk'] as const) {
+      if (targets.includes(target) && targetPaints[target]) return targetPaints[target]!
+    }
+    return targetPaints.fullCar ?? fallbackPaint
+  }
+
+  // ── Auto-detect (no explicit classification) ──────────────────────────────
+
   const targets = getPaintTargetsForLabel(label)
 
   // Specific targets always win over fullCar
   for (const target of ['hood', 'trunk', 'rims'] as const) {
     if (targets.includes(target) && targetPaints[target]) {
-      return targetPaints[target]
+      return targetPaints[target]!
     }
   }
 
@@ -251,6 +290,10 @@ const CLASSIFY_LOCK_PREFIX = 'mygarage-classify-lock-'
 const CLASSIFY_LOCK_BACKUP_PREFIX = 'mygarage-classify-lock-backup-'
 const PERSONAL_CLASSIFY_PREFIX = 'mygarage-personal-classify-'
 
+// Cars listed here bypass all baked/generated classify presets so editing starts
+// from raw GLB defaults (name heuristics + live user classify only).
+const GLB_DEFAULT_CLASSIFY_FILES = new Set<string>([])
+
 // Cars listed here use built-in presets as editable factory defaults.
 // Users can override these meshes, and "reset classify" returns to this map.
 // (Currently empty — all cars are either system-locked or freely editable.)
@@ -259,17 +302,7 @@ const EDITABLE_FACTORY_PRESET_FILES = new Set<string>([])
 // Cars listed here are true admin/system locked presets.
 // Their mesh classes cannot be overridden by user personal classify.
 const SYSTEM_LOCKED_PRESET_FILES = new Set<string>([
-  // Two Dodge Chargers locked from original setup
-  'dodge_charger_srt_hellcat__high_quality.glb',
-  '2012_dodge_charger_rt_sedan_4d%20(1).glb',
-  // Remaining cars locked after classify pass — corvette is NOT listed here
   '2018_ford_mustang_gt.glb',
-  '2020_dodge_challenger_srt_super_stock.glb',
-  '2021_ram_1500_trx%20(1).glb',
-  'bmw_m3_g80_2025.glb',
-  'chrysler_300_srt_hellcat.glb',
-  'dodge_durango_srt_392.glb',
-  'jeep_grand_cherokee_trackhawk.glb',
 ])
 
 // ── Built-in factory presets (survive hard reset / localStorage clear) ────────
@@ -505,6 +538,12 @@ function getFileNameVariants(fileName: string): string[] {
 
 function getBuiltInPresetForFile(fileName: string): Record<string, MeshClass> | undefined {
   for (const variant of getFileNameVariants(fileName)) {
+    if (GLB_DEFAULT_CLASSIFY_FILES.has(variant)) {
+      return undefined
+    }
+  }
+
+  for (const variant of getFileNameVariants(fileName)) {
     const generated = GENERATED_CLASSIFY_PRESETS[variant]
     if (generated !== undefined) {
       return generated
@@ -560,6 +599,13 @@ export function getLockedClassifications(fileName: string): Record<string, MeshC
   // Cars that are not system-locked should remain editable by default even if
   // they have built-in classify presets as baselines.
   const isSystemLocked = isSystemLockedPresetFile(fileName)
+
+  // Non-system cars are always user-editable. Ignore/clear any legacy lock keys
+  // so reset behavior uses factory baseline + personal overrides only.
+  if (!isSystemLocked) {
+    clearLockedClassifications(fileName)
+    return null
+  }
 
   const primary = readStoredClassifications(CLASSIFY_LOCK_PREFIX, fileName)
   if (primary !== null) {

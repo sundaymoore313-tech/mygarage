@@ -30,9 +30,11 @@ const FINISH_OPTIONS: PaintFinish[] = ['gloss', 'matte', 'satin', 'chrome']
 
 type PrintLibraryPanelProps = {
   onClose?: () => void
+  isGuest?: boolean
+  onGuestSignIn?: () => void
 }
 
-export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
+export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: PrintLibraryPanelProps) {
   void onClose
   const selectedPaintTarget = useEditorStore((state) => state.selectedPaintTarget)
   const targetPrints = useEditorStore((state) => state.targetPrints)
@@ -42,7 +44,20 @@ export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
   const [items, setItems] = useState<PrintManifestItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const guestPromptTimerRef = useRef<number | null>(null)
+
+  const showGuestPrompt = (feature: string) => {
+    setGuestPrompt(`Create an account to use ${feature}.`)
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+  }
 
   // Active print for the currently selected target
   const activePrint: PrintConfig | null =
@@ -92,6 +107,11 @@ export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      showGuestPrompt('Print Import')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
@@ -105,6 +125,14 @@ export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  useEffect(() => {
+    return () => {
+      if (guestPromptTimerRef.current !== null) {
+        window.clearTimeout(guestPromptTimerRef.current)
+      }
+    }
+  }, [])
+
   return (
     <section className="panel print-library-panel">
       <div className="panel-header">
@@ -112,8 +140,14 @@ export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
         <button
           type="button"
           className="import-btn"
-          onClick={() => fileInputRef.current?.click()}
-          title="Import a custom print/pattern image"
+          onClick={() => {
+            if (isGuest) {
+              showGuestPrompt('Print Import')
+              return
+            }
+            fileInputRef.current?.click()
+          }}
+          title={isGuest ? 'Sign in to import print images' : 'Import a custom print/pattern image'}
           aria-label="Import print image"
         >
           <Upload size={18} />
@@ -126,6 +160,15 @@ export function PrintLibraryPanel({ onClose }: PrintLibraryPanelProps) {
           style={{ display: 'none' }}
         />
       </div>
+
+      {isGuest && guestPrompt && (
+        <div className="top-guest-prompt" role="status" aria-live="polite">
+          <span>{guestPrompt}</span>
+          <button type="button" className="top-guest-prompt-link" onClick={onGuestSignIn}>
+            Sign In
+          </button>
+        </div>
+      )}
 
       <PaintTargetToolbar />
 

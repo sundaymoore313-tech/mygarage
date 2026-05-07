@@ -34,9 +34,11 @@ const MANIFEST_URL = '/decals/manifest.json'
 
 type DecalLibraryPanelProps = {
   onDecalPicked?: () => void
+  isGuest?: boolean
+  onGuestSignIn?: () => void
 }
 
-export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
+export function DecalLibraryPanel({ onDecalPicked, isGuest = false, onGuestSignIn }: DecalLibraryPanelProps) {
   const addDecalLayer = useEditorStore((state) => state.addDecalLayer)
   const renameCustomDecalPreset = useEditorStore((state) => state.renameCustomDecalPreset)
   const deleteCustomDecalPreset = useEditorStore((state) => state.deleteCustomDecalPreset)
@@ -50,9 +52,29 @@ export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const guestPromptTimerRef = useRef<number | null>(null)
+
+  const showGuestPrompt = (feature: string) => {
+    setGuestPrompt(`Create an account to use ${feature}.`)
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+  }
 
   const handleImportDecal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      showGuestPrompt('Decal Import')
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -109,6 +131,14 @@ export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
     }
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (guestPromptTimerRef.current !== null) {
+        window.clearTimeout(guestPromptTimerRef.current)
+      }
+    }
+  }, [])
+
   return (
     <section className="panel decal-library-panel">
       <div className="panel-header">
@@ -117,8 +147,14 @@ export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
           <button
             type="button"
             className="import-btn"
-            onClick={() => fileInputRef.current?.click()}
-            title="Import a custom decal (SVG, PNG, JPG, WEBP)"
+            onClick={() => {
+              if (isGuest) {
+                showGuestPrompt('Decal Import')
+                return
+              }
+              fileInputRef.current?.click()
+            }}
+            title={isGuest ? 'Sign in to import decals' : 'Import a custom decal (SVG, PNG, JPG, WEBP)'}
             aria-label="Import decal"
           >
             <Upload size={18} />
@@ -132,6 +168,15 @@ export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
           style={{ display: 'none' }}
         />
       </div>
+
+      {isGuest && guestPrompt && (
+        <div className="top-guest-prompt" role="status" aria-live="polite">
+          <span>{guestPrompt}</span>
+          <button type="button" className="top-guest-prompt-link" onClick={onGuestSignIn}>
+            Sign In
+          </button>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div className="elements-tabs">
@@ -187,7 +232,7 @@ export function DecalLibraryPanel({ onDecalPicked }: DecalLibraryPanelProps) {
       {activeTab === 'created' && (
         <>
           {customDecals.length === 0 ? (
-            <p className="hint">No created decals yet. Use the SVG Maker button in the toolbar to create one.</p>
+            <p className="hint">No created decals yet. Use the Create a Logo button in the toolbar to create one.</p>
           ) : null}
 
           <div className="decal-grid" role="list" aria-label="Created decals">

@@ -9,6 +9,17 @@ npm install
 npm run dev
 ```
 
+## Billing
+
+The app is set up for Stripe-hosted billing links.
+
+1. Create a Stripe product and recurring price.
+2. Create a Checkout Link and Customer Portal link in Stripe.
+3. Put those URLs into `.env.local` using the keys from `.env.example`.
+4. For production access control, add webhook or server-side billing sync before trusting paid status.
+
+See `BILLING_SETUP.md` for the production checklist.
+
 ## Asset Folders
 
 Put your files in these exact locations:

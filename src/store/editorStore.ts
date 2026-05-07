@@ -73,6 +73,24 @@ const defaultTransform = (): LayerTransform => ({
   opacity: 1,
 })
 
+// Text/decal layers should start from a side projection direction so the first
+// placement lands on body side panels instead of front fascia.
+const defaultSideProjectedTransform = (): LayerTransform => ({
+  position: { x: -1.95, y: 1.2, z: 0 },
+  rotation: { x: 0, y: Math.PI / 2, z: 0 },
+  scale: { x: 0.35, y: 0.35, z: 0.4 },
+  skew: { x: 0, y: 0 },
+  opacity: 1,
+})
+
+const defaultTextSideProjectedTransform = (): LayerTransform => ({
+  position: { x: -1.95, y: 0.86, z: 0 },
+  rotation: { x: 0, y: Math.PI / 2, z: 0 },
+  scale: { x: 0.35, y: 0.35, z: 0.4 },
+  skew: { x: 0, y: 0 },
+  opacity: 1,
+})
+
 function nameFromImageUrl(imageUrl: string | undefined, fallbackCount: number): string {
   if (!imageUrl) {
     return `Decal ${fallbackCount}`
@@ -123,13 +141,13 @@ const createDecalLayer = (
   groupId: null,
   createdAt: now(),
   updatedAt: now(),
-  transform: defaultTransform(),
+  transform: defaultSideProjectedTransform(),
 })
 
 const createTextLayer = (
   count: number,
   options?: { fontFamily?: string; fontUrl?: string | null; text?: string; scale?: number },
-  defaults?: Partial<Pick<TextLayer, 'fontFamily' | 'fontUrl' | 'colorHex' | 'colorRef' | 'finish' | 'targetPartId' | 'mirrorX' | 'mirrorToOtherSide' | 'textCurve'>>,
+  defaults?: Partial<Pick<TextLayer, 'fontFamily' | 'fontUrl' | 'colorHex' | 'colorRef' | 'finish' | 'targetPartId' | 'mirrorX' | 'mirrorToOtherSide' | 'textCurve' | 'mirroredTextReadable'>>,
 ): TextLayer => {
   const s = options?.scale ?? 0.85
   return {
@@ -147,13 +165,14 @@ const createTextLayer = (
   finish: defaults?.finish ?? 'gloss',
   targetPartId: defaults?.targetPartId ?? null,
   textCurve: defaults?.textCurve ?? 0,
+  mirroredTextReadable: defaults?.mirroredTextReadable ?? true,
   visible: true,
   locked: false,
   groupId: null,
   createdAt: now(),
   updatedAt: now(),
   transform: {
-    ...defaultTransform(),
+    ...defaultTextSideProjectedTransform(),
     scale: { x: s, y: s, z: 0.4 },
   },
   }
@@ -346,7 +365,7 @@ const createSplitLayer = (count: number): SplitLayer => ({
   transform: defaultTransform(),
 })
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
+export const useEditorStore = create<EditorStore>((set) => ({
   project: createProject(),
   selectedLayerId: null,
   selectedCar: null,
@@ -385,6 +404,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         classifyLocked: locked !== null,
         project: {
           ...state.project,
+          // Fresh ID so every new project gets its own save slot,
+          // not an overwrite of the previously loaded project.
+          meta: {
+            ...state.project.meta,
+            id: makeId('project'),
+            name: 'Untitled Car Project',
+            createdAt: now(),
+            updatedAt: now(),
+          },
           paint: { ...DEFAULT_TARGET_PAINT },
           carSplit: {
             ...state.project.carSplit,
@@ -815,6 +843,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
     }),
 
+  ungroupLayer: (groupId) =>
+    set((state) => {
+      const group = state.project.layers.find((layer) => layer.id === groupId)
+      if (!group || group.type !== 'group') {
+        return state
+      }
+
+      const groupChildren = state.project.layers.filter((layer) => layer.groupId === groupId)
+
+      return {
+        historyPast: pushHistory(state, 'Ungroup Layers'),
+        historyFuture: [],
+        selectedLayerId:
+          state.selectedLayerId === groupId
+            ? (groupChildren[0]?.id ?? null)
+            : state.selectedLayerId,
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          layers: state.project.layers
+            .filter((layer) => layer.id !== groupId)
+            .map((layer) => (layer.groupId === groupId ? { ...layer, groupId: null, updatedAt: now() } : layer)),
+        },
+      }
+    }),
+
   toggleGroupCollapsed: (groupId) =>
     set((state) => {
       const group = state.project.layers.find((l) => l.id === groupId)
@@ -881,19 +935,67 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }),
 
   toggleLayerVisibility: (layerId) => {
-    const existing = get().project.layers.find((layer) => layer.id === layerId)
-    if (!existing) {
-      return
-    }
-    get().updateLayer(layerId, { visible: !existing.visible })
+    set((state) => {
+      const existing = state.project.layers.find((layer) => layer.id === layerId)
+      if (!existing) {
+        return state
+      }
+
+      const nextVisible = !existing.visible
+      const childIds = existing.type === 'group'
+        ? new Set(state.project.layers.filter((layer) => layer.groupId === layerId).map((layer) => layer.id))
+        : null
+
+      return {
+        historyPast: pushHistory(state, 'Layer Visibility'),
+        historyFuture: [],
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          layers: state.project.layers.map((layer) => {
+            if (layer.id === layerId) {
+              return { ...layer, visible: nextVisible, updatedAt: now() }
+            }
+            if (childIds?.has(layer.id)) {
+              return { ...layer, visible: nextVisible, updatedAt: now() }
+            }
+            return layer
+          }),
+        },
+      }
+    })
   },
 
   toggleLayerLock: (layerId) => {
-    const existing = get().project.layers.find((layer) => layer.id === layerId)
-    if (!existing) {
-      return
-    }
-    get().updateLayer(layerId, { locked: !existing.locked })
+    set((state) => {
+      const existing = state.project.layers.find((layer) => layer.id === layerId)
+      if (!existing) {
+        return state
+      }
+
+      const nextLocked = !existing.locked
+      const childIds = existing.type === 'group'
+        ? new Set(state.project.layers.filter((layer) => layer.groupId === layerId).map((layer) => layer.id))
+        : null
+
+      return {
+        historyPast: pushHistory(state, 'Layer Lock'),
+        historyFuture: [],
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          layers: state.project.layers.map((layer) => {
+            if (layer.id === layerId) {
+              return { ...layer, locked: nextLocked, updatedAt: now() }
+            }
+            if (childIds?.has(layer.id)) {
+              return { ...layer, locked: nextLocked, updatedAt: now() }
+            }
+            return layer
+          }),
+        },
+      }
+    })
   },
 
   removeLayer: (layerId) =>

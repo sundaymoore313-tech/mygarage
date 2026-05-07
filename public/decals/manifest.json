@@ -1,30 +1,15 @@
 {
-  "generatedAt": "2026-05-03T09:24:17.263Z",
+  "generatedAt": "2026-05-07T14:24:16.339Z",
   "items": [
+    {
+      "name": "checkered band",
+      "fileName": "checkered-band.svg",
+      "url": "/decals/checkered-band.svg"
+    },
     {
       "name": "Dodge TRX Logo Vector.svg",
       "fileName": "Dodge TRX Logo Vector.svg .png",
       "url": "/decals/Dodge%20TRX%20Logo%20Vector.svg%20.png"
-    },
-    {
-      "name": "dodge scat pack seeklogo",
-      "fileName": "dodge-scat-pack-seeklogo.png",
-      "url": "/decals/dodge-scat-pack-seeklogo.png"
-    },
-    {
-      "name": "dodge sport seeklogo",
-      "fileName": "dodge-sport-seeklogo.png",
-      "url": "/decals/dodge-sport-seeklogo.png"
-    },
-    {
-      "name": "Instagram Logo Vector",
-      "fileName": "Instagram Logo Vector.png",
-      "url": "/decals/Instagram%20Logo%20Vector.png"
-    },
-    {
-      "name": "Onlyfans Logo Vector.svg",
-      "fileName": "Onlyfans Logo Vector.svg .png",
-      "url": "/decals/Onlyfans%20Logo%20Vector.svg%20.png"
     },
     {
       "name": "pngegg",
@@ -32,9 +17,14 @@
       "url": "/decals/pngegg.png"
     },
     {
-      "name": "Snapchat Logo Vector",
-      "fileName": "Snapchat Logo Vector.png",
-      "url": "/decals/Snapchat%20Logo%20Vector.png"
+      "name": "racing number 07",
+      "fileName": "racing-number-07.svg",
+      "url": "/decals/racing-number-07.svg"
+    },
+    {
+      "name": "racing stripe double",
+      "fileName": "racing-stripe-double.svg",
+      "url": "/decals/racing-stripe-double.svg"
     },
     {
       "name": "svgwaves io car decals (13)",
@@ -85,11 +75,6 @@
       "name": "svgwaves io sonic",
       "fileName": "svgwaves_io_sonic.png",
       "url": "/decals/svgwaves_io_sonic.png"
-    },
-    {
-      "name": "Tiktok Logo Vector",
-      "fileName": "Tiktok Logo Vector.png",
-      "url": "/decals/Tiktok%20Logo%20Vector.png"
     }
   ]
 }

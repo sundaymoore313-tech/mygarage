@@ -1,16 +1,11 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, useGLTF } from '@react-three/drei'
 import type { ChangeEvent } from 'react'
 import * as THREE from 'three'
-import {
-  DEFAULT_TARGET_PAINT,
-  getMergedClassifications,
-  getResolvedPaintForLabel,
-} from '../../lib/paintTargets'
+import { NativeOrbitControls } from '../scene/NativeOrbitControls'
+import { useModelScene } from '../scene/useModelScene'
 import { readResumeSnapshot } from '../../lib/resumeSnapshot'
 import { useEditorStore } from '../../store/editorStore'
-import type { MeshClass } from '../../types/editor'
 
 type CarManifestItem = {
   name: string
@@ -50,30 +45,6 @@ const LAST_CAR_KEY = 'mygarage-last-car'
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
-const THUMBNAIL_PALETTE = [
-  '#66d9ff',
-  '#ff6b6b',
-  '#ffd166',
-  '#7ae582',
-  '#c77dff',
-  '#ff9f1c',
-  '#4cc9f0',
-  '#f72585',
-  '#90be6d',
-  '#f9844a',
-] as const
-const THUMBNAIL_COLOR_BY_FILE: Record<string, string> = {
-  '2012_dodge_charger_rt_sedan_4d (1).glb': '#00aaff', // electric blue
-  '2018_ford_mustang_gt.glb': '#00cc55',               // performance green
-  '2019_chevrolet_corvette_c8_stingray.glb': '#ff4400', // corvette orange-red
-  '2020_dodge_challenger_srt_super_stock.glb': '#9b30ff', // hellcat purple
-  '2021_ram_1500_trx (1).glb': '#e03000',              // TRX red-orange
-  'bmw_m3_g80_2025.glb': '#1166ff',                   // M-sport blue
-  'chrysler_300_srt_hellcat.glb': '#ffffff',           // pearl white
-  'dodge_charger_srt_hellcat__high_quality.glb': '#00dd77', // neon green
-  'dodge_durango_srt_392.glb': '#00cccc',              // teal/cyan
-  'jeep_grand_cherokee_trackhawk.glb': '#dd00aa',      // magenta
-}
 
 function loadImportedCarsFromStorage(): ImportedCarRecord[] {
   try {
@@ -146,38 +117,13 @@ function readAvatarInitials() {
     return 'MG'
   }
 }
-function getThumbnailColor(fileName: string): string {
-  const curated = THUMBNAIL_COLOR_BY_FILE[fileName]
-  if (curated) {
-    return curated
-  }
 
-  let hash = 0
-  for (let index = 0; index < fileName.length; index += 1) {
-    hash = ((hash * 31) + fileName.charCodeAt(index)) >>> 0
-  }
-  return THUMBNAIL_PALETTE[hash % THUMBNAIL_PALETTE.length]
-}
-
-function getThumbnailFullCarPaint(fileName: string) {
-  return {
-    ...DEFAULT_TARGET_PAINT,
-    colorHex: getThumbnailColor(fileName),
-    colorRef: null,
-    metallic: 0.45,
-    roughness: 0.22,
-    clearcoat: 1.0,
-  }
-}
-
-function getThumbnailAccentPaint() {
-  return {
-    ...DEFAULT_TARGET_PAINT,
-    colorHex: '#0a0a0a',
-    colorRef: null,
-    metallic: 0.35,
-    roughness: 0.22,
-    clearcoat: 0.9,
+function readStoredAvatarDataUrl() {
+  try {
+    const raw = localStorage.getItem(PROFILE_AVATAR_KEY)
+    return raw && raw.startsWith('data:image/') ? raw : null
+  } catch {
+    return null
   }
 }
 
@@ -188,21 +134,6 @@ function getDisplayCarName(name: string): string {
     .replace(/\s*\(\d+\)\s*$/, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
-}
-
-function getClassificationForLabel(
-  classifications: Record<string, MeshClass>,
-  label: string,
-) {
-  const direct = classifications[label]
-  if (direct !== undefined) {
-    return direct
-  }
-
-  // Handle Object label variants across imports: "Object 42" vs "Object_42".
-  const underscoreVariant = label.replace(/\s+/g, '_')
-  const spacedVariant = label.replace(/_/g, ' ')
-  return classifications[underscoreVariant] ?? classifications[spacedVariant]
 }
 
 const GROUND_SNAP_EXCLUDE_TOKENS = [
@@ -234,6 +165,8 @@ const THUMBNAIL_ROTATION_Y_BY_FILE: Record<string, number> = {
   '2018_ford_mustang_gt.glb': Math.PI,
   '2019_chevrolet_corvette_c8_stingray.glb': Math.PI,
 }
+
+const THUMBNAIL_MODEL_OFFSET_X = -0.75
 
 function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[]): number {
   let globalMinY = Number.POSITIVE_INFINITY
@@ -322,91 +255,12 @@ function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[])
 }
 
 function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string; fileName: string; groundOffsetY?: number }) {
-  const { scene } = useGLTF(modelUrl)
+  const { scene } = useModelScene(modelUrl)
   const cloned = useMemo(() => {
     const clone = scene.clone(true)
-    const mergedClassifications = getMergedClassifications(fileName, {})
-    const hasFactoryClassifyPreset = Object.keys(mergedClassifications).length > 0
-    const thumbnailPaint = getThumbnailFullCarPaint(fileName)
-    const thumbnailAccentPaint = getThumbnailAccentPaint()
-
-    const normalizeMaterial = (material: THREE.Material, label: string) => {
-      const next = material.clone()
-      if (next instanceof THREE.MeshStandardMaterial || next instanceof THREE.MeshPhysicalMaterial) {
-        const classify = getClassificationForLabel(mergedClassifications, label)
-        const fallbackPaint = {
-          ...DEFAULT_TARGET_PAINT,
-          colorHex: `#${next.color.getHexString()}`,
-          metallic: next.metalness,
-          roughness: next.roughness,
-          clearcoat:
-            next instanceof THREE.MeshPhysicalMaterial
-              ? next.clearcoat
-              : DEFAULT_TARGET_PAINT.clearcoat,
-        }
-        const resolvedPaint = getResolvedPaintForLabel(
-          label,
-          { fullCar: thumbnailPaint },
-          fallbackPaint,
-        )
-
-        const labelLower = label.toLowerCase()
-        // Check PBR transmission (physically-based glass — definitive indicator)
-        const physMat = next instanceof THREE.MeshPhysicalMaterial ? next as THREE.MeshPhysicalMaterial & { transmission?: number } : null
-        const hasTransmission = (physMat?.transmission ?? 0) > 0
-        const looksLikeGlass = (
-          classify === 'window' ||
-          /wind(shield|screen)|windshld|window|glass/.test(labelLower) ||
-          /head.?light|tail.?light|fog.?light|turn.?light|indicator|lens|lamp/.test(labelLower) ||
-          hasTransmission ||
-          // Unclassified and already transparent (opacity-based glass)
-          (classify === undefined && next.transparent && next.opacity < 0.85 && next.opacity > 0.05)
-        )
-        const shouldUseThumbnailPaint = !looksLikeGlass && classify === 'paintable'
-        const shouldUseAccentPaint = !looksLikeGlass && hasFactoryClassifyPreset && (classify === 'excluded' || classify === 'rims')
-        const shouldUseAutoResolvedPaint = !looksLikeGlass && classify === undefined && resolvedPaint !== fallbackPaint
-
-        if (looksLikeGlass) {
-          // Black tint on all windows and lights for a uniform look
-          next.color.set('#000000')
-          next.metalness = 0.0
-          next.roughness = 0.05
-          next.transparent = true
-          next.opacity = 0.55
-          next.emissive.set('#000000')
-          if (next instanceof THREE.MeshPhysicalMaterial) {
-            next.clearcoat = 0.8
-          }
-        } else if (shouldUseThumbnailPaint || shouldUseAccentPaint || shouldUseAutoResolvedPaint) {
-          const paintToUse = shouldUseAccentPaint
-            ? thumbnailAccentPaint
-            : shouldUseThumbnailPaint
-              ? thumbnailPaint
-              : resolvedPaint
-          next.color.set(paintToUse.colorHex)
-          next.metalness = paintToUse.metallic
-          next.roughness = paintToUse.roughness
-          next.emissive.set('#000000')
-          if (next instanceof THREE.MeshPhysicalMaterial) {
-            next.clearcoat = paintToUse.clearcoat
-          }
-        }
-        next.needsUpdate = true
-      }
-      return next
-    }
 
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        const meshLabel =
-          (typeof child.userData.meshLabel === 'string' && child.userData.meshLabel) ||
-          child.name ||
-          ''
-        if (Array.isArray(child.material)) {
-          child.material = child.material.map((entry) => normalizeMaterial(entry, meshLabel))
-        } else {
-          child.material = normalizeMaterial(child.material, meshLabel)
-        }
         child.castShadow = true
         child.receiveShadow = true
       }
@@ -420,6 +274,7 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
     const explicitSnapLabels = SNAP_MESH_LABELS[fileName]
     const snapY = resolveGroundSnapY(clone, explicitSnapLabels)
     clone.position.sub(center)
+    clone.position.x += THUMBNAIL_MODEL_OFFSET_X
     clone.position.y = -snapY
     clone.position.y += groundOffsetY
     clone.rotation.y = THUMBNAIL_ROTATION_Y_BY_FILE[fileName] ?? 0
@@ -431,10 +286,9 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
 function CarThumbnail({ modelUrl, fileName, groundOffsetY }: { modelUrl: string; fileName: string; groundOffsetY?: number }) {
   return (
     <Canvas
-      camera={{ position: [-2.8, 2.0, 4.8], fov: 34 }}
-      shadows
+      camera={{ position: [-2.2, 1.6, 3.8], fov: 36 }}
       gl={{ antialias: true, alpha: true }}
-      style={{ width: '100%', height: '100%', borderRadius: 8 }}
+      style={{ width: '100%', height: '100%', borderRadius: 8, pointerEvents: 'none' }}
     >
       {/* Static showroom rig — fixed lights so gloss reflections are consistent */}
       <color attach="background" args={['#111111']} />
@@ -442,15 +296,12 @@ function CarThumbnail({ modelUrl, fileName, groundOffsetY }: { modelUrl: string;
       <ambientLight intensity={3.0} color="#dde8ff" />
       {/* Key light — left-front high, sharp specular highlight */}
       <spotLight
-        castShadow
         intensity={14}
         position={[-5, 8, 5]}
         angle={0.36}
         penumbra={0.2}
         distance={40}
         color="#ffffff"
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
       />
       {/* Fill light — right side, warm-white */}
       <spotLight
@@ -473,14 +324,11 @@ function CarThumbnail({ modelUrl, fileName, groundOffsetY }: { modelUrl: string;
       {/* Ground bounce */}
       <pointLight intensity={2.2} position={[0, -0.5, 1.5]} color="#7ab0dd" distance={12} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow>
-        <circleGeometry args={[4.8, 64]} />
-        <shadowMaterial transparent opacity={0.11} />
-      </mesh>
       <Suspense fallback={null}>
         <CarModel modelUrl={modelUrl} fileName={fileName} groundOffsetY={groundOffsetY} />
       </Suspense>
-      <OrbitControls
+      <NativeOrbitControls
+        enabled={false}
         enableRotate={false}
         enableZoom={false}
         enablePan={false}
@@ -494,11 +342,13 @@ type CarSelectorPageProps = {
   onGoHome?: () => void
   onOpenProfile?: () => void
   onEnterEditor?: () => void
+  isGuest?: boolean
+  onGuestSignIn?: () => void
 }
 
-export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarSelectorPageProps) {
+export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGuest = false, onGuestSignIn }: CarSelectorPageProps) {
   const selectCar = useEditorStore((state) => state.selectCar)
-  const [avatarUrl] = useState<string | null>(() => localStorage.getItem(PROFILE_AVATAR_KEY))
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readStoredAvatarDataUrl())
   const [avatarInitials] = useState(() => readAvatarInitials())
   const [preloadedItems, setPreloadedItems] = useState<CarManifestItem[]>([])
   const [importedItems, setImportedItems] = useState<CarManifestItem[]>([])
@@ -510,7 +360,20 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
   const [renamingFileName, setRenamingFileName] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [lastUsedCar, setLastUsedCar] = useState<CarManifestItem | null>(null)
+  const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const guestPromptTimerRef = useRef<number | null>(null)
+
+  const showGuestPrompt = (feature: string) => {
+    setGuestPrompt(`Create an account to use ${feature}.`)
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+  }
 
   useEffect(() => {
     let mounted = true
@@ -573,10 +436,19 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
   }, [])
 
   const handleImportClick = () => {
+    if (isGuest) {
+      showGuestPrompt('Import GLB')
+      return
+    }
     fileInputRef.current?.click()
   }
 
   const handleImportFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      showGuestPrompt('Import GLB')
+      event.target.value = ''
+      return
+    }
     const files = event.target.files
     if (!files || files.length === 0) {
       return
@@ -745,6 +617,14 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
     onEnterEditor?.()
   }
 
+  useEffect(() => {
+    return () => {
+      if (guestPromptTimerRef.current !== null) {
+        window.clearTimeout(guestPromptTimerRef.current)
+      }
+    }
+  }, [])
+
   return (
     <section className="car-selector-page">
       <div className="car-selector-header">
@@ -789,7 +669,12 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
           />
         </div>
         <div className="car-selector-header-right">
-          <button type="button" className="top-card-btn" onClick={handleImportClick}>
+          <button
+            type="button"
+            className="top-card-btn"
+            onClick={handleImportClick}
+            title={isGuest ? 'Sign in to import GLB models' : 'Import GLB'}
+          >
             Import GLB
           </button>
           <button
@@ -800,7 +685,15 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
             aria-label="Open profile"
           >
             {avatarUrl ? (
-              <img src={avatarUrl} alt="Profile" className="top-profile-bubble-img" />
+              <img
+                src={avatarUrl}
+                alt="Profile"
+                className="top-profile-bubble-img"
+                onError={() => {
+                  localStorage.removeItem(PROFILE_AVATAR_KEY)
+                  setAvatarUrl(null)
+                }}
+              />
             ) : (
               <span className="top-profile-bubble-fallback">{avatarInitials}</span>
             )}
@@ -815,6 +708,15 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor }: CarS
           style={{ display: 'none' }}
         />
       </div>
+
+      {isGuest && guestPrompt && (
+        <div className="top-guest-prompt" role="status" aria-live="polite">
+          <span>{guestPrompt}</span>
+          <button type="button" className="top-guest-prompt-link" onClick={onGuestSignIn}>
+            Sign In
+          </button>
+        </div>
+      )}
 
       {lastUsedCar && (
         <div className="car-resume-banner">

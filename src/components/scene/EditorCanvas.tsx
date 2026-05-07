@@ -1,14 +1,20 @@
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
-import { Environment, Html, MeshReflectorMaterial, OrbitControls, useGLTF } from '@react-three/drei'
+import { Environment } from '@react-three/drei'
+import { Html } from '@react-three/drei/web/Html'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js'
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+import { NativeOrbitControls, type NativeOrbitControlsHandle } from './NativeOrbitControls'
+import { useModelScene } from './useModelScene'
+import { endPerfSpan, markPerfOnce } from '../../lib/perfDebug'
 import { DEFAULT_TARGET_PAINT, getLockedClassifications, getPaintTargetsForLabel, getResolvedPaintForLabel, PAINT_FINISH_PRESETS, isSystemLockedMesh } from '../../lib/paintTargets'
 import { useEditorStore } from '../../store/editorStore'
 import type { CameraViewId, CarObjectPart, DecalLayer, MeshClass, PaintConfig, PaintFinish, PrintConfig, TextLayer } from '../../types/editor'
+import type { ExportQuality } from '../../types/exportQuality'
 
 const CAMERA_PRESETS: Record<CameraViewId, { position: [number, number, number]; target: [number, number, number] }> = {
   side: { position: [-5.4, 0.9, 0.25], target: [0, 0.9, 0] },
@@ -201,6 +207,15 @@ const BASE_PAINT_COLOR_OVERRIDES: Record<string, Record<string, string>> = {
     Object_161: '#000000',
   },
 }
+
+const STRICT_CLASSIFY_PROJECTION_FILES = new Set([
+  '2018_ford_mustang_gt.glb',
+])
+
+const RIM_COLOR_FORCE_ALBEDO_OFF_FILES = new Set([
+  '2019_chevrolet_corvette_c8_stingray.glb',
+  '2020_dodge_challenger_srt_super_stock.glb',
+])
 
 function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[]): number {
   let globalMinY = Number.POSITIVE_INFINITY
@@ -396,10 +411,7 @@ function pickPreferredDoorMesh(meshes: THREE.Mesh[]) {
   return candidates[0].mesh
 }
 
-type OrbitControllerHandle = {
-  target: THREE.Vector3
-  update: () => void
-}
+type OrbitControllerHandle = NativeOrbitControlsHandle
 
 function CameraPresetSync({
   cameraView,
@@ -451,12 +463,21 @@ function LoadedCarModel({
   modelUrl,
   groundOffsetY = 0,
   classifyWindowClickThrough = false,
+  classifyBodyClickThrough = false,
+  classifyShowMeshNames = false,
+  controlsRef,
+  onLayerDragStateChange,
 }: {
   modelUrl: string
   groundOffsetY?: number
   classifyWindowClickThrough?: boolean
+  classifyBodyClickThrough?: boolean
+  classifyShowMeshNames?: boolean
+  controlsRef?: React.RefObject<OrbitControllerHandle | null>
+  onLayerDragStateChange?: (isDragging: boolean) => void
 }) {
-  const { scene } = useGLTF(modelUrl)
+  const { scene } = useModelScene(modelUrl)
+  const gl = useThree((state) => state.gl)
   const setAvailableParts = useEditorStore((state) => state.setAvailableParts)
   const targetPaints = useEditorStore((state) => state.targetPaints)
   const targetPrints = useEditorStore((state) => state.targetPrints)
@@ -472,6 +493,8 @@ function LoadedCarModel({
   const meshClassifications = useEditorStore((state) => state.project.meshClassifications)
   const windowTint = useEditorStore((state) => state.project.windowTint)
   const setMeshClassification = useEditorStore((state) => state.setMeshClassification)
+  const modelFileName = modelUrl.split('/').pop() ?? ''
+  const strictProjectionClassify = STRICT_CLASSIFY_PROJECTION_FILES.has(modelFileName)
 
   // ── Print texture cache ────────────────────────────────────────────────────
   // Maps imageUrl → loaded THREE.Texture (or null while loading / on error).
@@ -518,6 +541,11 @@ function LoadedCarModel({
           texture.wrapS = THREE.RepeatWrapping
           texture.wrapT = THREE.RepeatWrapping
           texture.colorSpace = THREE.SRGBColorSpace
+          texture.generateMipmaps = true
+          texture.minFilter = THREE.LinearMipmapLinearFilter
+          texture.magFilter = THREE.LinearFilter
+          texture.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy())
+          texture.needsUpdate = true
           updatePrintTextures((prev) => {
             const next = new Map(prev)
             next.set(url, texture)
@@ -551,7 +579,7 @@ function LoadedCarModel({
         return changed ? next : prev
       })
     })
-  }, [targetPrints, updatePrintTextures])
+  }, [gl, targetPrints, updatePrintTextures])
 
   // When the model loads, apply any locked classifications from localStorage.
   // This ensures locked settings survive hard refreshes and are applied immediately.
@@ -572,6 +600,10 @@ function LoadedCarModel({
     ...PROJECTABLE_FORCE_EXCLUDE_LABELS,
     ...PROJECTABLE_FORCE_INCLUDE_LABELS,
   ].join('|')
+
+  useEffect(() => {
+    endPerfSpan('editor_model_loaded', { modelUrl })
+  }, [modelUrl, scene])
 
   const prepared = useMemo(() => {
     const clone = scene.clone(true)
@@ -717,6 +749,14 @@ function LoadedCarModel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, filterVersion, groundOffsetY, modelUrl])
 
+  useEffect(() => {
+    endPerfSpan('editor_scene_prepared', {
+      modelUrl,
+      meshCount: prepared.meshes.length,
+      partCount: prepared.parts.length,
+    })
+  }, [modelUrl, prepared.meshes.length, prepared.parts.length, prepared.scene])
+
   // Re-stamp userData.projectableMesh when custom classifications change
   useEffect(() => {
     prepared.meshes.forEach((mesh) => {
@@ -726,11 +766,12 @@ function LoadedCarModel({
       else if (cls === 'window') mesh.userData.projectableMesh = true
       else if (cls === 'rims') mesh.userData.projectableMesh = false
       else if (cls === 'excluded') mesh.userData.projectableMesh = false
+      else if (strictProjectionClassify) mesh.userData.projectableMesh = false
       else if (mesh.userData.geometricInterior) mesh.userData.projectableMesh = false
       else if (mesh.userData.autoGlass) mesh.userData.projectableMesh = isTintableWindowMesh(label, undefined)
       else mesh.userData.projectableMesh = isProjectableMeshLabel(label)
     })
-  }, [prepared.meshes, meshClassifications])
+  }, [prepared.meshes, meshClassifications, strictProjectionClassify])
 
   // Meshes that accept decal/text projection (respects custom classifications)
   const decalMeshes = useMemo(() => {
@@ -740,11 +781,12 @@ function LoadedCarModel({
       if (cls === 'paintable' || cls === 'window') return true
       if (cls === 'rims') return false
       if (cls === 'excluded') return false
+      if (strictProjectionClassify) return false
       if (mesh.userData.geometricInterior) return false
       if (mesh.userData.autoGlass) return isTintableWindowMesh(label, undefined)
       return isProjectableMeshLabel(label)
     })
-  }, [prepared.meshes, meshClassifications])
+  }, [prepared.meshes, meshClassifications, strictProjectionClassify])
 
   const selectedLayer = useMemo(
     () => {
@@ -759,6 +801,9 @@ function LoadedCarModel({
   }, [prepared.parts, setAvailableParts])
 
   useEffect(() => {
+    const modelFileName = modelUrl.split('/').pop() ?? ''
+    const forceRimAlbedoOff = RIM_COLOR_FORCE_ALBEDO_OFF_FILES.has(modelFileName)
+
     const gradientPaint = targetPaints.fullCar
     const gradientAxis = carGradient.axis
     const gradientAxisIndex = gradientAxis === 'x' ? 0 : gradientAxis === 'y' ? 1 : 2
@@ -800,8 +845,11 @@ function LoadedCarModel({
         return
       }
       const cls = meshClassifications[label]
+
+      // Pass the explicit classification so that user/preset classify decisions
+      // always override name-based auto-exclusion heuristics inside the resolver.
       const resolvedPaint =
-        getResolvedPaintForLabel(label, targetPaints, basePaint) ??
+        getResolvedPaintForLabel(label, targetPaints, basePaint, cls) ??
         basePaint ??
         DEFAULT_TARGET_PAINT
       const rimsPaint = targetPaints.rims
@@ -824,7 +872,42 @@ function LoadedCarModel({
           : effectiveCls === 'rims'
             ? (rimsPaint ?? basePaint)
             : resolvedPaint
-      meshMaterial.color.set(paint.colorHex)
+      const isSolidBlackRimMatch =
+        effectiveCls === 'rims' &&
+        (
+          rimsPaint?.colorRef?.swatchId === '3m-solid-black' ||
+          rimsPaint?.colorHex.trim().toLowerCase() === '#000000'
+        )
+      meshMaterial.color.set(isSolidBlackRimMatch ? basePaint.colorHex : paint.colorHex)
+
+      // ── Rim mesh: clear PBR maps so our flat finish values aren't multiplied down ──
+      // GLB rim materials often have roughnessMap/metalnessMap that would wash out
+      // any custom finish we apply. Save originals once and clear for rim meshes.
+      if (effectiveCls === 'rims') {
+        if (!meshMaterial.userData._origMapsStored) {
+          meshMaterial.userData._origMap = (meshMaterial as THREE.MeshStandardMaterial).map ?? null
+          meshMaterial.userData._origRoughnessMap = (meshMaterial as THREE.MeshStandardMaterial).roughnessMap ?? null
+          meshMaterial.userData._origMetalnessMap = (meshMaterial as THREE.MeshStandardMaterial).metalnessMap ?? null
+          meshMaterial.userData._origMapsStored = true
+        }
+        if (forceRimAlbedoOff && (meshMaterial as THREE.MeshStandardMaterial).map !== null) {
+          ;(meshMaterial as THREE.MeshStandardMaterial).map = null
+          meshMaterial.needsUpdate = true
+        }
+        if ((meshMaterial as THREE.MeshStandardMaterial).roughnessMap !== null ||
+            (meshMaterial as THREE.MeshStandardMaterial).metalnessMap !== null) {
+          ;(meshMaterial as THREE.MeshStandardMaterial).roughnessMap = null
+          ;(meshMaterial as THREE.MeshStandardMaterial).metalnessMap = null
+          meshMaterial.needsUpdate = true
+        }
+      } else if (meshMaterial.userData._origMapsStored) {
+        // Restore maps if mesh was re-classified away from rims
+        ;(meshMaterial as THREE.MeshStandardMaterial).map = meshMaterial.userData._origMap
+        ;(meshMaterial as THREE.MeshStandardMaterial).roughnessMap = meshMaterial.userData._origRoughnessMap
+        ;(meshMaterial as THREE.MeshStandardMaterial).metalnessMap = meshMaterial.userData._origMetalnessMap
+        meshMaterial.needsUpdate = true
+        meshMaterial.userData._origMapsStored = false
+      }
 
       // ── Print (texture-based base paint) ──────────────────────────────────
       // Prints must strictly respect classify state for the current car.
@@ -886,9 +969,10 @@ function LoadedCarModel({
 
       const isGeomInterior = child.userData.geometricInterior === true
       const gradientAllowedByClass = effectiveCls === 'paintable' && !isGeomInterior
-      const gradientAllowedByMesh = isGradientBodyMeshLabel(label)
-      const splitAllowedByMesh = isProjectableMeshLabel(label) && !isSplitExcludedMesh(child)
-      const stripeAllowedByMesh = !isStripeExcludedMesh(child)
+      const isExplicitPaintable = cls === 'paintable'
+      const gradientAllowedByMesh = isExplicitPaintable ? true : isGradientBodyMeshLabel(label)
+      const splitAllowedByMesh = isExplicitPaintable ? true : (isProjectableMeshLabel(label) && !isSplitExcludedMesh(child))
+      const stripeAllowedByMesh = isExplicitPaintable ? true : !isStripeExcludedMesh(child)
       const useSplit = Boolean(
         carSplit.enabled &&
         gradientAllowedByClass &&
@@ -908,11 +992,21 @@ function LoadedCarModel({
       )
       // Keep base vehicle finish independent from split/stripe overlays.
       // Overlays affect color blending only, while car body finish comes from paint target/material.
-      const activeFinish = {
-        metallic: paint.metallic,
-        roughness: paint.roughness,
-        clearcoat: paint.clearcoat,
-      }
+      // For rim meshes, prefer the rim paint finish; fall back to gloss (not basePaint which may
+      // have metallic=0 from a GLB material that relies on a metalnessMap texture).
+      const rimGloss = PAINT_FINISH_PRESETS.gloss
+      const activeFinish =
+        effectiveCls === 'rims'
+          ? {
+              metallic: isSolidBlackRimMatch ? basePaint.metallic : (rimsPaint?.metallic ?? rimGloss.metallic),
+              roughness: isSolidBlackRimMatch ? basePaint.roughness : (rimsPaint?.roughness ?? rimGloss.roughness),
+              clearcoat: isSolidBlackRimMatch ? basePaint.clearcoat : (rimsPaint?.clearcoat ?? rimGloss.clearcoat),
+            }
+          : {
+              metallic: paint.metallic,
+              roughness: paint.roughness,
+              clearcoat: paint.clearcoat,
+            }
       const splitShaderKey = useSplit
         ? `split-${carSplit.sideAHex}-${carSplit.sideBHex}-${carSplit.finish}-${carSplit.offsetX.toFixed(3)}-${carSplit.softEdge.toFixed(3)}-${carSplit.angle.toFixed(3)}`
         : 'none'
@@ -1148,12 +1242,19 @@ function LoadedCarModel({
       const preferredDoorMesh = pickPreferredDoorMesh(decalMeshes)
 
       if (preferredDoorMesh) {
-        const sceneCenter = new THREE.Box3()
-          .setFromObject(prepared.scene)
+        const sceneBounds = new THREE.Box3().setFromObject(prepared.scene)
+        const sceneCenter = sceneBounds
           .getCenter(new THREE.Vector3())
-        const point = new THREE.Box3()
-          .setFromObject(preferredDoorMesh)
-          .getCenter(new THREE.Vector3())
+        const preferredDoorBounds = new THREE.Box3().setFromObject(preferredDoorMesh)
+        const point = preferredDoorBounds.getCenter(new THREE.Vector3())
+
+        if (selectedLayer.type === 'text') {
+          // Start text lower on the body side so first placement is near rocker
+          // height instead of upper-door height.
+          const lowerDoorY = THREE.MathUtils.lerp(preferredDoorBounds.min.y, preferredDoorBounds.max.y, 0.28)
+          const minSceneY = sceneBounds.min.y + 0.04
+          point.y = Math.max(minSceneY, lowerDoorY)
+        }
 
         const normal = point.clone().sub(sceneCenter)
         normal.y = 0
@@ -1179,7 +1280,7 @@ function LoadedCarModel({
               rotation: {
                 x: nextRotation.x,
                 y: nextRotation.y,
-                z: 0,
+                z: selectedLayer.type === 'text' ? 0 : selectedLayer.transform.rotation.z,
               },
             },
           })
@@ -1220,11 +1321,21 @@ function LoadedCarModel({
       targetPartId: partId,
       transform: {
         ...selectedLayer.transform,
-        position: { x: point.x, y: point.y, z: point.z },
+        position: {
+          x: point.x,
+          y: selectedLayer.type === 'text'
+            ? THREE.MathUtils.lerp(
+                new THREE.Box3().setFromObject(hit.object).min.y,
+                new THREE.Box3().setFromObject(hit.object).max.y,
+                0.28,
+              )
+            : point.y,
+          z: point.z,
+        },
         rotation: {
           x: nextRotation.x,
           y: nextRotation.y,
-          z: nextRotation.z,
+          z: selectedLayer.type === 'text' ? 0 : nextRotation.z,
         },
       },
     })
@@ -1250,37 +1361,73 @@ function LoadedCarModel({
     return state
   }, [layers])
 
+  // Drag-to-move state: tracks which layer is being dragged on the car surface.
+  // Only set when the user presses directly on a projected decal/text mesh.
+  // Clicking empty car areas does nothing — you must click the decal itself to select,
+  // then drag it to reposition.
+  const decalDragRef = useRef<{ layerId: string } | null>(null)
+
+  const handleDecalDragStart = (layerId: string) => {
+    decalDragRef.current = { layerId }
+    onLayerDragStateChange?.(true)
+    // Disable orbit so the drag moves the decal instead of rotating the car
+    if (controlsRef?.current) {
+      ;(controlsRef.current as unknown as { enabled: boolean }).enabled = false
+    }
+  }
+
+  const handleScenePointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!decalDragRef.current) return
+    if (!event.face || !(event.object instanceof THREE.Mesh)) return
+    if (!event.object.userData.projectableMesh) return
+    event.stopPropagation()
+    const layer = layers.find((l) => l.id === decalDragRef.current?.layerId)
+    if (!layer || (layer.type !== 'decal' && layer.type !== 'text')) return
+    const normal = event.face.normal
+      .clone()
+      .transformDirection(event.object.matrixWorld)
+      .normalize()
+    const point = event.point.clone().addScaledVector(normal, 0.015)
+    const partId = (event.object.userData.partId as string | undefined) ?? null
+    const rotationQ = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      normal,
+    )
+    const nextRotation = new THREE.Euler().setFromQuaternion(rotationQ, 'XYZ')
+    updateLayer(layer.id, {
+      targetPartId: partId,
+      transform: {
+        ...layer.transform,
+        position: { x: point.x, y: point.y, z: point.z },
+        rotation: { x: nextRotation.x, y: nextRotation.y, z: nextRotation.z },
+      },
+    })
+  }
+
+  const handleScenePointerUp = () => {
+    if (!decalDragRef.current) return
+    decalDragRef.current = null
+    onLayerDragStateChange?.(false)
+    // Re-enable orbit controls after drag ends
+    if (controlsRef?.current) {
+      ;(controlsRef.current as unknown as { enabled: boolean }).enabled = true
+    }
+  }
+
+  useEffect(() => {
+    return () => onLayerDragStateChange?.(false)
+  }, [onLayerDragStateChange])
+
   return (
     <>
       <primitive
         object={prepared.scene}
-        onClick={(event: ThreeEvent<MouseEvent>) => {
-          if (activeTool !== 'decal' && activeTool !== 'text') return
-          if (!selectedLayer) return
-          if (!event.face || !(event.object instanceof THREE.Mesh)) return
-           // Ignore clicks on non-projectable meshes.
-           if (!event.object.userData.projectableMesh) return
-          event.stopPropagation()
-          const normal = event.face.normal
-            .clone()
-            .transformDirection(event.object.matrixWorld)
-            .normalize()
-          const point = event.point.clone().addScaledVector(normal, 0.015)
-          const partId = (event.object.userData.partId as string | undefined) ?? null
-          const rotationQ = new THREE.Quaternion().setFromUnitVectors(
-            new THREE.Vector3(0, 0, 1),
-            normal,
-          )
-          const nextRotation = new THREE.Euler().setFromQuaternion(rotationQ, 'XYZ')
-          updateLayer(selectedLayer.id, {
-            targetPartId: partId,
-            transform: {
-              ...selectedLayer.transform,
-              position: { x: point.x, y: point.y, z: point.z },
-              rotation: { x: nextRotation.x, y: nextRotation.y, z: nextRotation.z },
-            },
-          })
+        onPointerDown={() => {
+          // Clicking empty car body deselects. Decal/text clicks stopPropagation so they won't reach here.
+          setSelectedLayer(null)
         }}
+        onPointerMove={handleScenePointerMove}
+        onPointerUp={handleScenePointerUp}
       />
 
       {visibleLayers.map((layer, index) => {
@@ -1304,6 +1451,7 @@ function LoadedCarModel({
                 setSelectedLayer(layerId)
                 setTool('text')
               }}
+              onDragStart={handleDecalDragStart}
             />
           )
         }
@@ -1320,6 +1468,7 @@ function LoadedCarModel({
                 setSelectedLayer(layerId)
                 setTool('decal')
               }}
+              onDragStart={handleDecalDragStart}
             />
           )
         }
@@ -1335,6 +1484,7 @@ function LoadedCarModel({
               setSelectedLayer(layerId)
               setTool('decal')
             }}
+            onDragStart={handleDecalDragStart}
           />
         )
       })}
@@ -1350,6 +1500,8 @@ function LoadedCarModel({
           onClassify={setMeshClassification}
           carFileName={modelUrl.split('/').pop() ?? ''}
           classifyWindowClickThrough={classifyWindowClickThrough}
+          classifyBodyClickThrough={classifyBodyClickThrough}
+          classifyShowMeshNames={classifyShowMeshNames}
         />
       )}
     </>
@@ -1422,6 +1574,17 @@ function MeshInspector({ scene }: { scene: THREE.Object3D }) {
 // ── Mesh Classify Overlay ─────────────────────────────────────────────────────
 const CLASSIFY_CYCLE: MeshClass[] = ['paintable', 'excluded', 'window', 'rims']
 
+function getNextClassifyClass(current: MeshClass | null, reverse = false): MeshClass {
+  const idx = current ? CLASSIFY_CYCLE.indexOf(current) : -1
+  if (idx < 0) {
+    return reverse ? CLASSIFY_CYCLE[CLASSIFY_CYCLE.length - 1] : CLASSIFY_CYCLE[0]
+  }
+  const nextIdx = reverse
+    ? (idx - 1 + CLASSIFY_CYCLE.length) % CLASSIFY_CYCLE.length
+    : (idx + 1) % CLASSIFY_CYCLE.length
+  return CLASSIFY_CYCLE[nextIdx]
+}
+
 function meshEffectiveClass(
   mesh: THREE.Mesh,
   meshClassifications: Record<string, MeshClass>,
@@ -1463,12 +1626,16 @@ function MeshClassifyOverlay({
   onClassify,
   carFileName,
   classifyWindowClickThrough,
+  classifyBodyClickThrough,
+  classifyShowMeshNames,
 }: {
   scene: THREE.Object3D
   meshClassifications: Record<string, MeshClass>
   onClassify: (label: string, cls: MeshClass | null) => void
   carFileName: string
   classifyWindowClickThrough: boolean
+  classifyBodyClickThrough: boolean
+  classifyShowMeshNames: boolean
 }) {
   const [hovered, setHovered] = useState<THREE.Mesh | null>(null)
 
@@ -1478,14 +1645,136 @@ function MeshClassifyOverlay({
     return out
   }, [scene])
 
+  const classifyMeshes = useMemo(() => {
+    return allMeshes
+      .filter((mesh) => mesh.visible && mesh.geometry != null)
+      .sort((a, b) => {
+        const aLabel = ((a.userData.meshLabel as string | undefined) ?? a.name ?? a.uuid).toLowerCase()
+        const bLabel = ((b.userData.meshLabel as string | undefined) ?? b.name ?? b.uuid).toLowerCase()
+        return aLabel.localeCompare(bLabel)
+      })
+  }, [allMeshes])
+
+  const [selectedMeshId, setSelectedMeshId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (classifyMeshes.length === 0) {
+      setSelectedMeshId(null)
+      return
+    }
+    if (!selectedMeshId || !classifyMeshes.some((mesh) => mesh.uuid === selectedMeshId)) {
+      setSelectedMeshId(classifyMeshes[0].uuid)
+    }
+  }, [classifyMeshes, selectedMeshId])
+
+  const selectedMesh = useMemo(
+    () => classifyMeshes.find((mesh) => mesh.uuid === selectedMeshId) ?? null,
+    [classifyMeshes, selectedMeshId],
+  )
+
+  const selectedMeshLabel = useMemo(() => {
+    if (!selectedMesh) return ''
+    return (selectedMesh.userData.meshLabel as string | undefined) ?? selectedMesh.name ?? selectedMesh.uuid
+  }, [selectedMesh])
+
+  const cycleSelectedMesh = useCallback((step: number) => {
+    if (classifyMeshes.length === 0) return
+    setSelectedMeshId((prev) => {
+      const currentIndex = prev ? classifyMeshes.findIndex((mesh) => mesh.uuid === prev) : -1
+      const safeIndex = currentIndex < 0 ? 0 : currentIndex
+      const nextIndex = (safeIndex + step + classifyMeshes.length) % classifyMeshes.length
+      return classifyMeshes[nextIndex].uuid
+    })
+  }, [classifyMeshes])
+
+  const applyClassToSelectedMesh = useCallback((action: MeshClass | 'cycle' | 'clear', cycleReverse = false) => {
+    if (!selectedMesh) return
+    const label = (selectedMesh.userData.meshLabel as string | undefined) ?? selectedMesh.name ?? selectedMesh.uuid
+    if (isSystemLockedMesh(carFileName, label)) return
+
+    if (action === 'clear') {
+      onClassify(label, null)
+      return
+    }
+
+    if (action === 'paintable' || action === 'excluded' || action === 'window' || action === 'rims') {
+      onClassify(label, action)
+      return
+    }
+
+    const current = meshEffectiveClass(selectedMesh, meshClassifications).cls
+    if (selectedMesh.userData.geometricInterior === true && current === null) {
+      onClassify(label, 'excluded')
+      return
+    }
+    const next = getNextClassifyClass(current, cycleReverse)
+    onClassify(label, next)
+  }, [carFileName, meshClassifications, onClassify, selectedMesh])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+
+      if (event.key === '[' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault()
+        cycleSelectedMesh(-1)
+        return
+      }
+      if (event.key === ']' || event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        cycleSelectedMesh(1)
+        return
+      }
+
+      if (event.key === '1') {
+        event.preventDefault()
+        applyClassToSelectedMesh('paintable')
+        return
+      }
+      if (event.key === '2') {
+        event.preventDefault()
+        applyClassToSelectedMesh('excluded')
+        return
+      }
+      if (event.key === '3') {
+        event.preventDefault()
+        applyClassToSelectedMesh('window')
+        return
+      }
+      if (event.key === '4') {
+        event.preventDefault()
+        applyClassToSelectedMesh('rims')
+        return
+      }
+
+      if (event.key === ' ' || event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        applyClassToSelectedMesh('cycle', event.shiftKey)
+        return
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault()
+        applyClassToSelectedMesh('clear')
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [applyClassToSelectedMesh, cycleSelectedMesh])
+
   return (
     <>
-      {allMeshes.map((mesh) => {
+      {classifyMeshes.map((mesh) => {
         const { cls, isAuto } = meshEffectiveClass(mesh, meshClassifications)
         const isHov = hovered === mesh
+        const isSelected = selectedMeshId === mesh.uuid
         const label = (mesh.userData.meshLabel as string | undefined) ?? mesh.name ?? mesh.uuid
         const isSysLocked = isSystemLockedMesh(carFileName, label)
         const passThroughWindow = classifyWindowClickThrough && (cls === 'window' || mesh.userData.autoGlass === true)
+        const passThroughBody = classifyBodyClickThrough && cls === 'paintable'
         const color = cls ? CLASSIFY_COLORS[cls] : '#ffffff'
         const opacity = cls
           ? (isHov ? CLASSIFY_OPACITY_HOV[cls] : CLASSIFY_OPACITY[cls])
@@ -1498,11 +1787,12 @@ function MeshClassifyOverlay({
             matrixAutoUpdate={false}
             matrix={mesh.matrixWorld}
             renderOrder={300}
-            raycast={passThroughWindow ? () => {} : undefined}
+            raycast={(passThroughWindow || passThroughBody) ? () => {} : undefined}
             onPointerEnter={(e) => { e.stopPropagation(); setHovered(mesh) }}
             onPointerLeave={() => setHovered(null)}
             onClick={(e) => {
               e.stopPropagation()
+              setSelectedMeshId(mesh.uuid)
               // System-locked meshes cannot be changed by the user.
               if (isSysLocked) return
               const current = meshClassifications[label] ?? null
@@ -1514,26 +1804,38 @@ function MeshClassifyOverlay({
                 return
               }
               // Cycle concrete classes only so classify never clears to auto/null.
-              const idx = current ? CLASSIFY_CYCLE.indexOf(current) : -1
-              const next = CLASSIFY_CYCLE[(idx + 1) % CLASSIFY_CYCLE.length]
+              const reverse = Boolean((e.nativeEvent as MouseEvent).shiftKey)
+              const next = getNextClassifyClass(current, reverse)
+              onClassify(label, next)
+            }}
+            onContextMenu={(e) => {
+              e.nativeEvent.preventDefault()
+              e.stopPropagation()
+              if (isSysLocked) return
+              const current = meshClassifications[label] ?? null
+              if (mesh.userData.geometricInterior === true && current === null) {
+                onClassify(label, 'excluded')
+                return
+              }
+              const next = getNextClassifyClass(current, true)
               onClassify(label, next)
             }}
           >
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={opacity}
+              opacity={isSelected ? Math.min(0.72, opacity + 0.14) : opacity}
               depthWrite={false}
               side={THREE.DoubleSide}
             />
-            {isHov && (
+            {(isHov || isSelected || classifyShowMeshNames) && (
               <Html position={[0, 0, 0]} center style={{ pointerEvents: 'none' }}>
                 <div style={{
-                  background: 'rgba(8,16,28,0.92)',
+                  background: isHov ? 'rgba(8,16,28,0.92)' : 'rgba(8,16,28,0.72)',
                   color: '#fff',
                   padding: '4px 10px',
                   borderRadius: 6,
-                  fontSize: 11,
+                  fontSize: isHov ? 11 : 10,
                   fontFamily: 'monospace',
                   whiteSpace: 'nowrap',
                   border: `1px solid ${color}`,
@@ -1542,6 +1844,7 @@ function MeshClassifyOverlay({
                   <span style={{ color, fontWeight: 700 }}>
                     {cls ? cls.toUpperCase() : 'AUTO'}
                   </span>
+                  {isSelected && <span style={{ color: '#93c5fd', marginLeft: 5 }}>[selected]</span>}
                   {isSysLocked && <span style={{ color: '#f59e0b', marginLeft: 5 }}>🔒 system</span>}
                   {!isSysLocked && isAuto && <span style={{ color: '#8ea0b4', marginLeft: 5 }}>(auto)</span>}
                   <br />
@@ -1552,6 +1855,38 @@ function MeshClassifyOverlay({
           </mesh>
         )
       })}
+
+      {selectedMesh && (
+        <Html position={[0, 0, 0]} fullscreen style={{ pointerEvents: 'none' }}>
+          <div style={{
+            position: 'absolute',
+            right: 16,
+            bottom: 16,
+            maxWidth: 360,
+            background: 'rgba(8,16,28,0.9)',
+            border: '1px solid rgba(148, 163, 184, 0.5)',
+            borderRadius: 10,
+            padding: '10px 12px',
+            color: '#dbe3ef',
+            fontSize: 12,
+            lineHeight: 1.35,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            pointerEvents: 'auto',
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Classify Mesh Queue</div>
+            <div style={{ color: '#9fb1c7', marginBottom: 6 }}>{selectedMeshLabel}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="classify-clear-btn" onClick={() => cycleSelectedMesh(-1)}>Prev Mesh ([)</button>
+              <button type="button" className="classify-clear-btn" onClick={() => cycleSelectedMesh(1)}>Next Mesh (])</button>
+              <button type="button" className="classify-clear-btn" onClick={() => applyClassToSelectedMesh('cycle', false)}>Cycle Class (C)</button>
+              <button type="button" className="classify-clear-btn" onClick={() => applyClassToSelectedMesh('paintable')}>Paintable (1)</button>
+              <button type="button" className="classify-clear-btn" onClick={() => applyClassToSelectedMesh('excluded')}>Excluded (2)</button>
+              <button type="button" className="classify-clear-btn" onClick={() => applyClassToSelectedMesh('window')}>Window (3)</button>
+              <button type="button" className="classify-clear-btn" onClick={() => applyClassToSelectedMesh('rims')}>Rims (4)</button>
+            </div>
+          </div>
+        </Html>
+      )}
 
       {/* Floating legend HUD — rendered as DOM overlay in App.tsx, not here */}
     </>
@@ -1651,6 +1986,7 @@ type ProjectedLayerProps<TLayer extends DecalLayer | TextLayer> = {
   targetMeshes: THREE.Mesh[]
   index: number
   onSelect: (layerId: string) => void
+  onDragStart: (layerId: string) => void
 }
 
 function useProjectedGeometries(
@@ -1687,12 +2023,9 @@ function ProjectedImageDecalLayer({
   targetMeshes,
   index,
   onSelect,
+  onDragStart,
 }: ProjectedLayerProps<DecalLayer>) {
   const sourceTexture = useLoader(THREE.TextureLoader, layer.imageUrl as string)
-  const isSvgDecal = useMemo(() => {
-    const url = String(layer.imageUrl ?? '').toLowerCase()
-    return url.includes('.svg') || url.startsWith('data:image/svg+xml')
-  }, [layer.imageUrl])
   const geometries = useProjectedGeometries(targetMeshes, layer)
   const mirroredLayer = useMemo(
     () => (mirrorToOtherSide ? createMirroredLayer(layer) : null),
@@ -1734,21 +2067,58 @@ function ProjectedImageDecalLayer({
     }
   }, [mirroredSideTexture, texture])
 
+  // Colorize shader: use only the texture alpha channel, let material color supply RGB.
+  // Applied whenever the user has set a non-white color so their pick shows correctly.
+  // When color is #ffffff (default), we skip the override so multi-color PNG logos
+  // still render with their original image colors.
+  const isColorized =
+    layer.colorHex.toLowerCase() !== '#ffffff'
+    || (layer.mirrorColorHex?.toLowerCase() ?? '#ffffff') !== '#ffffff'
+  const colorizeCompile = useMemo(() => {
+    if (!isColorized) return undefined
+    return (shader: { fragmentShader: string }) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+          diffuseColor.a *= sampledDiffuseColor.a;
+        #endif`,
+      )
+    }
+  }, [isColorized])
+
+  const hitRadius = Math.min(layer.transform.scale.x, layer.transform.scale.y) * 0.38
+
   return (
     <group>
+      {/* Small invisible hit sphere — tighter click target than the full projected area */}
+      <mesh
+        position={[layer.transform.position.x, layer.transform.position.y, layer.transform.position.z]}
+        renderOrder={250 + index}
+        raycast={layer.locked ? () => {} : undefined}
+        onPointerDown={(event) => {
+          if (layer.locked) {
+            return
+          }
+          event.stopPropagation()
+          onSelect(layer.id)
+          onDragStart(layer.id)
+        }}
+      >
+        <sphereGeometry args={[hitRadius, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {geometries.map((geometry, geometryIndex) => (
         <mesh
           key={`${layer.id}-img-${geometryIndex}-${layer.colorHex}`}
           geometry={geometry}
           renderOrder={200 + index}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            onSelect(layer.id)
-          }}
+          raycast={() => { /* hit detection handled by hit sphere above */ }}
         >
           <meshStandardMaterial
             map={texture}
-                color={isSvgDecal ? '#ffffff' : layer.colorHex}
+            color={layer.colorHex}
             transparent
             opacity={Math.max(0.1, layer.transform.opacity)}
             depthWrite={false}
@@ -1758,6 +2128,8 @@ function ProjectedImageDecalLayer({
             roughness={getLayerFinishMaterialProps(layer.finish).roughness}
             envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}
             blending={layer.blendMode === 'multiply' ? THREE.MultiplyBlending : layer.blendMode === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending}
+            onBeforeCompile={colorizeCompile}
+            customProgramCacheKey={isColorized ? () => `colorize-${layer.finish}-${layer.colorHex}-${layer.mirrorColorHex ?? 'default'}` : undefined}
           />
         </mesh>
       ))}
@@ -1768,14 +2140,11 @@ function ProjectedImageDecalLayer({
               key={`${layer.id}-img-mirror-${geometryIndex}-${layer.mirrorColorHex ?? layer.colorHex}`}
               geometry={geometry}
               renderOrder={200 + index}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                onSelect(layer.id)
-              }}
+              raycast={() => { /* hit detection handled by hit sphere */ }}
             >
               <meshStandardMaterial
                 map={mirroredSideTexture ?? texture}
-                color={isSvgDecal ? '#ffffff' : (layer.mirrorColorHex ?? layer.colorHex)}
+                color={layer.mirrorColorHex ?? layer.colorHex}
                 transparent
                 opacity={Math.max(0.1, layer.transform.opacity)}
                 depthWrite={false}
@@ -1785,6 +2154,8 @@ function ProjectedImageDecalLayer({
                 roughness={getLayerFinishMaterialProps(layer.finish).roughness}
                 envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}
                 blending={layer.blendMode === 'multiply' ? THREE.MultiplyBlending : layer.blendMode === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending}
+                onBeforeCompile={colorizeCompile}
+                customProgramCacheKey={isColorized ? () => `colorize-${layer.finish}-${layer.colorHex}-${layer.mirrorColorHex ?? 'default'}` : undefined}
               />
             </mesh>
           ))
@@ -1799,6 +2170,7 @@ function ProjectedSolidDecalLayer({
   targetMeshes,
   index,
   onSelect,
+  onDragStart,
 }: ProjectedLayerProps<DecalLayer>) {
   const geometries = useProjectedGeometries(targetMeshes, layer)
   const mirroredLayer = useMemo(
@@ -1807,8 +2179,28 @@ function ProjectedSolidDecalLayer({
   )
   const mirroredGeometries = useProjectedGeometries(targetMeshes, mirroredLayer ?? layer)
 
+  const hitRadius = Math.min(layer.transform.scale.x, layer.transform.scale.y) * 0.38
+
   return (
     <group>
+      {/* Small invisible hit sphere — tighter click target than the full projected area */}
+      <mesh
+        position={[layer.transform.position.x, layer.transform.position.y, layer.transform.position.z]}
+        renderOrder={250 + index}
+        raycast={layer.locked ? () => {} : undefined}
+        onPointerDown={(event) => {
+          if (layer.locked) {
+            return
+          }
+          event.stopPropagation()
+          onSelect(layer.id)
+          onDragStart(layer.id)
+        }}
+      >
+        <sphereGeometry args={[hitRadius, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {geometries.map((geometry, geometryIndex) => (
         // key includes colorHex so R3F creates a fresh material on color change;
         // geometry is external and stable — no DecalGeometry rebuild.
@@ -1816,10 +2208,7 @@ function ProjectedSolidDecalLayer({
           key={`${layer.id}-solid-${geometryIndex}-${layer.colorHex}`}
           geometry={geometry}
           renderOrder={200 + index}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            onSelect(layer.id)
-          }}
+          raycast={() => { /* hit detection handled by hit sphere above */ }}
         >
           <meshStandardMaterial
             color={layer.colorHex}
@@ -1841,10 +2230,7 @@ function ProjectedSolidDecalLayer({
               key={`${layer.id}-solid-mirror-${geometryIndex}-${layer.mirrorColorHex ?? layer.colorHex}`}
               geometry={geometry}
               renderOrder={200 + index}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                onSelect(layer.id)
-              }}
+              raycast={() => { /* hit detection handled by hit sphere */ }}
             >
               <meshStandardMaterial
                 color={layer.mirrorColorHex ?? layer.colorHex}
@@ -1870,6 +2256,7 @@ function ProjectedTextLayer({
   targetMeshes,
   index,
   onSelect,
+  onDragStart,
 }: ProjectedLayerProps<TextLayer>) {
   const geometries = useProjectedGeometries(targetMeshes, layer)
   const mirroredLayer = useMemo(
@@ -2063,15 +2450,23 @@ function ProjectedTextLayer({
     tex.colorSpace = THREE.SRGBColorSpace
     tex.flipY = false
     tex.wrapS = THREE.RepeatWrapping
-    tex.repeat.x = layer.mirrorX ? -1 : 1
-    tex.offset.x = layer.mirrorX ? 1 : 0
+    const mirroredTextReadable = layer.mirroredTextReadable ?? true
+    if (mirroredTextReadable) {
+      // Invert on mirrored side so text stays readable after projection.
+      tex.repeat.x = layer.mirrorX ? -1 : 1
+      tex.offset.x = layer.mirrorX ? 1 : 0
+    } else {
+      // Match the front-side texture orientation.
+      tex.repeat.x = layer.mirrorX ? 1 : -1
+      tex.offset.x = layer.mirrorX ? 0 : 1
+    }
     tex.generateMipmaps = true
     tex.minFilter = THREE.LinearMipmapLinearFilter
     tex.magFilter = THREE.LinearFilter
     tex.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     return tex
-  }, [gl, mirrorToOtherSide, layer.mirrorX, textCanvas])
+  }, [gl, mirrorToOtherSide, layer.mirrorX, layer.mirroredTextReadable, textCanvas])
 
   useEffect(() => {
     return () => {
@@ -2080,17 +2475,34 @@ function ProjectedTextLayer({
     }
   }, [mirroredSideTexture, texture])
 
+  const hitRadius = Math.min(layer.transform.scale.x, layer.transform.scale.y) * 0.38
+
   return (
     <group>
+      {/* Small invisible hit sphere — tighter click target than the full projected area */}
+      <mesh
+        position={[layer.transform.position.x, layer.transform.position.y, layer.transform.position.z]}
+        renderOrder={250 + index}
+        raycast={layer.locked ? () => {} : undefined}
+        onPointerDown={(event) => {
+          if (layer.locked) {
+            return
+          }
+          event.stopPropagation()
+          onSelect(layer.id)
+          onDragStart(layer.id)
+        }}
+      >
+        <sphereGeometry args={[hitRadius, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {geometries.map((geometry, geometryIndex) => (
         <mesh
           key={`${layer.id}-text-${geometryIndex}`}
           geometry={geometry}
           renderOrder={200 + index}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            onSelect(layer.id)
-          }}
+          raycast={() => { /* hit detection handled by hit sphere above */ }}
         >
           <meshStandardMaterial
             map={texture}
@@ -2113,10 +2525,7 @@ function ProjectedTextLayer({
               key={`${layer.id}-text-mirror-${geometryIndex}`}
               geometry={geometry}
               renderOrder={200 + index}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                onSelect(layer.id)
-              }}
+              raycast={() => { /* hit detection handled by hit sphere */ }}
             >
               <meshStandardMaterial
                 map={mirroredSideTexture ?? texture}
@@ -2152,31 +2561,36 @@ export type PrintCaptureFn = (
   height: number
 ) => Promise<PrintCaptureResult[]>
 
+export type GlbExportOptions = {
+  bakeCarOverlays?: boolean
+  includeLightsAndCamera?: boolean
+}
+
+export type GlbExportResult = {
+  fileName: string
+}
+
 export type LightPresetId = 'studio' | 'sunset' | 'night' | 'showroom'
 export type ResetCameraFn = () => void
 
 const LIGHT_PRESETS: Record<LightPresetId, {
-  env: 'city' | 'sunset' | 'night' | 'warehouse'
   ambient: number
   dirIntensity: number
   dirPosition: [number, number, number]
   extraLights?: Array<{ position: [number, number, number]; intensity: number; color: string }>
 }> = {
   studio: {
-    env: 'city',
     ambient: 0.42,
     dirIntensity: 1.2,
     dirPosition: [5, 6, 4],
   },
   sunset: {
-    env: 'sunset',
     ambient: 0.35,
     dirIntensity: 1.6,
     dirPosition: [8, 3, -2],
     extraLights: [{ position: [-4, 2, 3], intensity: 0.5, color: '#ff9944' }],
   },
   night: {
-    env: 'night',
     ambient: 0.18,
     dirIntensity: 0.5,
     dirPosition: [2, 8, 2],
@@ -2186,7 +2600,6 @@ const LIGHT_PRESETS: Record<LightPresetId, {
     ],
   },
   showroom: {
-    env: 'warehouse',
     ambient: 0.55,
     dirIntensity: 1.4,
     dirPosition: [0, 8, 0],
@@ -2201,25 +2614,50 @@ type EditorCanvasProps = {
   modelUrl: string
   groundOffsetY?: number
   classifyWindowClickThrough?: boolean
+  classifyBodyClickThrough?: boolean
+  classifyShowMeshNames?: boolean
   orbitEnabled?: boolean
   lightPreset?: LightPresetId
   isRecording?: boolean
-  onRendererReady?: (fn: () => string) => void
+  recordingQuality?: ExportQuality
+  onRendererReady?: (fn: (quality?: ExportQuality) => string) => void
+  onGlbExportReady?: (fn: (options?: GlbExportOptions) => Promise<GlbExportResult>) => void
   onPrintCaptureReady?: (fn: PrintCaptureFn) => void
   onResetCameraReady?: (fn: ResetCameraFn) => void
-  onVideoRecorderReady?: (fn: () => MediaStream) => void
+  onVideoRecorderReady?: (fn: (quality?: ExportQuality) => MediaStream) => void
+  onFirstInteraction?: () => void
 }
 
 function RendererExposer({
   onReady,
+  onGlbExportReady,
   onPrintCaptureReady,
   onVideoRecorderReady,
+  onFirstInteraction,
 }: {
-  onReady?: (fn: () => string) => void
+  onReady?: (fn: (quality?: ExportQuality) => string) => void
+  onGlbExportReady?: (fn: (options?: GlbExportOptions) => Promise<GlbExportResult>) => void
   onPrintCaptureReady?: (fn: PrintCaptureFn) => void
-  onVideoRecorderReady?: (fn: () => MediaStream) => void
+  onVideoRecorderReady?: (fn: (quality?: ExportQuality) => MediaStream) => void
+  onFirstInteraction?: () => void
 }) {
-  const { gl, scene } = useThree()
+  const { gl, scene, camera } = useThree()
+  const meshClassifications = useEditorStore((state) => state.project.meshClassifications)
+  const carGradient = useEditorStore((state) => state.project.carGradient)
+  const carSplit = useEditorStore((state) => state.project.carSplit)
+  const carStripe = useEditorStore((state) => state.project.carStripe)
+
+  const PNG_LONG_EDGE_BY_QUALITY: Record<ExportQuality, number> = {
+    standard: 1920,
+    high: 3840,
+    ultra: 5760,
+  }
+
+  const VIDEO_FPS_BY_QUALITY: Record<ExportQuality, number> = {
+    standard: 30,
+    high: 30,
+    ultra: 45,
+  }
 
   const toFlatMaterial = (source: THREE.Material) => {
     const materialLike = source as THREE.Material & {
@@ -2250,15 +2688,310 @@ function RendererExposer({
     return flat
   }
 
+  const smoothstep = (edge0: number, edge1: number, x: number) => {
+    const t = THREE.MathUtils.clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1)
+    return t * t * (3 - 2 * t)
+  }
+
+  const resolveEffectiveClass = (mesh: THREE.Mesh): MeshClass => {
+    const label = ((mesh.userData.meshLabel as string | undefined) ?? '').trim()
+    const cls = meshClassifications[label]
+    if (cls) return cls
+    if (mesh.userData.autoGlass) return 'window'
+    if (mesh.userData.geometricInterior) return 'excluded'
+    return isProjectableMeshLabel(label) ? 'paintable' : 'excluded'
+  }
+
+  const bakeCarOverlayVertexColors = (
+    mesh: THREE.Mesh,
+    sceneBounds: THREE.Box3,
+  ) => {
+    const label = ((mesh.userData.meshLabel as string | undefined) ?? '').trim()
+    if (!label) return
+
+    const cls = resolveEffectiveClass(mesh)
+    if (cls !== 'paintable') return
+
+    const isExplicitPaintable = meshClassifications[label] === 'paintable'
+    const splitAllowed = isExplicitPaintable ? true : (isProjectableMeshLabel(label) && !isSplitExcludedMesh(mesh))
+    const gradientAllowed = isExplicitPaintable ? true : isGradientBodyMeshLabel(label)
+    const stripeAllowed = isExplicitPaintable ? true : !isStripeExcludedMesh(mesh)
+
+    const useSplit = Boolean(carSplit.enabled && splitAllowed)
+    const useGradient = Boolean(!useSplit && carGradient.enabled && gradientAllowed)
+    const useStripe = Boolean(carStripe.enabled && stripeAllowed)
+    if (!useSplit && !useGradient && !useStripe) return
+
+    const sourceGeometry = mesh.geometry
+    const bakedGeometry = sourceGeometry.index ? (sourceGeometry.toNonIndexed() ?? sourceGeometry.clone()) : sourceGeometry
+    if (bakedGeometry !== sourceGeometry) {
+      mesh.geometry = bakedGeometry
+      sourceGeometry.dispose()
+    }
+
+    const position = bakedGeometry.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!position) return
+
+    const axis = carGradient.axis === 'x' ? 0 : carGradient.axis === 'y' ? 1 : 2
+    const gradMin = carGradient.axis === 'x'
+      ? sceneBounds.min.x
+      : carGradient.axis === 'y'
+        ? sceneBounds.min.y
+        : sceneBounds.min.z
+    const gradMax = carGradient.axis === 'x'
+      ? sceneBounds.max.x
+      : carGradient.axis === 'y'
+        ? sceneBounds.max.y
+        : sceneBounds.max.z
+    const gradRange = Math.max(1e-5, gradMax - gradMin)
+    const gradBalance = THREE.MathUtils.clamp(carGradient.balance / 100, -0.95, 0.95)
+
+    const splitA = new THREE.Color(carSplit.sideAHex)
+    const splitB = new THREE.Color(carSplit.sideBHex)
+    const gradFrom = new THREE.Color(carGradient.fromHex)
+    const gradTo = new THREE.Color(carGradient.toHex)
+    const stripeColor = new THREE.Color(carStripe.colorHex)
+
+    const baseMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+    const baseColor = (baseMaterial as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial)?.color?.clone() ?? new THREE.Color('#ffffff')
+
+    const matrixWorld = mesh.matrixWorld.clone()
+    const v = new THREE.Vector3()
+    const color = new THREE.Color()
+    const colors = new Float32Array(position.count * 3)
+
+    for (let i = 0; i < position.count; i++) {
+      v.fromBufferAttribute(position, i).applyMatrix4(matrixWorld)
+      color.copy(baseColor)
+
+      if (useSplit) {
+        const splitCa = Math.cos(carSplit.angle)
+        const splitSa = Math.sin(carSplit.angle)
+        const x = v.x - carSplit.offsetX
+        const z = v.z
+        const splitAxis = x * splitCa - z * splitSa
+        const splitT = smoothstep(-Math.max(0.0005, carSplit.softEdge), Math.max(0.0005, carSplit.softEdge), splitAxis)
+        color.copy(splitB).lerp(splitA, splitT)
+      } else if (useGradient) {
+        const axisValue = axis === 0 ? v.x : axis === 1 ? v.y : v.z
+        const gradT = THREE.MathUtils.clamp(((axisValue - gradMin) / gradRange) + gradBalance, 0, 1)
+        color.copy(gradFrom).lerp(gradTo, gradT)
+      }
+
+      if (useStripe) {
+        const stripeCa = Math.cos(carStripe.angle)
+        const stripeSa = Math.sin(carStripe.angle)
+        const x = v.x - carStripe.offsetX
+        const z = v.z
+        const stripeAxis = x * stripeCa - z * stripeSa
+        const stripeHalfGap = Math.max(0, carStripe.gap * 0.5)
+        const stripeDist = Math.abs(Math.abs(stripeAxis) - stripeHalfGap)
+        const stripeAlpha = 1 - smoothstep(carStripe.width, carStripe.width + Math.max(0.0005, carStripe.softEdge), stripeDist)
+        color.lerp(stripeColor, stripeAlpha)
+      }
+
+      const idx = i * 3
+      colors[idx] = color.r
+      colors[idx + 1] = color.g
+      colors[idx + 2] = color.b
+    }
+
+    bakedGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    materials.forEach((m) => {
+      const std = m as THREE.MeshStandardMaterial
+      std.vertexColors = true
+      std.color.set('#ffffff')
+      std.onBeforeCompile = () => {}
+      std.needsUpdate = true
+    })
+  }
+
   useEffect(() => {
     if (onReady) {
-      onReady(() => gl.domElement.toDataURL('image/png'))
+      markPerfOnce('scene_renderer_ready')
+      onReady((quality: ExportQuality = 'high') => {
+        const srcCanvas = gl.domElement as HTMLCanvasElement
+        const srcW = Math.max(1, srcCanvas.width)
+        const srcH = Math.max(1, srcCanvas.height)
+        const aspect = srcW / srcH
+
+        const maxLongEdge = PNG_LONG_EDGE_BY_QUALITY[quality] ?? PNG_LONG_EDGE_BY_QUALITY.high
+        const width = maxLongEdge
+        const height = Math.max(1, Math.round(width / aspect))
+
+        const rt = new THREE.WebGLRenderTarget(width, height, {
+          minFilter: THREE.LinearFilter,
+          magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.UnsignedByteType,
+        })
+
+        const pixels = new Uint8Array(width * height * 4)
+        gl.setRenderTarget(rt)
+        gl.render(scene, camera)
+        gl.readRenderTargetPixels(rt, 0, 0, width, height, pixels)
+        gl.setRenderTarget(null)
+        rt.dispose()
+
+        const canvas2d = document.createElement('canvas')
+        canvas2d.width = width
+        canvas2d.height = height
+        const ctx = canvas2d.getContext('2d')
+        if (!ctx) return srcCanvas.toDataURL('image/png')
+
+        const imageData = ctx.createImageData(width, height)
+        for (let row = 0; row < height; row++) {
+          const srcRow = height - 1 - row
+          imageData.data.set(
+            pixels.subarray(srcRow * width * 4, (srcRow + 1) * width * 4),
+            row * width * 4,
+          )
+        }
+        ctx.putImageData(imageData, 0, 0)
+
+        return canvas2d.toDataURL('image/png')
+      })
     }
-  }, [gl, onReady])
+  }, [camera, gl, onReady, scene])
+
+  useEffect(() => {
+    if (!onGlbExportReady) return
+
+    onGlbExportReady(async (options) => {
+      const bakeCarOverlays = options?.bakeCarOverlays ?? true
+      const includeLightsAndCamera = options?.includeLightsAndCamera ?? false
+      const exporter = new GLTFExporter()
+      const exportRoot = new THREE.Group()
+      const ownedGeometries: THREE.BufferGeometry[] = []
+      const ownedMaterials: THREE.Material[] = []
+      const sceneBounds = new THREE.Box3().setFromObject(scene)
+
+      scene.updateMatrixWorld(true)
+
+      scene.traverse((obj) => {
+        if (includeLightsAndCamera && obj instanceof THREE.Light) {
+          const lightClone = obj.clone()
+          const worldPos = new THREE.Vector3()
+          const worldQuat = new THREE.Quaternion()
+          const worldScale = new THREE.Vector3()
+          obj.matrixWorld.decompose(worldPos, worldQuat, worldScale)
+          lightClone.position.copy(worldPos)
+          lightClone.quaternion.copy(worldQuat)
+          lightClone.scale.copy(worldScale)
+          exportRoot.add(lightClone)
+          return
+        }
+
+        if (!(obj instanceof THREE.Mesh)) {
+          return
+        }
+        if (!obj.visible || obj.userData?.isFloor) {
+          return
+        }
+
+        const sourceMaterial = obj.material
+        const materials = Array.isArray(sourceMaterial) ? sourceMaterial : [sourceMaterial]
+        const isOverlayMesh =
+          obj.renderOrder >= 300 &&
+          materials.some((m) => m instanceof THREE.MeshBasicMaterial && m.transparent)
+        if (isOverlayMesh) {
+          return
+        }
+
+        const cloned = new THREE.Mesh(
+          obj.geometry.clone(),
+          Array.isArray(sourceMaterial)
+            ? sourceMaterial.map((m) => m.clone())
+            : sourceMaterial.clone(),
+        )
+
+        cloned.userData = { ...obj.userData }
+
+        if (Array.isArray(cloned.material)) ownedMaterials.push(...cloned.material)
+        else ownedMaterials.push(cloned.material)
+
+        const worldPos = new THREE.Vector3()
+        const worldQuat = new THREE.Quaternion()
+        const worldScale = new THREE.Vector3()
+        obj.matrixWorld.decompose(worldPos, worldQuat, worldScale)
+        cloned.position.copy(worldPos)
+        cloned.quaternion.copy(worldQuat)
+        cloned.scale.copy(worldScale)
+        cloned.updateMatrixWorld(true)
+
+        if (bakeCarOverlays) {
+          bakeCarOverlayVertexColors(cloned, sceneBounds)
+        }
+
+        ownedGeometries.push(cloned.geometry)
+
+        exportRoot.add(cloned)
+      })
+
+      if (includeLightsAndCamera) {
+        const camClone = camera.clone()
+        camClone.name = 'ExportCamera'
+        exportRoot.add(camClone)
+      }
+
+      const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+        exporter.parse(
+          exportRoot,
+          (output) => {
+            if (output instanceof ArrayBuffer) {
+              resolve(output)
+              return
+            }
+            const json = JSON.stringify(output)
+            resolve(new TextEncoder().encode(json).buffer)
+          },
+          (error) => reject(error),
+          {
+            binary: true,
+            onlyVisible: true,
+            truncateDrawRange: true,
+            maxTextureSize: 4096,
+          },
+        )
+      })
+
+      ownedGeometries.forEach((g) => g.dispose())
+      ownedMaterials.forEach((m) => m.dispose())
+
+      const blob = new Blob([result], { type: 'model/gltf-binary' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const fileName = `mygarage-layered-${Date.now()}.glb`
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      return { fileName }
+    })
+  }, [camera, carGradient, carSplit, carStripe, meshClassifications, onGlbExportReady, scene])
+
+  useEffect(() => {
+    if (!onFirstInteraction) return
+
+    const handlePointerDown = () => {
+      markPerfOnce('scene_first_interaction')
+      onFirstInteraction()
+    }
+
+    gl.domElement.addEventListener('pointerdown', handlePointerDown, { once: true })
+    return () => gl.domElement.removeEventListener('pointerdown', handlePointerDown)
+  }, [gl, onFirstInteraction])
 
   useEffect(() => {
     if (onVideoRecorderReady) {
-      onVideoRecorderReady(() => (gl.domElement as HTMLCanvasElement).captureStream(30))
+      onVideoRecorderReady((quality: ExportQuality = 'high') => {
+        const fps = VIDEO_FPS_BY_QUALITY[quality] ?? VIDEO_FPS_BY_QUALITY.high
+        return (gl.domElement as HTMLCanvasElement).captureStream(fps)
+      })
     }
   }, [gl, onVideoRecorderReady])
 
@@ -2372,11 +3105,23 @@ function RendererExposer({
   return null
 }
 
-// Drives smooth camera orbit during video recording using absolute clock time,
-// bypassing OrbitControls delta-based autoRotate which jitters under variable frame rate.
-function RecordingRotator({ active }: { active: boolean }) {
+// Drives smooth camera orbit using absolute clock time,
+// bypassing OrbitControls delta-based autoRotate which can jitter under variable frame rate.
+function SmoothAutoRotator({
+  active,
+  controlsRef,
+}: {
+  active: boolean
+  controlsRef: MutableRefObject<OrbitControllerHandle | null>
+}) {
   const { camera } = useThree()
-  const startRef = useRef<{ time: number; angle: number; radius: number; y: number } | null>(null)
+  const startRef = useRef<{
+    time: number
+    angle: number
+    radius: number
+    yOffset: number
+    target: THREE.Vector3
+  } | null>(null)
   // autoRotateSpeed=2.4 → one full orbit every 60/2.4 = 25 seconds
   const ORBIT_PERIOD = 60 / 2.4
 
@@ -2386,54 +3131,77 @@ function RecordingRotator({ active }: { active: boolean }) {
       return
     }
     const elapsed = clock.getElapsedTime()
+    const controls = controlsRef.current
+    const target = controls ? controls.target.clone() : new THREE.Vector3(0, camera.position.y * 0.45, 0)
+
     if (!startRef.current) {
-      // Capture current camera position relative to scene origin (orbit target is approx [0,y,0])
-      const dx = camera.position.x
-      const dz = camera.position.z
+      // Capture current camera position relative to the current controls target.
+      const dx = camera.position.x - target.x
+      const dz = camera.position.z - target.z
       startRef.current = {
         time: elapsed,
         angle: Math.atan2(dx, dz),
         radius: Math.sqrt(dx * dx + dz * dz),
-        y: camera.position.y,
+        yOffset: camera.position.y - target.y,
+        target,
       }
     }
-    const { time, angle: startAngle, radius, y } = startRef.current
+
+    // If target moves (camera preset/reset), resync so orbit remains smooth.
+    if (startRef.current.target.distanceToSquared(target) > 1e-6) {
+      startRef.current = null
+      return
+    }
+
+    const { time, angle: startAngle, radius, yOffset } = startRef.current
     const omega = (2 * Math.PI) / ORBIT_PERIOD
     const a = startAngle + omega * (elapsed - time)
-    camera.position.set(radius * Math.sin(a), y, radius * Math.cos(a))
-    camera.lookAt(0, y * 0.45, 0) // look at roughly the car center
+    camera.position.set(
+      target.x + radius * Math.sin(a),
+      target.y + yOffset,
+      target.z + radius * Math.cos(a),
+    )
+    camera.lookAt(target)
+    controls?.update()
   })
 
   return null
 }
 
-export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, orbitEnabled = true, lightPreset = 'studio', isRecording = false, onRendererReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady }: EditorCanvasProps) {
+export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, classifyBodyClickThrough = false, classifyShowMeshNames = false, orbitEnabled = true, lightPreset = 'studio', isRecording = false, recordingQuality = 'high', onRendererReady, onGlbExportReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady, onFirstInteraction }: EditorCanvasProps) {
   const preset = LIGHT_PRESETS[lightPreset]
   const resetCameraRef = useRef<ResetCameraFn | null>(null)
   const cameraView = useEditorStore((state) => state.cameraView)
   const setSelectedLayer = useEditorStore((state) => state.setSelectedLayer)
   const autoRotate = useEditorStore((state) => state.autoRotate)
   const controlsRef = useRef<OrbitControllerHandle | null>(null)
+  const [isLayerDragging, setIsLayerDragging] = useState(false)
+
+  // Keep recording DPR conservative to avoid GPU stalls/freeze on start.
+  const recordingDpr: number = recordingQuality === 'ultra' ? 2.5 : recordingQuality === 'standard' ? 1.5 : 2
 
   return (
     <Canvas
-      shadows
+      shadows="percentage"
       camera={{ position: CAMERA_START_POSITION, fov: 35 }}
-      dpr={isRecording ? 2 : [1, 2]}
+      dpr={isRecording ? recordingDpr : [1, 2]}
       gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
       onPointerMissed={() => {
         setSelectedLayer(null)
       }}
     >
-      <RendererExposer onReady={onRendererReady} onPrintCaptureReady={onPrintCaptureReady} onVideoRecorderReady={onVideoRecorderReady} />
+      <RendererExposer onReady={onRendererReady} onGlbExportReady={onGlbExportReady} onPrintCaptureReady={onPrintCaptureReady} onVideoRecorderReady={onVideoRecorderReady} onFirstInteraction={onFirstInteraction} />
       <CameraPresetSync cameraView={cameraView} controlsRef={controlsRef} onResetCameraReady={(fn) => {
         resetCameraRef.current = fn
         onResetCameraReady?.(fn)
       }} />
 
-      <color attach="background" args={['#0a1018']} />
-      <fog attach="fog" args={['#0a1018', 8, 22]} />
-      <ambientLight intensity={preset.ambient} />
+      <color attach="background" args={['#101927']} />
+      <fog attach="fog" args={['#101927', 10, 26]} />
+      <ambientLight intensity={preset.ambient + 0.1} />
+      <hemisphereLight
+        args={['#dbe8f8', '#2f4358', 0.75]}
+      />
       <directionalLight
         intensity={preset.dirIntensity}
         position={preset.dirPosition}
@@ -2441,53 +3209,57 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
+      <directionalLight
+        intensity={0.65}
+        position={[-6, 4, -5]}
+        color="#dbe7f5"
+      />
       {preset.extraLights?.map((light, i) => (
         <pointLight key={i} position={light.position} intensity={light.intensity} color={light.color} />
       ))}
 
       <Suspense fallback={null}>
-        <Environment preset={preset.env} />
+        <Environment preset="city" />
       </Suspense>
 
       {/* Studio backdrop — large dark cylinder surrounds the scene */}
       <mesh userData={{ isFloor: true }}>
         <cylinderGeometry args={[14, 14, 12, 32, 1, true]} />
-        <meshStandardMaterial color="#0a1018" roughness={1} metalness={0} side={2} />
+        <meshStandardMaterial color="#101927" roughness={1} metalness={0} side={2} />
       </mesh>
 
       <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow userData={{ isFloor: true }}>
         <planeGeometry args={[30, 30]} />
-        <MeshReflectorMaterial
-          color="#0d1820"
-          roughness={0.7}
+        <meshStandardMaterial
+          color="#182434"
+          roughness={0.62}
           metalness={0.0}
-          resolution={1024}
-          blur={[64, 32]}
-          mixBlur={1}
-          mixStrength={3.2}
-          depthScale={1.2}
-          minDepthThreshold={0.2}
-          maxDepthThreshold={1.6}
-          mirror={0.9}
         />
       </mesh>
 
       <Suspense fallback={<CarBody />}>
-        <LoadedCarModel modelUrl={modelUrl} groundOffsetY={groundOffsetY} classifyWindowClickThrough={classifyWindowClickThrough} />
+        <LoadedCarModel
+          modelUrl={modelUrl}
+          groundOffsetY={groundOffsetY}
+          classifyWindowClickThrough={classifyWindowClickThrough}
+          classifyBodyClickThrough={classifyBodyClickThrough}
+          classifyShowMeshNames={classifyShowMeshNames}
+          controlsRef={controlsRef}
+          onLayerDragStateChange={setIsLayerDragging}
+        />
       </Suspense>
 
-      <RecordingRotator active={isRecording && autoRotate} />
-      <OrbitControls
-        ref={controlsRef as never}
-        makeDefault
+      <SmoothAutoRotator active={autoRotate} controlsRef={controlsRef} />
+      <NativeOrbitControls
+        ref={controlsRef}
         target={CAMERA_START_TARGET}
         minDistance={2.5}
         maxDistance={5}
         maxPolarAngle={Math.PI / 2 - 0.05}
         enableDamping={!isRecording}
         dampingFactor={0.08}
-        enabled={isRecording ? false : orbitEnabled}
-        autoRotate={isRecording ? false : autoRotate}
+        enabled={isRecording ? false : orbitEnabled && !isLayerDragging}
+        autoRotate={false}
         autoRotateSpeed={2.4}
         onChange={() => {
           const ctrl = controlsRef.current as unknown as { target: THREE.Vector3 } | null

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
+import { cleanFontDisplayName } from '../../lib/fontNames'
 
 type TextLibraryPanelProps = {
   onFontPicked?: () => void
+  isGuest?: boolean
+  onGuestSignIn?: () => void
 }
 
 type FontPreset = {
@@ -38,14 +41,34 @@ const FONT_PRESETS: FontPreset[] = [
   { label: 'Impact', family: 'Impact' },
 ]
 
-export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
+export function TextLibraryPanel({ onFontPicked, isGuest = false, onGuestSignIn }: TextLibraryPanelProps) {
   const addTextLayer = useEditorStore((state) => state.addTextLayer)
   const setTool = useEditorStore((state) => state.setTool)
 
   const [customFonts, setCustomFonts] = useState<FontPreset[]>([])
+  const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const guestPromptTimerRef = useRef<number | null>(null)
+
+  const showGuestPrompt = (feature: string) => {
+    setGuestPrompt(`Create an account to use ${feature}.`)
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+  }
 
   const handleImportFont = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      showGuestPrompt('Font Import')
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -53,6 +76,7 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string
       const fontFamily = file.name.replace(/\.[^/.]+$/, '') // Remove extension
+      const cleanedLabel = cleanFontDisplayName(fontFamily)
       
       // Add font-face to styles
       let style = document.getElementById('mygarage-custom-fonts') as HTMLStyleElement | null
@@ -65,7 +89,7 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
       
       // Add new font to custom fonts
       const newFont: FontPreset = {
-        label: fontFamily,
+        label: cleanedLabel,
         family: `${fontFamily} (imported)`,
         url: dataUrl,
         source: 'custom',
@@ -114,7 +138,7 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
 
         setCustomFonts(
           manifestItems.map((item) => ({
-            label: item.name,
+            label: cleanFontDisplayName(item.name || item.fileName),
             family: item.family,
             url: item.url,
             source: 'custom',
@@ -131,6 +155,14 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
 
     return () => {
       mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (guestPromptTimerRef.current !== null) {
+        window.clearTimeout(guestPromptTimerRef.current)
+      }
     }
   }, [])
 
@@ -161,8 +193,14 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
         <button
           type="button"
           className="import-btn"
-          onClick={() => fileInputRef.current?.click()}
-          title="Import a custom font (TTF, OTF, WOFF)"
+          onClick={() => {
+            if (isGuest) {
+              showGuestPrompt('Font Import')
+              return
+            }
+            fileInputRef.current?.click()
+          }}
+          title={isGuest ? 'Sign in to import fonts' : 'Import a custom font (TTF, OTF, WOFF)'}
           aria-label="Import font"
         >
           <Upload size={18} />
@@ -175,6 +213,15 @@ export function TextLibraryPanel({ onFontPicked }: TextLibraryPanelProps) {
           style={{ display: 'none' }}
         />
       </div>
+
+      {isGuest && guestPrompt && (
+        <div className="top-guest-prompt" role="status" aria-live="polite">
+          <span>{guestPrompt}</span>
+          <button type="button" className="top-guest-prompt-link" onClick={onGuestSignIn}>
+            Sign In
+          </button>
+        </div>
+      )}
 
 
       <div className="text-font-grid" role="list" aria-label="Font presets">

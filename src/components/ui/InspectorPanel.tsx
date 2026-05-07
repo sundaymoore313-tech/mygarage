@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { WRAP_COLOR_SWATCHES, WRAP_SWATCH_BY_ID } from '../../lib/wrapColorPalette'
 import { PAINT_TARGETS } from '../../lib/paintTargets'
+import { cleanFontDisplayName } from '../../lib/fontNames'
+import { clampNumber, clampOpacity, clampRotation, clampSoftEdge, clampStripeOffset, clampStripeWidth, clampTransformComponent, validateColorHex } from '../../lib/validation'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlendMode, ColorReference, DecalLayer, Layer, PaintFinish, SplitLayer, StripeLayer, TextLayer } from '../../types/editor'
 import { WrapColorPicker } from './WrapColorPicker'
@@ -26,8 +28,8 @@ function useFontList(): FontOption[] {
       .then((r) => r.json())
       .then((json) => {
         const items = Array.isArray(json.items) ? json.items : []
-        setManifestFonts(items.map((item: { name: string; family: string; url: string }) => ({
-          label: item.name,
+        setManifestFonts(items.map((item: { name: string; family: string; url: string; fileName?: string }) => ({
+          label: cleanFontDisplayName(item.name || item.fileName || item.family),
           family: item.family,
           url: item.url,
         })))
@@ -96,7 +98,7 @@ export function InspectorPanel() {
         ...selected.transform,
         position: {
           ...selected.transform.position,
-          [axis]: selected.transform.position[axis] + delta,
+          [axis]: clampTransformComponent(selected.transform.position[axis] + delta),
         },
       },
     })
@@ -112,7 +114,7 @@ export function InspectorPanel() {
         ...selected.transform,
         rotation: {
           ...selected.transform.rotation,
-          z: selected.transform.rotation.z + delta,
+          z: clampRotation(selected.transform.rotation.z + delta),
         },
       },
     })
@@ -138,11 +140,12 @@ export function InspectorPanel() {
     if (!selected) {
       return
     }
+    const safeHex = validateColorHex(colorHex, selected.colorHex)
     // Live drag uses transient (no history entry); releasing commits to history
     if (commit) {
-      updateLayer(selected.id, { colorHex, colorRef: null })
+      updateLayer(selected.id, { colorHex: safeHex, colorRef: null })
     } else {
-      updateLayerTransient(selected.id, { colorHex, colorRef: null })
+      updateLayerTransient(selected.id, { colorHex: safeHex, colorRef: null })
     }
   }
 
@@ -410,12 +413,12 @@ export function InspectorPanel() {
                 value={selected.transform.opacity}
                 onChange={(event) =>
                   updateLayerTransient(selected.id, {
-                    transform: { ...selected.transform, opacity: Number(event.target.value) },
+                    transform: { ...selected.transform, opacity: clampOpacity(event.target.value) },
                   })
                 }
                 onMouseUp={(event) =>
                   updateLayer(selected.id, {
-                    transform: { ...selected.transform, opacity: Number((event.target as HTMLInputElement).value) },
+                    transform: { ...selected.transform, opacity: clampOpacity((event.target as HTMLInputElement).value) },
                   })
                 }
               />
@@ -450,8 +453,8 @@ export function InspectorPanel() {
                 <div className="opacity-row">
                   <input type="range" min="0.02" max="1.5" step="0.01"
                     value={(selected as StripeLayer).stripeWidth}
-                    onChange={(e) => updateLayerTransient(selected.id, { stripeWidth: Number(e.target.value) } as Partial<Layer>)}
-                    onMouseUp={(e) => updateLayer(selected.id, { stripeWidth: Number((e.target as HTMLInputElement).value) } as Partial<Layer>)}
+                    onChange={(e) => updateLayerTransient(selected.id, { stripeWidth: clampStripeWidth(e.target.value) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { stripeWidth: clampStripeWidth((e.target as HTMLInputElement).value) } as Partial<Layer>)}
                   />
                   <span className="hint">{(selected as StripeLayer).stripeWidth.toFixed(2)}m</span>
                 </div>
@@ -462,8 +465,8 @@ export function InspectorPanel() {
                 <div className="opacity-row">
                   <input type="range" min="-1.8" max="1.8" step="0.01"
                     value={(selected as StripeLayer).stripeOffsetX}
-                    onChange={(e) => updateLayerTransient(selected.id, { stripeOffsetX: Number(e.target.value) } as Partial<Layer>)}
-                    onMouseUp={(e) => updateLayer(selected.id, { stripeOffsetX: Number((e.target as HTMLInputElement).value) } as Partial<Layer>)}
+                    onChange={(e) => updateLayerTransient(selected.id, { stripeOffsetX: clampStripeOffset(e.target.value) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { stripeOffsetX: clampStripeOffset((e.target as HTMLInputElement).value) } as Partial<Layer>)}
                   />
                   <span className="hint">{(selected as StripeLayer).stripeOffsetX >= 0 ? '+' : ''}{(selected as StripeLayer).stripeOffsetX.toFixed(2)}</span>
                 </div>
@@ -474,8 +477,8 @@ export function InspectorPanel() {
                 <div className="opacity-row">
                   <input type="range" min="0" max="0.12" step="0.005"
                     value={(selected as StripeLayer).softEdge}
-                    onChange={(e) => updateLayerTransient(selected.id, { softEdge: Number(e.target.value) } as Partial<Layer>)}
-                    onMouseUp={(e) => updateLayer(selected.id, { softEdge: Number((e.target as HTMLInputElement).value) } as Partial<Layer>)}
+                    onChange={(e) => updateLayerTransient(selected.id, { softEdge: clampSoftEdge(e.target.value) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { softEdge: clampSoftEdge((e.target as HTMLInputElement).value) } as Partial<Layer>)}
                   />
                   <span className="hint">{(selected as StripeLayer).softEdge.toFixed(3)}</span>
                 </div>
@@ -491,7 +494,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={selected.transform.rotation.z}
                     onChange={(event) => {
-                      const nextZ = Number(event.target.value)
+                      const nextZ = clampRotation(event.target.value)
                       updateLayerTransient(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -500,7 +503,7 @@ export function InspectorPanel() {
                       })
                     }}
                     onMouseUp={(event) => {
-                      const nextZ = Number((event.target as HTMLInputElement).value)
+                      const nextZ = clampRotation((event.target as HTMLInputElement).value)
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -510,14 +513,27 @@ export function InspectorPanel() {
                     }}
                   />
                   <div className="rotate-overlay-actions" aria-hidden="false">
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
-                      <span className="action-icon" aria-hidden="true">↺</span>
-                      <span>Left</span>
-                    </button>
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
-                      <span className="action-icon" aria-hidden="true">↻</span>
-                      <span>Right</span>
-                    </button>
+                    <div className="rotate-overlay-top">
+                      <button
+                        type="button"
+                        className="chip icon-chip"
+                        onClick={() => rotateSelected(Math.PI / 2)}
+                        title="Rotate 90 degrees"
+                        aria-label="Rotate 90 degrees"
+                      >
+                        <span>90°</span>
+                      </button>
+                    </div>
+                    <div className="rotate-overlay-row">
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
+                        <span className="action-icon" aria-hidden="true">↺</span>
+                        <span>Left</span>
+                      </button>
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
+                        <span className="action-icon" aria-hidden="true">↻</span>
+                        <span>Right</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -569,8 +585,8 @@ export function InspectorPanel() {
                     max="1.8"
                     step="0.01"
                     value={selected.splitOffsetX}
-                    onChange={(e) => updateLayerTransient(selected.id, { splitOffsetX: Number(e.target.value) } as Partial<Layer>)}
-                    onMouseUp={(e) => updateLayer(selected.id, { splitOffsetX: Number((e.target as HTMLInputElement).value) } as Partial<Layer>)}
+                    onChange={(e) => updateLayerTransient(selected.id, { splitOffsetX: clampStripeOffset(e.target.value) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { splitOffsetX: clampStripeOffset((e.target as HTMLInputElement).value) } as Partial<Layer>)}
                   />
                   <span className="hint">{selected.splitOffsetX >= 0 ? '+' : ''}{selected.splitOffsetX.toFixed(2)}</span>
                 </div>
@@ -585,8 +601,8 @@ export function InspectorPanel() {
                     max="0.2"
                     step="0.005"
                     value={selected.softEdge}
-                    onChange={(e) => updateLayerTransient(selected.id, { softEdge: Number(e.target.value) } as Partial<Layer>)}
-                    onMouseUp={(e) => updateLayer(selected.id, { softEdge: Number((e.target as HTMLInputElement).value) } as Partial<Layer>)}
+                    onChange={(e) => updateLayerTransient(selected.id, { softEdge: clampNumber(e.target.value, { min: 0, max: 0.2 }) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { softEdge: clampNumber((e.target as HTMLInputElement).value, { min: 0, max: 0.2 }) } as Partial<Layer>)}
                   />
                   <span className="hint">{selected.softEdge.toFixed(3)}</span>
                 </div>
@@ -602,7 +618,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={selected.transform.rotation.z}
                     onChange={(event) => {
-                      const nextZ = Number(event.target.value)
+                      const nextZ = clampRotation(event.target.value)
                       updateLayerTransient(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -611,7 +627,7 @@ export function InspectorPanel() {
                       })
                     }}
                     onMouseUp={(event) => {
-                      const nextZ = Number((event.target as HTMLInputElement).value)
+                      const nextZ = clampRotation((event.target as HTMLInputElement).value)
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -621,14 +637,27 @@ export function InspectorPanel() {
                     }}
                   />
                   <div className="rotate-overlay-actions" aria-hidden="false">
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
-                      <span className="action-icon" aria-hidden="true">↺</span>
-                      <span>Left</span>
-                    </button>
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
-                      <span className="action-icon" aria-hidden="true">↻</span>
-                      <span>Right</span>
-                    </button>
+                    <div className="rotate-overlay-top">
+                      <button
+                        type="button"
+                        className="chip icon-chip"
+                        onClick={() => rotateSelected(Math.PI / 2)}
+                        title="Rotate 90 degrees"
+                        aria-label="Rotate 90 degrees"
+                      >
+                        <span>90°</span>
+                      </button>
+                    </div>
+                    <div className="rotate-overlay-row">
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
+                        <span className="action-icon" aria-hidden="true">↺</span>
+                        <span>Left</span>
+                      </button>
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
+                        <span className="action-icon" aria-hidden="true">↻</span>
+                        <span>Right</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -648,7 +677,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={uniformScale}
                     onChange={(event) => {
-                      const nextScale = Number(event.target.value)
+                      const nextScale = clampNumber(event.target.value, { min: 0.1, max: 10 })
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -668,7 +697,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={selected.transform.scale.x}
                     onChange={(event) => {
-                      const nextScale = Number(event.target.value)
+                      const nextScale = clampNumber(event.target.value, { min: 0.05, max: 10 })
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -688,7 +717,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={selected.transform.scale.y}
                     onChange={(event) => {
-                      const nextScale = Number(event.target.value)
+                      const nextScale = clampNumber(event.target.value, { min: 0.05, max: 5 })
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -714,7 +743,7 @@ export function InspectorPanel() {
                   max="0.15"
                   step="0.005"
                   value={nudgeStep}
-                  onChange={(event) => setNudgeStep(Number(event.target.value))}
+                  onChange={(event) => setNudgeStep(clampNumber(event.target.value, { min: 0.005, max: 0.15 }))}
                   aria-label="Nudge speed"
                 />
                 <span className="hint">Speed {nudgeStep.toFixed(3)}</span>
@@ -730,7 +759,7 @@ export function InspectorPanel() {
                     step="0.01"
                     value={selected.transform.rotation.z}
                     onChange={(event) => {
-                      const nextZ = Number(event.target.value)
+                      const nextZ = clampRotation(event.target.value)
                       updateLayer(selected.id, {
                         transform: {
                           ...selected.transform,
@@ -740,14 +769,27 @@ export function InspectorPanel() {
                     }}
                   />
                   <div className="rotate-overlay-actions" aria-hidden="false">
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
-                      <span className="action-icon" aria-hidden="true">↺</span>
-                      <span>Left</span>
-                    </button>
-                    <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
-                      <span className="action-icon" aria-hidden="true">↻</span>
-                      <span>Right</span>
-                    </button>
+                    <div className="rotate-overlay-top">
+                      <button
+                        type="button"
+                        className="chip icon-chip"
+                        onClick={() => rotateSelected(Math.PI / 2)}
+                        title="Rotate 90 degrees"
+                        aria-label="Rotate 90 degrees"
+                      >
+                        <span>90°</span>
+                      </button>
+                    </div>
+                    <div className="rotate-overlay-row">
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(-0.08)} title="Rotate Left" aria-label="Rotate Left">
+                        <span className="action-icon" aria-hidden="true">↺</span>
+                        <span>Left</span>
+                      </button>
+                      <button type="button" className="chip icon-chip" onClick={() => rotateSelected(0.08)} title="Rotate Right" aria-label="Rotate Right">
+                        <span className="action-icon" aria-hidden="true">↻</span>
+                        <span>Right</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -782,7 +824,7 @@ export function InspectorPanel() {
                         step="0.05"
                         value={selected.textCurve ?? 0}
                         onChange={(event) =>
-                          updateLayer(selected.id, { textCurve: Number(event.target.value) })
+                          updateLayer(selected.id, { textCurve: clampNumber(event.target.value, { min: -1, max: 1 }) })
                         }
                       />
                     </div>
@@ -851,9 +893,35 @@ export function InspectorPanel() {
                 </div>
               </div>
 
+              {selected.mirrorToOtherSide && selected.type === 'text' ? (
+                <div className="field-group compact-field icon-actions-field shellless-field">
+                  <label>Mirror Text</label>
+                  <div className="inline-actions icon-actions">
+                    <button
+                      type="button"
+                      className={(selected.mirroredTextReadable ?? true) ? 'chip icon-chip active' : 'chip icon-chip'}
+                      onClick={() => updateLayer(selected.id, { mirroredTextReadable: true })}
+                      title="Keep mirrored text readable"
+                      aria-label="Keep mirrored text readable"
+                    >
+                      <span>Flip</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={!(selected.mirroredTextReadable ?? true) ? 'chip icon-chip active' : 'chip icon-chip'}
+                      onClick={() => updateLayer(selected.id, { mirroredTextReadable: false })}
+                      title="Match front-side flip"
+                      aria-label="Match front-side flip"
+                    >
+                      <span>Match</span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {selected.mirrorToOtherSide ? (
                 <div className="field-group compact-field shellless-field color-field mirror-color-field">
-                  <label>Mirror Decal Color</label>
+                  <label>{selected.type === 'text' ? 'Mirror Text Color' : 'Mirror Decal Color'}</label>
                   <div className="color-bubble-wrap" title="Mirror Side Color">
                     <button
                       ref={mirrorBubbleRef}
@@ -886,7 +954,7 @@ export function InspectorPanel() {
                       }}
                     >
                       <div className="swatch-popover-header">
-                        <span>Mirror Color</span>
+                        <span>{selected.type === 'text' ? 'Mirror Text Color' : 'Mirror Color'}</span>
                         <button
                           type="button"
                           className="swatch-popover-close"
@@ -917,7 +985,7 @@ export function InspectorPanel() {
                         <input
                           type="color"
                           value={selected.mirrorColorHex ?? selected.colorHex}
-                          onChange={(e) => updateLayer(selected.id, { mirrorColorHex: e.target.value })}
+                          onChange={(e) => updateLayer(selected.id, { mirrorColorHex: validateColorHex(e.target.value, selected.colorHex) })}
                           aria-label="Custom mirror color"
                         />
                       </div>
@@ -963,7 +1031,7 @@ export function InspectorPanel() {
                 onChange={(e) => {
                   setTargetPrint(selectedPaintTarget, {
                     ...activePrint,
-                    tileScale: Number(e.target.value),
+                    tileScale: clampNumber(e.target.value, { min: 0.5, max: 20 }),
                   })
                 }}
               />
@@ -983,7 +1051,7 @@ export function InspectorPanel() {
                 onChange={(e) => {
                   setTargetPrint(selectedPaintTarget, {
                     ...activePrint,
-                    opacity: Number(e.target.value),
+                    opacity: clampOpacity(e.target.value),
                   })
                 }}
               />
@@ -1050,7 +1118,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={0.04} max={0.5} step={0.01}
                 value={carStripe.width}
-                onChange={(e) => setCarStripe({ width: Number(e.target.value) })}
+                onChange={(e) => setCarStripe({ width: clampNumber(e.target.value, { min: 0.04, max: 0.5 }) })}
               />
               <span className="hint">{carStripe.width.toFixed(2)}</span>
             </div>
@@ -1061,7 +1129,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={0} max={0.9} step={0.01}
                 value={carStripe.gap}
-                onChange={(e) => setCarStripe({ gap: Number(e.target.value) })}
+                onChange={(e) => setCarStripe({ gap: clampNumber(e.target.value, { min: 0, max: 0.9 }) })}
               />
               <span className="hint">{carStripe.gap.toFixed(2)}</span>
             </div>
@@ -1072,7 +1140,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={-2} max={2} step={0.01}
                 value={carStripe.offsetX}
-                onChange={(e) => setCarStripe({ offsetX: Number(e.target.value) })}
+                onChange={(e) => setCarStripe({ offsetX: clampNumber(e.target.value, { min: -2, max: 2 }) })}
               />
               <span className="hint">{carStripe.offsetX >= 0 ? '+' : ''}{carStripe.offsetX.toFixed(2)}</span>
             </div>
@@ -1083,7 +1151,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={0} max={0.15} step={0.005}
                 value={carStripe.softEdge}
-                onChange={(e) => setCarStripe({ softEdge: Number(e.target.value) })}
+                onChange={(e) => setCarStripe({ softEdge: clampNumber(e.target.value, { min: 0, max: 0.15 }) })}
               />
               <span className="hint">{carStripe.softEdge.toFixed(3)}</span>
             </div>
@@ -1094,7 +1162,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={-3.1416} max={3.1416} step={0.01}
                 value={carStripe.angle}
-                onChange={(e) => setCarStripe({ angle: Number(e.target.value) })}
+                onChange={(e) => setCarStripe({ angle: clampNumber(e.target.value, { min: -3.1416, max: 3.1416 }) })}
               />
               <span className="hint">{Math.round((carStripe.angle * 180) / Math.PI)}°</span>
             </div>
@@ -1163,7 +1231,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={-2} max={2} step={0.01}
                 value={carSplit.offsetX}
-                onChange={(e) => setCarSplit({ offsetX: Number(e.target.value) })}
+                onChange={(e) => setCarSplit({ offsetX: clampNumber(e.target.value, { min: -2, max: 2 }) })}
               />
               <span className="hint">{carSplit.offsetX >= 0 ? '+' : ''}{carSplit.offsetX.toFixed(2)}</span>
             </div>
@@ -1174,7 +1242,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={0} max={0.2} step={0.005}
                 value={carSplit.softEdge}
-                onChange={(e) => setCarSplit({ softEdge: Number(e.target.value) })}
+                onChange={(e) => setCarSplit({ softEdge: clampNumber(e.target.value, { min: 0, max: 0.2 }) })}
               />
               <span className="hint">{carSplit.softEdge.toFixed(3)}</span>
             </div>
@@ -1185,7 +1253,7 @@ export function InspectorPanel() {
             <div className="opacity-row">
               <input type="range" min={-3.1416} max={3.1416} step={0.01}
                 value={carSplit.angle}
-                onChange={(e) => setCarSplit({ angle: Number(e.target.value) })}
+                onChange={(e) => setCarSplit({ angle: clampNumber(e.target.value, { min: -3.1416, max: 3.1416 }) })}
               />
               <span className="hint">{Math.round((carSplit.angle * 180) / Math.PI)}°</span>
             </div>

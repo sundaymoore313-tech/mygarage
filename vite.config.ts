@@ -89,5 +89,100 @@ function classifyPresetPersistencePlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  resolve: {
+    alias: [
+      {
+        find: /^three$/,
+        replacement: path.resolve(process.cwd(), 'src/lib/threeCompat.js'),
+      },
+    ],
+  },
   plugins: [react(), classifyPresetPersistencePlugin()],
+  build: {
+    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+
+          if (id.includes('/three/src/renderers/')) {
+            return 'vendor-three-renderers'
+          }
+
+          if (id.includes('/three/src/math/')) {
+            return 'vendor-three-math'
+          }
+
+          if (id.includes('/three/src/core/')) {
+            return 'vendor-three-core-base'
+          }
+
+          if (id.includes('/three/src/geometries/') || id.includes('/three/src/materials/')) {
+            return 'vendor-three-geom-mats'
+          }
+
+          if (id.includes('/three/src/objects/') || id.includes('/three/src/lights/')) {
+            return 'vendor-three-objects-lights'
+          }
+
+          if (id.includes('/three/src/') || id.includes('/three/build/')) {
+            return 'vendor-three-misc'
+          }
+
+          if (id.includes('/leva/')) {
+            return 'vendor-leva'
+          }
+
+          if (id.includes('/three/examples/jsm/loaders/')) {
+            return 'vendor-three-loaders'
+          }
+
+          if (id.includes('/three/examples/jsm/geometries/')) {
+            return 'vendor-three-geometries'
+          }
+
+          if (id.includes('/three/examples/')) {
+            return 'vendor-three-extras'
+          }
+
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/lucide-react/')) {
+            return 'vendor-react'
+          }
+
+          if (id.includes('/zustand/')) {
+            return 'vendor-state'
+          }
+
+          if (id.includes('/@supabase/')) {
+            return 'vendor-supabase'
+          }
+
+          if (
+            id.includes('/paper/') ||
+            id.includes('/paperjs-offset/')
+          ) {
+            return 'vendor-svg-paper'
+          }
+
+          if (id.includes('/opentype.js/')) {
+            return 'vendor-svg-fonts'
+          }
+
+          if (id.includes('/clipper-lib/')) {
+            return 'vendor-svg-clipper'
+          }
+
+          if (id.includes('/jspdf/')) {
+            return 'vendor-export-pdf'
+          }
+
+          if (id.includes('/html2canvas/')) {
+            return 'vendor-export-canvas'
+          }
+
+          return undefined
+        },
+      },
+    },
+  },
 })

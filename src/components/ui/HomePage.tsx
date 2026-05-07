@@ -10,6 +10,8 @@ type HomePageProps = {
   onContinueAsGuest?: () => void
   onContinueEditing?: () => void
   onStartNewProject?: () => void
+  onLikelyEditorPathVisible?: () => void
+  onLikelyEditorPathIntent?: () => void
 }
 
 type AuthMode = 'login' | 'signup'
@@ -26,6 +28,16 @@ const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const LAST_CAR_KEY = 'mygarage-last-car'
 const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
+const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
+
+function readStoredAvatarDataUrl() {
+  try {
+    const raw = localStorage.getItem(PROFILE_AVATAR_KEY)
+    return raw && raw.startsWith('data:image/') ? raw : null
+  } catch {
+    return null
+  }
+}
 
 function isRememberedUser(): boolean {
   return localStorage.getItem(AUTH_LOCAL_KEY) !== null
@@ -78,7 +90,7 @@ const FEATURES = [
   },
   {
     icon: <Pen size={22} />,
-    title: 'SVG Maker',
+    title: 'Create a Logo',
     desc: 'Draw logos and graphics from scratch with shapes, text, pen paths and a full layer stack.',
   },
   {
@@ -109,7 +121,7 @@ const FEATURES = [
   {
     icon: <Undo2 size={22} />,
     title: 'Full Undo/Redo',
-    desc: 'Deep 80-step history stack across the 3D editor and SVG Maker.',
+    desc: 'Deep 80-step history stack across the 3D editor and Create a Logo.',
   },
 ]
 
@@ -121,10 +133,13 @@ const TAGLINES = [
 ]
 
 const LEGAL_NOTICE_ITEMS = [
-  'Vehicle brand names, model names, logos, and trade dress are trademarks of their respective owners. MyGarage is an independent design tool and is not affiliated with or endorsed by those companies.',
-  'You must have the legal rights to use any uploaded logos, decals, fonts, photos, templates, and other artwork. Do not upload or export content you do not have permission to use.',
-  'Commercial wrapping, printing, and resale may require written permission or a license from trademark and copyright owners. Rights clearance is your responsibility.',
-  '3D car models and imported assets may carry separate license terms from their creators. Verify and comply with those license terms before commercial use.',
+  'Vehicle brand names, model names, logos, and trade dress shown in or with this tool are trademarks of their respective owners. MyGarage is an independent design platform and is not affiliated with or endorsed by those owners.',
+  'You retain ownership of your original content. You may only upload, trace, reproduce, or export content that you own or are legally authorized to use.',
+  'Do not upload or export infringing content, including unlicensed logos, copyrighted artwork, fonts, photos, templates, and other protected assets.',
+  'Commercial printing, installation, advertising, and resale may require written licenses or permissions from trademark and copyright holders. Rights clearance is solely your responsibility.',
+  '3D models, templates, and imported assets may be governed by separate third-party licenses. Review and comply with those license terms before client or commercial use.',
+  'Output files are generated from user-provided content and settings. You are responsible for final review, legal compliance, and print-production suitability before release.',
+  'MyGarage does not provide legal advice. If rights status is unclear, consult qualified legal counsel before publishing, printing, or selling output.',
 ]
 
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
@@ -155,7 +170,7 @@ function clearCachedAuth() {
   sessionStorage.removeItem(AUTH_SESSION_KEY)
 }
 
-export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject }: HomePageProps) {
+export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject, onLikelyEditorPathVisible, onLikelyEditorPathIntent }: HomePageProps) {
   const [taglineIdx, setTaglineIdx] = useState(0)
   const [fading, setFading] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
@@ -167,6 +182,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   const [authError, setAuthError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   const [authConfirmPending, setAuthConfirmPending] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readStoredAvatarDataUrl())
   const [legalDoc, setLegalDoc] = useState<LegalDocId>('terms')
   const [legalOpen, setLegalOpen] = useState(false)
   const [legalAccepted, setLegalAccepted] = useState(() => localStorage.getItem(LEGAL_ACCEPTANCE_KEY) === '1')
@@ -174,9 +190,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   const [carCount, setCarCount] = useState(12)
   const [fontCount, setFontCount] = useState(49)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.32)
+  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.22)
   const drawerRef = useRef<HTMLDivElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const heroCtaRef = useRef<HTMLDivElement | null>(null)
+  const primaryCtaRef = useRef<HTMLButtonElement | null>(null)
+  const lowerCtaRef = useRef<HTMLButtonElement | null>(null)
   const touchStartYRef = useRef<number | null>(null)
 
   function openDrawer() {
@@ -251,7 +270,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           total += 0.2126 * r + 0.7152 * g + 0.0722 * b
         }
         const avg = total / (data.length / 4)
-        const targetAlpha = Math.min(0.56, Math.max(0.2, 0.52 - avg * 0.36))
+        const targetAlpha = Math.min(0.4, Math.max(0.12, 0.38 - avg * 0.28))
         setHeroOverlayAlpha((prev) => prev * 0.7 + targetAlpha * 0.3)
       } catch {
         // Ignore transient canvas read errors while WebGL frame is initializing.
@@ -342,6 +361,53 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const target = heroCtaRef.current
+    if (!target || !onLikelyEditorPathVisible) return
+
+    let fired = false
+    const observer = new IntersectionObserver((entries) => {
+      if (fired) return
+      if (entries.some((entry) => entry.isIntersecting)) {
+        fired = true
+        onLikelyEditorPathVisible()
+        observer.disconnect()
+      }
+    }, { threshold: 0.55 })
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [onLikelyEditorPathVisible])
+
+  useEffect(() => {
+    if (!onLikelyEditorPathIntent) return
+
+    let fired = false
+    const onIntent = () => {
+      if (fired) return
+      fired = true
+      onLikelyEditorPathIntent()
+    }
+    const options: AddEventListenerOptions = { passive: true }
+    const targets = [primaryCtaRef.current, lowerCtaRef.current].filter(Boolean) as HTMLButtonElement[]
+
+    targets.forEach((target) => {
+      target.addEventListener('pointerenter', onIntent, options)
+      target.addEventListener('pointerdown', onIntent, options)
+      target.addEventListener('touchstart', onIntent, options)
+      target.addEventListener('focus', onIntent)
+    })
+
+    return () => {
+      targets.forEach((target) => {
+        target.removeEventListener('pointerenter', onIntent)
+        target.removeEventListener('pointerdown', onIntent)
+        target.removeEventListener('touchstart', onIntent)
+        target.removeEventListener('focus', onIntent)
+      })
+    }
+  }, [onLikelyEditorPathIntent])
 
   function openAuth(mode: AuthMode) {
     setAuthMode(mode)
@@ -446,8 +512,19 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
               <>
                 <button type="button" className="home-avatar-bubble" onClick={onOpenProfile} aria-label="Open profile">
                   {(() => {
-                    const av = localStorage.getItem('mygarage-profile-avatar')
-                    if (av) return <img src={av} alt={currentUser.name} className="home-avatar-img" />
+                    if (avatarUrl) {
+                      return (
+                        <img
+                          src={avatarUrl}
+                          alt={currentUser.name}
+                          className="home-avatar-img"
+                          onError={() => {
+                            localStorage.removeItem(PROFILE_AVATAR_KEY)
+                            setAvatarUrl(null)
+                          }}
+                        />
+                      )
+                    }
                     const initials = currentUser.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
                     return <span className="home-avatar-initials">{initials}</span>
                   })()}
@@ -505,10 +582,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </p>
           )}
 
-          <div className="home-cta-row">
+          <div ref={heroCtaRef} className="home-cta-row">
             {currentUser && isRememberedUser() ? (
               <>
-                <button type="button" className="home-cta-primary home-cta-returning" onClick={onContinueEditing ?? onEnter}>
+                <button ref={primaryCtaRef} type="button" className="home-cta-primary home-cta-returning" onClick={onContinueEditing ?? onEnter}>
                   <span className="home-cta-label home-cta-label--warm">Continue Editing →</span>
                   {readLastCarName() && (
                     <span className="home-cta-sub">{readLastCarName()}</span>
@@ -521,14 +598,14 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
             ) : (
               <>
                 <p className="home-cta-prompt">Ready to build your dream livery?</p>
-                <button type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
+                <button ref={primaryCtaRef} type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
                   <span className="home-cta-label">Continue as Guest →</span>
                 </button>
               </>
             )}
           </div>
           <p className="home-legal-inline">
-            For visualization and design planning. Commercial use requires rights clearance for trademarks, logos, and licensed assets.
+            For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
           </p>
         </div>
       </section>
@@ -600,7 +677,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         <section className="home-legal">
           <h2 className="home-section-title">Legal and Licensing Notice</h2>
           <p className="home-section-sub">
-            Please review before using imported assets or exporting files for print and commercial wraps.
+            Launch disclaimer: review this before uploading assets, exporting files, printing wraps, publishing previews, or using work commercially.
           </p>
           <ul className="home-legal-list">
             {LEGAL_NOTICE_ITEMS.map((item) => (
@@ -613,7 +690,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         <section className="home-bottom-cta">
           <h2>Ready to build your dream livery?</h2>
           <p>Pick a car, open the editor and start designing in seconds.</p>
-          <button type="button" className="home-cta-primary large" onClick={currentUser && isRememberedUser() ? onEnter : onContinueAsGuest}>
+          <button ref={lowerCtaRef} type="button" className="home-cta-primary large" onClick={currentUser && isRememberedUser() ? onEnter : onContinueAsGuest}>
             <span className="home-cta-label">{currentUser && isRememberedUser() ? 'Open the Garage →' : 'Continue as Guest →'}</span>
           </button>
         </section>

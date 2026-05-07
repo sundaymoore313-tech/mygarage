@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240">
+  <defs>
+    <pattern id="checker" width="120" height="120" patternUnits="userSpaceOnUse">
+      <rect width="60" height="60" fill="#ffffff"/>
+      <rect x="60" y="0" width="60" height="60" fill="#111111"/>
+      <rect x="0" y="60" width="60" height="60" fill="#111111"/>
+      <rect x="60" y="60" width="60" height="60" fill="#ffffff"/>
+    </pattern>
+  </defs>
+  <rect x="60" y="40" width="1080" height="160" rx="24" fill="url(#checker)" stroke="#111111" stroke-width="10"/>
+</svg>

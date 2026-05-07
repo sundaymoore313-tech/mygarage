@@ -151,7 +151,7 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
 
         <h3 className="guest-auth-title">{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h3>
         <p className="guest-auth-subtitle">
-          {authMode === 'login' ? 'Sign in to save your design.' : 'Sign up to unlock saving and more.'}
+          {authMode === 'login' ? 'Sign in to keep editing on your account.' : 'Sign up to start on the Free plan and unlock saved projects.'}
         </p>
 
         <form className="guest-auth-form" onSubmit={handleSubmit}>

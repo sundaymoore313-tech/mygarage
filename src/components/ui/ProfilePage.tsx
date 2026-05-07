@@ -1,13 +1,20 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, useGLTF } from '@react-three/drei'
 import { Camera, User } from 'lucide-react'
+import { getPlanLabel, type NonGuestPlanTier } from '../../lib/access'
+import { canUseBillingDevOverride, getBillingConfig, openStripeBillingPortal, startStripeCheckout } from '../../lib/billing'
 import { readSavedProjects, removeSavedProject, syncCloudProjectsToLocal, type SavedProjectCard } from '../../lib/savedProjects'
+import { supabaseSignOut } from '../../lib/supabase'
 import * as THREE from 'three'
 import { DEFAULT_TARGET_PAINT, getMergedClassifications, getResolvedPaintForLabel } from '../../lib/paintTargets'
+import { NativeOrbitControls } from '../scene/NativeOrbitControls'
+import { useModelScene } from '../scene/useModelScene'
 import type { MeshClass } from '../../types/editor'
 
 type ProfilePageProps = {
+  planTier: NonGuestPlanTier
+  onPlanChange: (plan: NonGuestPlanTier) => void
+  onRefreshPlan: () => Promise<NonGuestPlanTier | void>
   onGoHome: () => void
   onGoEditor: () => void
   onOpenProject: (id: string) => void
@@ -24,6 +31,15 @@ const PROFILE_BANNER_KEY = 'mygarage-profile-banner'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
 const PROFILE_ABOUT_KEY = 'mygarage-profile-about'
 
+function readStoredImageDataUrl(key: string) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw && raw.startsWith('data:image/') ? raw : null
+  } catch {
+    return null
+  }
+}
+
 function readCurrentUser(): AuthUser | null {
   try {
     const local = localStorage.getItem(AUTH_LOCAL_KEY)
@@ -34,6 +50,48 @@ function readCurrentUser(): AuthUser | null {
   } catch {
     return null
   }
+}
+
+function clearCachedAuth() {
+  localStorage.removeItem(AUTH_LOCAL_KEY)
+  sessionStorage.removeItem(AUTH_SESSION_KEY)
+}
+
+const CACHE_PREFIXES_SAFE = [
+  'mygarage-classify-lock-',
+  'mygarage-classify-lock-backup-',
+  'mygarage-personal-classify-',
+]
+
+function getLocalStorageUsageKB(): number {
+  let total = 0
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i) ?? ''
+    const val = localStorage.getItem(key) ?? ''
+    total += key.length + val.length
+  }
+  // UTF-16 → bytes ×2, then →KB
+  return Math.round((total * 2) / 1024)
+}
+
+function clearLocalCache(activeProjectIds: Set<string>): { keysRemoved: number; kbFreed: number } {
+  const toRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key) continue
+    if (CACHE_PREFIXES_SAFE.some((p) => key.startsWith(p))) {
+      toRemove.push(key)
+    } else if (key.startsWith('mygarage-project-full-')) {
+      const id = key.slice('mygarage-project-full-'.length)
+      if (!activeProjectIds.has(id)) toRemove.push(key)
+    }
+  }
+  let bytesFreed = 0
+  for (const key of toRemove) {
+    bytesFreed += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2
+    localStorage.removeItem(key)
+  }
+  return { keysRemoved: toRemove.length, kbFreed: Math.round(bytesFreed / 1024) }
 }
 
 function fmtTime(ts: number) {
@@ -139,7 +197,7 @@ function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[])
 }
 
 function ProfileCarModel({ modelUrl, fileName, groundOffsetY = 0, paintColorHex }: { modelUrl: string; fileName: string; groundOffsetY?: number; paintColorHex: string }) {
-  const { scene } = useGLTF(modelUrl)
+  const { scene } = useModelScene(modelUrl)
   const cloned = useMemo(() => {
     const clone = scene.clone(true)
     const mergedClassifications = getMergedClassifications(fileName, {})
@@ -224,7 +282,7 @@ function ProfileCarThumbnail({ modelUrl, fileName, groundOffsetY, paintColorHex 
   return (
     <Canvas
       camera={{ position: [-2.8, 2.0, 4.8], fov: 34 }}
-      shadows
+      shadows="percentage"
       gl={{ antialias: true, alpha: true }}
       style={{ width: '100%', height: '100%' }}
     >
@@ -251,21 +309,29 @@ function ProfileCarThumbnail({ modelUrl, fileName, groundOffsetY, paintColorHex 
       <Suspense fallback={null}>
         <ProfileCarModel modelUrl={modelUrl} fileName={fileName} groundOffsetY={groundOffsetY} paintColorHex={paintColorHex} />
       </Suspense>
-      <OrbitControls enableRotate={false} enableZoom={false} enablePan={false} target={[0.7, 0.55, 0]} />
+      <NativeOrbitControls enableRotate={false} enableZoom={false} enablePan={false} target={[0.7, 0.55, 0]} />
     </Canvas>
   )
 }
 
-export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePageProps) {
+export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, onGoEditor, onOpenProject }: ProfilePageProps) {
   const [user] = useState<AuthUser | null>(() => readCurrentUser())
+  const [billingConfig] = useState(() => getBillingConfig())
+  const [billingNotice, setBillingNotice] = useState<string | null>(null)
+  const [billingBusy, setBillingBusy] = useState<'checkout' | 'portal' | 'refresh' | null>(null)
   const [projects, setProjects] = useState<SavedProjectCard[]>(() => readSavedProjects())
-  const [bannerUrl, setBannerUrl] = useState<string | null>(() => localStorage.getItem(PROFILE_BANNER_KEY))
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => localStorage.getItem(PROFILE_AVATAR_KEY))
+  const [bannerUrl, setBannerUrl] = useState<string | null>(() => readStoredImageDataUrl(PROFILE_BANNER_KEY))
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readStoredImageDataUrl(PROFILE_AVATAR_KEY))
   const [about, setAbout] = useState<string>(() => localStorage.getItem(PROFILE_ABOUT_KEY) ?? '')
   const [aboutEditing, setAboutEditing] = useState(false)
   const [aboutDraft, setAboutDraft] = useState('')
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [storageKB, setStorageKB] = useState<number>(() => getLocalStorageUsageKB())
+  const [clearResult, setClearResult] = useState<string | null>(null)
+  const canUseDevOverride = canUseBillingDevOverride()
+  const [billingOpen, setBillingOpen] = useState(false)
+  const billingDropdownRef = useRef<HTMLDivElement>(null)
 
   const initials = useMemo(() => {
     if (!user?.name) return 'MG'
@@ -285,6 +351,17 @@ export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePage
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!billingOpen) return
+    function handleOutsideClick(e: MouseEvent) {
+      if (billingDropdownRef.current && !billingDropdownRef.current.contains(e.target as Node)) {
+        setBillingOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [billingOpen])
 
   function readFileAsDataUrl(file: File, onDone: (url: string) => void) {
     const reader = new FileReader()
@@ -333,15 +410,147 @@ export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePage
     setProjects(readSavedProjects())
   }
 
+  function handleClearCache() {
+    const activeIds = new Set(projects.map((p) => p.id))
+    const { keysRemoved, kbFreed } = clearLocalCache(activeIds)
+    setStorageKB(getLocalStorageUsageKB())
+    if (keysRemoved === 0) {
+      setClearResult('Nothing to clear — cache is already clean.')
+    } else {
+      setClearResult(`Cleared ${keysRemoved} entr${keysRemoved === 1 ? 'y' : 'ies'}, freed ~${kbFreed} KB.`)
+    }
+    setTimeout(() => setClearResult(null), 4000)
+  }
+
+  async function handleLogout() {
+    await supabaseSignOut()
+    clearCachedAuth()
+    onGoHome()
+  }
+
+  async function handleUpgradeClick() {
+    setBillingBusy('checkout')
+    const result = await startStripeCheckout()
+    setBillingBusy(null)
+    if (!result.ok) {
+      setBillingNotice(result.error)
+      return
+    }
+    setBillingNotice(null)
+  }
+
+  async function handlePortalClick() {
+    setBillingBusy('portal')
+    const result = await openStripeBillingPortal()
+    setBillingBusy(null)
+    if (!result.ok) {
+      setBillingNotice(result.error)
+      return
+    }
+    setBillingNotice(null)
+  }
+
+  async function handleRefreshPlanClick() {
+    setBillingBusy('refresh')
+    await onRefreshPlan()
+    setBillingBusy(null)
+    setBillingNotice('Billing status refreshed from Supabase.')
+  }
+
   return (
     <div className="profile-page">
       <header className="profile-topbar">
-        <button type="button" className="profile-nav-btn" onClick={onGoHome}>
-          Home
-        </button>
-        <button type="button" className="profile-nav-btn profile-nav-btn-primary" onClick={onGoEditor}>
-          3D Editor
-        </button>
+        <div className="profile-topbar-left">
+          <button type="button" className="profile-nav-btn" onClick={onGoHome}>
+            Home
+          </button>
+          <button type="button" className="profile-nav-btn profile-nav-btn-primary" onClick={onGoEditor}>
+            3D Editor
+          </button>
+        </div>
+        <div className="profile-topbar-right">
+          <div className="profile-bubble-wrap" ref={billingDropdownRef}>
+            <button
+              type="button"
+              className="profile-top-bubble"
+              onClick={() => setBillingOpen((v) => !v)}
+              title="Account & Billing"
+              aria-label="Account & Billing"
+              aria-expanded={billingOpen}
+            >
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Profile"
+                  className="profile-top-bubble-img"
+                  onError={() => {
+                    localStorage.removeItem(PROFILE_AVATAR_KEY)
+                    setAvatarUrl(null)
+                  }}
+                />
+              ) : (
+                <span className="profile-top-bubble-fallback">{initials}</span>
+              )}
+            </button>
+            {billingOpen && (
+              <div className="profile-billing-dropdown">
+                <div className="profile-billing-dd-head">
+                  <span>Account &amp; Billing</span>
+                  <span className={`profile-plan-pill profile-plan-pill-${planTier}`}>{getPlanLabel(planTier)}</span>
+                </div>
+                <p className="profile-billing-dd-desc">
+                  Paid unlocks Create a Logo, 2D editor, GLB export, print export, SVG export, and video recording.
+                </p>
+                <div className="profile-billing-actions">
+                  <button type="button" className="profile-billing-primary" onClick={() => { void handleUpgradeClick() }} disabled={billingBusy !== null}>
+                    {billingBusy === 'checkout' ? 'Opening Checkout...' : planTier === 'paid' ? 'Open Checkout Again' : 'Upgrade with Stripe'}
+                  </button>
+                  <button type="button" className="profile-billing-secondary" onClick={() => { void handlePortalClick() }} disabled={billingBusy !== null}>
+                    {billingBusy === 'portal' ? 'Opening Billing...' : 'Manage Billing'}
+                  </button>
+                  <button type="button" className="profile-billing-secondary" onClick={() => { void handleRefreshPlanClick() }} disabled={billingBusy !== null}>
+                    {billingBusy === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
+                  </button>
+                </div>
+                <div className="profile-billing-meta">
+                  <span>{billingConfig.configured ? 'Stripe configured' : 'Stripe not configured'}</span>
+                  {billingConfig.supportEmail ? <span>Support: {billingConfig.supportEmail}</span> : null}
+                </div>
+                {billingNotice && <p className="profile-plan-note">{billingNotice}</p>}
+                <p className="profile-plan-note">
+                  Paid access is cached on this device until Stripe webhook sync is active.
+                </p>
+                {canUseDevOverride && (
+                  <div className="profile-dev-override">
+                    <div className="profile-dev-override-head">
+                      <strong>Local Billing Override</strong>
+                      <span>Localhost only — for testing before webhook sync exists.</span>
+                    </div>
+                    <div className="profile-dev-override-actions">
+                      <button
+                        type="button"
+                        className={planTier === 'free' ? 'profile-dev-plan-btn active' : 'profile-dev-plan-btn'}
+                        onClick={() => onPlanChange('free')}
+                      >
+                        Force Free
+                      </button>
+                      <button
+                        type="button"
+                        className={planTier === 'paid' ? 'profile-dev-plan-btn active' : 'profile-dev-plan-btn'}
+                        onClick={() => onPlanChange('paid')}
+                      >
+                        Force Paid
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <button type="button" className="profile-nav-btn" onClick={handleLogout}>
+            Log Out
+          </button>
+        </div>
       </header>
 
       <section className="profile-hero">
@@ -365,7 +574,15 @@ export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePage
         <div className="profile-meta-wrap">
           <div className="profile-avatar-wrap">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="Profile" className="profile-avatar-img" />
+              <img
+                src={avatarUrl}
+                alt="Profile"
+                className="profile-avatar-img"
+                onError={() => {
+                  localStorage.removeItem(PROFILE_AVATAR_KEY)
+                  setAvatarUrl(null)
+                }}
+              />
             ) : (
               <div className="profile-avatar-fallback">{initials || <User size={22} />}</div>
             )}
@@ -482,6 +699,22 @@ export function ProfilePage({ onGoHome, onGoEditor, onOpenProject }: ProfilePage
             ))}
           </div>
         )}
+      </section>
+
+      <section className="profile-storage-section">
+        <div className="profile-storage-head">
+          <h3>Local Storage</h3>
+          <span className="profile-storage-usage">{storageKB} KB used</span>
+        </div>
+        <p className="profile-storage-desc">
+          Clears cached color classifications and orphaned project data. Your saved projects, auth, and profile info are kept.
+        </p>
+        <div className="profile-storage-row">
+          <button type="button" className="profile-clear-cache-btn" onClick={handleClearCache}>
+            Clear Cache
+          </button>
+          {clearResult && <span className="profile-clear-result">{clearResult}</span>}
+        </div>
       </section>
     </div>
   )

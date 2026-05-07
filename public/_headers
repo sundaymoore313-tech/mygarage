@@ -1,0 +1,23 @@
+/*
+  # Prevent clickjacking
+  X-Frame-Options: DENY
+
+  # Block MIME-type sniffing
+  X-Content-Type-Options: nosniff
+
+  # Control referrer info sent to third parties
+  Referrer-Policy: strict-origin-when-cross-origin
+
+  # Restrict browser features
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+
+  # Force HTTPS
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+
+  # Content Security Policy
+  # - scripts: self + inline (needed for Vite React runtime) + eval (needed for Three.js shader compilation)
+  # - connect: Supabase, Stripe API
+  # - frame: Stripe checkout/payment frames
+  # - img/media: self, data URIs, blobs (canvas screenshots, user uploads)
+  # - worker: blobs (Three.js workers)
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://checkout.stripe.com; frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com; worker-src blob:; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com;

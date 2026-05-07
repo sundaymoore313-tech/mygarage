@@ -1,7 +1,7 @@
 import { Suspense, useRef, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, MeshReflectorMaterial, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
+import { preloadModelScene, useModelScene } from './useModelScene'
 
 const MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const ROTATE_SPEED = 0.18   // radians / sec
@@ -9,10 +9,10 @@ const TARGET_SIZE = 5.2     // world units
 const CAR_OFFSET_X = 3.6
 
 // Pre-warm the loader so the model is cached when the editor opens later
-useGLTF.preload(MODEL_URL)
+preloadModelScene(MODEL_URL)
 
 function RotatingCar() {
-  const { scene } = useGLTF(MODEL_URL)
+  const { scene } = useModelScene(MODEL_URL)
   const groupRef = useRef<THREE.Group>(null)
 
   // Clone + scale + ground-snap once on mount
@@ -56,40 +56,33 @@ function CameraAim() {
 export function HeroCarScene() {
   return (
     <Canvas
+      shadows="percentage"
       camera={{ position: [3.6, 1.6, 4.0], fov: 52 }}
       gl={{ antialias: true, alpha: true }}
       className="hero-car-canvas"
     >
       <CameraAim />
-      <fog attach="fog" args={['#080e1a', 7, 20]} />
+      <fog attach="fog" args={['#0f1827', 10, 30]} />
 
       {/* Showroom lighting */}
-      <ambientLight intensity={0.55} />
-      <directionalLight intensity={1.4} position={[CAR_OFFSET_X, 8, 0]} castShadow
+      <ambientLight intensity={0.72} />
+      <directionalLight intensity={1.75} position={[CAR_OFFSET_X, 8, 0]} castShadow
         shadow-mapSize-width={1024} shadow-mapSize-height={1024}
       />
-      <pointLight position={[CAR_OFFSET_X - 4, 5, 4]}  intensity={0.8} color="#ffffff" />
-      <pointLight position={[CAR_OFFSET_X + 4, 5, -4]} intensity={0.8} color="#ffffff" />
+      <pointLight position={[CAR_OFFSET_X - 4, 5, 4]}  intensity={1.05} color="#ffffff" />
+      <pointLight position={[CAR_OFFSET_X + 4, 5, -4]} intensity={1.05} color="#ffffff" />
 
       <Suspense fallback={null}>
-        <Environment preset="warehouse" />
         <RotatingCar />
       </Suspense>
 
       {/* Reflective floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CAR_OFFSET_X, 0, 0]} receiveShadow>
         <planeGeometry args={[30, 30]} />
-        <MeshReflectorMaterial
-          color="#0d1820"
+        <meshStandardMaterial
+          color="#162433"
           roughness={0.75}
           metalness={0.0}
-          resolution={512}
-          mirror={0.45}
-          mixBlur={8}
-          mixStrength={0.6}
-          depthScale={0}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.4}
         />
       </mesh>
     </Canvas>

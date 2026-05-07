@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { NonGuestPlanTier } from './access'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -24,6 +25,10 @@ export type AuthUser = {
   email: string
 }
 
+type BillingRow = {
+  plan_tier: NonGuestPlanTier
+}
+
 /** Read the currently active Supabase session user, or null. */
 export async function getCurrentUser(): Promise<AuthUser | null> {
   if (!supabase) return null
@@ -35,6 +40,21 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     name: (user.user_metadata?.name as string | undefined) ?? user.email?.split('@')[0] ?? 'User',
     email: user.email ?? '',
   }
+}
+
+export async function getCurrentUserPlanTier(): Promise<NonGuestPlanTier | null> {
+  if (!supabase) return null
+  const user = await getCurrentUser()
+  if (!user) return null
+
+  const { data, error } = await supabase
+    .from('user_billing')
+    .select('plan_tier')
+    .eq('user_id', user.id)
+    .maybeSingle<BillingRow>()
+
+  if (error) return null
+  return data?.plan_tier === 'paid' ? 'paid' : 'free'
 }
 
 export type SignUpResult =

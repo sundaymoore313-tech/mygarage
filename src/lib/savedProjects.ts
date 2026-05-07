@@ -26,6 +26,15 @@ const FULL_PROJECT_PREFIX = 'mygarage-project-full-'
 const CLOUD_MIGRATED_PREFIX = 'mygarage-cloud-migrated-'
 const TEMPLATE_BUCKET = 'garage-templates'
 const LIMIT = 24
+let cloudReadUnavailable = false
+
+function isMissingCloudEndpointError(error: unknown): boolean {
+  const maybe = error as { code?: string; message?: string; details?: string; hint?: string } | null
+  if (!maybe) return false
+  if (maybe.code === 'PGRST202' || maybe.code === '42883') return true
+  const text = `${maybe.message ?? ''} ${maybe.details ?? ''} ${maybe.hint ?? ''}`.toLowerCase()
+  return text.includes('404') || text.includes('not found') || text.includes('does not exist')
+}
 
 export type SaveProfileResult = {
   ok: boolean
@@ -203,16 +212,22 @@ function cloudRowToFull(row: CloudProjectRow): FullSavedProject {
 }
 
 async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
-  if (!isSupabaseConfigured || !supabase) return []
+  if (!isSupabaseConfigured || !supabase || cloudReadUnavailable) return []
   const client = supabase
   const user = await getCurrentUser()
   if (!user) return []
 
-  const { data: rpcCards } = await client.rpc('list_garage_project_cards')
+  const { data: rpcCards, error: rpcCardsError } = await client.rpc('list_garage_project_cards')
+  if (rpcCardsError && isMissingCloudEndpointError(rpcCardsError)) {
+    cloudReadUnavailable = true
+    return []
+  }
+
   if (Array.isArray(rpcCards) && rpcCards.length > 0) {
     const rows = await Promise.all(
       rpcCards.map(async (card: { project_id: string }) => {
-        const { data } = await client.rpc('get_garage_project', { p_project_id: card.project_id })
+        const { data, error } = await client.rpc('get_garage_project', { p_project_id: card.project_id })
+        if (error) return null
         const row = Array.isArray(data) ? data[0] : data
         return row as CloudProjectRow | null
       })
@@ -220,12 +235,19 @@ async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
     return rows.filter((r): r is CloudProjectRow => Boolean(r))
   }
 
-  const { data } = await client
+  const { data, error } = await client
     .from('garage_projects')
     .select('project_id,name,car_name,model_url,ground_offset_y,preview_image_url,updated_at_ms,created_at_ms,layer_count,custom_decal_count,paint_color_hex,project_json,target_paints_json,target_prints_json')
     .eq('user_id', user.id)
     .order('updated_at_ms', { ascending: false })
     .limit(LIMIT)
+
+  if (error) {
+    if (isMissingCloudEndpointError(error)) {
+      cloudReadUnavailable = true
+    }
+    return []
+  }
 
   return (data ?? []) as CloudProjectRow[]
 }

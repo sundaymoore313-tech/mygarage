@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "id": "qa-load-test-project",
+    "name": "QA Load Test",
+    "version": 1,
+    "createdAt": 1778147532482,
+    "updatedAt": 1778147532482
+  },
+  "paint": {
+    "colorHex": "#cc2a2a",
+    "colorRef": null,
+    "finish": "gloss",
+    "metallic": 0.2,
+    "roughness": 0.22,
+    "clearcoat": 0.95
+  },
+  "carGradient": {
+    "enabled": false,
+    "fromHex": "#cc2a2a",
+    "toHex": "#6b0f0f",
+    "axis": "y",
+    "balance": 0
+  },
+  "windowTint": {
+    "enabled": false,
+    "amount": 35,
+    "colorHex": "#101820"
+  },
+  "carSplit": {
+    "enabled": false,
+    "sideAHex": "#000000",
+    "sideBHex": "#ffffff",
+    "finish": "gloss",
+    "offsetX": 0,
+    "softEdge": 0.02,
+    "angle": 0
+  },
+  "carStripe": {
+    "enabled": false,
+    "colorHex": "#f5f5f5",
+    "finish": "gloss",
+    "width": 0.14,
+    "gap": 0.24,
+    "offsetX": 0,
+    "softEdge": 0.02,
+    "angle": 0
+  },
+  "vehicleCalibration": {
+    "lengthMm": null,
+    "widthMm": null,
+    "heightMm": null,
+    "wheelbaseMm": null,
+    "source": "unknown",
+    "notes": ""
+  },
+  "layers": [],
+  "customDecals": [],
+  "meshClassifications": {}
+}

@@ -23,6 +23,8 @@ const PRINT_VIEWS: PrintViewSpec[] = [
 type Props = {
   captureRef: React.MutableRefObject<PrintCaptureFn | null>
   onClose: () => void
+  isGuest?: boolean
+  onGuestSignIn?: () => void
 }
 
 type PanelAdjustments = {
@@ -82,7 +84,7 @@ function toPanelId(label: string): string {
   return base || `panel-${Date.now().toString(36)}`
 }
 
-export function PrintExportModal({ captureRef, onClose }: Props) {
+export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuestSignIn }: Props) {
   const project = useEditorStore((state) => state.project)
   const selectedCar = useEditorStore((state) => state.selectedCar)
   const setVehicleCalibration = useEditorStore((state) => state.setVehicleCalibration)
@@ -103,6 +105,7 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   const [livePreview, setLivePreview] = useState(true)
   const [includeGuidesInExport, setIncludeGuidesInExport] = useState(false)
   const [exportRightsConfirmed, setExportRightsConfirmed] = useState(() => localStorage.getItem(EXPORT_RIGHTS_ACK_KEY) === '1')
+  const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const [lastCaptureAt, setLastCaptureAt] = useState<number | null>(null)
   const [activePanelId, setActivePanelId] = useState(PRINT_VIEWS[0].id)
   const [combinedSheetDataUrl, setCombinedSheetDataUrl] = useState<string | null>(null)
@@ -112,6 +115,28 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
     return Object.fromEntries(entries)
   })
   const captureInFlight = useRef(false)
+  const guestPromptTimerRef = useRef<number | null>(null)
+
+  const requireSignedInForExport = useCallback((feature: string) => {
+    if (!isGuest) return true
+    setGuestPrompt(`Create an account to use ${feature}.`)
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+    return false
+  }, [isGuest])
+
+  useEffect(() => {
+    return () => {
+      if (guestPromptTimerRef.current !== null) {
+        window.clearTimeout(guestPromptTimerRef.current)
+      }
+    }
+  }, [])
 
   const panelTemplateByViewId = useMemo(() => {
     const byId = new Map(wrapPanels.map((panel) => [panel.id.toLowerCase(), panel] as const))
@@ -370,6 +395,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
 
   const handleTemplateFileSelected = useCallback((panel: (typeof wrapPanels)[number], file: File | null | undefined) => {
     if (!file) return
+    if (!requireSignedInForExport('Template Import')) {
+      return
+    }
     void optimizeTemplateFile(file)
       .then((templateImageUrl) => {
         upsertWrapPanel({ ...panel, templateImageUrl })
@@ -379,7 +407,7 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
         const message = err instanceof Error ? err.message : 'Could not import that template image.'
         setError(message)
       })
-  }, [optimizeTemplateFile, upsertWrapPanel])
+  }, [optimizeTemplateFile, requireSignedInForExport, upsertWrapPanel])
 
   const drawImageByFitMode = useCallback((
     ctx: CanvasRenderingContext2D,
@@ -499,6 +527,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }, [drawImageByFitMode, loadImage, plannedPanelById, production.defaultBleedMm, production.defaultSafeMm, production.mediaWidthMm, production.tileOverlapMm])
 
   const handleDownloadPanel = async (panel: PrintCaptureResult) => {
+    if (!requireSignedInForExport('Panel PNG Export')) {
+      return
+    }
     if (!exportRightsConfirmed) {
       setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
       return
@@ -513,6 +544,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleDownloadAll = () => {
+    if (!requireSignedInForExport('All Panel PNG Export')) {
+      return
+    }
     if (!exportRightsConfirmed) {
       setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
       return
@@ -663,6 +697,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }, [panels, getAdjustedPanelDataUrl, getPanelSettings, includeGuidesInExport, loadImage, project.meta.name, getPlannedPanels])
 
   const handleDownloadCombinedSheet = async () => {
+    if (!requireSignedInForExport('One-Page PNG Export')) {
+      return
+    }
     if (!exportRightsConfirmed) {
       setError('Confirm export rights before downloading. You must have legal rights to all marks and assets in this design.')
       return
@@ -677,6 +714,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleExportCombinedPDF = async () => {
+    if (!requireSignedInForExport('One-Page PDF Export')) {
+      return
+    }
     if (!exportRightsConfirmed) {
       setError('Confirm export rights before exporting. You must have legal rights to all marks and assets in this design.')
       return
@@ -694,6 +734,9 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
   }
 
   const handleExportPDF = async () => {
+    if (!requireSignedInForExport('Individual PDF Export')) {
+      return
+    }
     if (!exportRightsConfirmed) {
       setError('Confirm export rights before exporting. You must have legal rights to all marks and assets in this design.')
       return
@@ -1580,6 +1623,14 @@ export function PrintExportModal({ captureRef, onClose }: Props) {
         )}
 
         <div className="print-actions">
+          {isGuest && guestPrompt && (
+            <div className="print-guest-prompt" role="status" aria-live="polite">
+              <span>{guestPrompt}</span>
+              <button type="button" className="print-guest-prompt-link" onClick={onGuestSignIn}>
+                Sign In
+              </button>
+            </div>
+          )}
           <label className="print-export-guides-toggle">
             <input
               type="checkbox"
