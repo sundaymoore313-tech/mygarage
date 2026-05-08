@@ -6666,6 +6666,14 @@ hr {
   background: radial-gradient(circle, #c026d3 0%, transparent 70%);
 }
 
+.home-hero-top-title {
+  position: absolute;
+  top: 18px;
+  left: 24px;
+  z-index: 2;
+  text-shadow: 0 2px 20px rgba(2, 6, 14, 0.68);
+}
+
 .home-auth-actions {
   position: absolute;
   top: 20px;
@@ -7170,7 +7178,7 @@ hr {
 
 .home-title {
   margin: 0;
-  font-size: clamp(4.5rem, 10vw, 9rem);
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
   font-weight: 900;
   letter-spacing: -0.03em;
   line-height: 1;

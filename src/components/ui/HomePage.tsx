@@ -518,6 +518,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         </div>
         <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
 
+        <div className="home-hero-top-title">
+          <h1 className="home-title">
+            My<span className="home-title-accent">Garage</span>
+          </h1>
+        </div>
+
         <div className="home-auth-actions">
           <div className="home-auth-actions-row">
             {currentUser ? (
@@ -581,9 +587,6 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         </div>
 
         <div className="home-hero-content">
-          <h1 className="home-title">
-            My<span className="home-title-accent">Garage</span>
-          </h1>
           <p className={`home-tagline${fading ? ' fade-out' : ''}`}>
             {currentUser && isRememberedUser() ? `Welcome back, ${currentUser.name.split(' ')[0]}` : TAGLINES[taglineIdx]}
           </p>
