@@ -3,6 +3,7 @@ import { makeId } from '../lib/id'
 import { DEFAULT_TARGET_PAINT, resolvePaintFinishPreset, getLockedClassifications, saveLockedClassifications, clearLockedClassifications, loadPersonalClassifications, savePersonalClassifications, clearPersonalClassifications, getMergedClassifications, isSystemLockedMesh, saveGeneratedClassifyPreset } from '../lib/paintTargets'
 import { saveResumeSnapshot } from '../lib/resumeSnapshot'
 import type {
+  CarStripeConfig,
   DecalLayer,
   EditorProject,
   EditorStore,
@@ -15,6 +16,7 @@ import type {
   PrintProductionSettings,
   SplitLayer,
   StripeLayer,
+  StripeLayerSeed,
   TextLayer,
   VehicleCalibration,
   WrapJobMeta,
@@ -24,6 +26,28 @@ import type {
 } from '../types/editor'
 
 const now = () => Date.now()
+
+const DEFAULT_STRIPE_LAYER_SEED: StripeLayerSeed = {
+  stripeWidth: 0.18,
+  stripeGap: 0,
+  stripeOffsetX: 0,
+  softEdge: 0.02,
+  opacity: 1,
+  angle: 0,
+}
+
+function carStripeFromLayer(layer: StripeLayer): CarStripeConfig {
+  return {
+    enabled: layer.visible,
+    colorHex: layer.colorHex,
+    finish: layer.finish,
+    width: layer.stripeWidth,
+    gap: layer.stripeGap,
+    offsetX: layer.stripeOffsetX,
+    softEdge: layer.softEdge,
+    angle: layer.transform.rotation.z,
+  }
+}
 
 const DEFAULT_VEHICLE_CALIBRATION: VehicleCalibration = {
   lengthMm: null,
@@ -155,7 +179,7 @@ const createTextLayer = (
   name: `Text ${count}`,
   type: 'text',
   mirrorX: defaults?.mirrorX ?? false,
-  mirrorToOtherSide: defaults?.mirrorToOtherSide ?? false,
+  mirrorToOtherSide: false,
   mirrorColorHex: null,
   text: options?.text ?? 'Text',
   fontFamily: options?.fontFamily ?? defaults?.fontFamily ?? 'Arial',
@@ -163,7 +187,7 @@ const createTextLayer = (
   colorHex: defaults?.colorHex ?? '#ffffff',
   colorRef: defaults?.colorRef ?? null,
   finish: defaults?.finish ?? 'gloss',
-  targetPartId: defaults?.targetPartId ?? null,
+  targetPartId: null,
   textCurve: defaults?.textCurve ?? 0,
   mirroredTextReadable: defaults?.mirroredTextReadable ?? true,
   visible: true,
@@ -237,6 +261,7 @@ const createProject = (): EditorProject => ({
     softEdge: 0.02,
     angle: 0,
   },
+  stripeLayerSeed: null,
   vehicleCalibration: { ...DEFAULT_VEHICLE_CALIBRATION },
   wrapPanels: DEFAULT_WRAP_PANELS.map((panel) => ({ ...panel })),
   printProduction: { ...DEFAULT_PRINT_PRODUCTION },
@@ -334,6 +359,7 @@ const createStripeLayer = (count: number): StripeLayer => ({
   colorRef: null,
   finish: 'gloss',
   stripeWidth: 0.18,
+  stripeGap: 0,
   stripeOffsetX: 0,
   softEdge: 0.02,
   visible: true,
@@ -343,6 +369,56 @@ const createStripeLayer = (count: number): StripeLayer => ({
   updatedAt: now(),
   transform: defaultTransform(),
 })
+
+function makeStripeSeedFromLayer(layer: StripeLayer): StripeLayerSeed {
+  return {
+    stripeWidth: layer.stripeWidth,
+    stripeGap: layer.stripeGap,
+    stripeOffsetX: layer.stripeOffsetX,
+    softEdge: layer.softEdge,
+    opacity: Number.isFinite(layer.transform.opacity) ? layer.transform.opacity : 1,
+    angle: Number.isFinite(layer.transform.rotation.z) ? layer.transform.rotation.z : 0,
+  }
+}
+
+function applyStripeSeed(layer: StripeLayer, seed: StripeLayerSeed): StripeLayer {
+  return {
+    ...layer,
+    stripeWidth: seed.stripeWidth,
+    stripeGap: seed.stripeGap,
+    stripeOffsetX: seed.stripeOffsetX,
+    softEdge: seed.softEdge,
+    transform: {
+      ...layer.transform,
+      opacity: seed.opacity,
+      rotation: {
+        ...layer.transform.rotation,
+        z: seed.angle,
+      },
+    },
+  }
+}
+
+function sanitizeStripeOverridesForSeed(overrides: Partial<StripeLayer>): Partial<StripeLayer> {
+  const {
+    stripeWidth: _width,
+    stripeGap: _gap,
+    stripeOffsetX: _offset,
+    softEdge: _soft,
+    transform: _transform,
+    ...rest
+  } = overrides
+  return rest
+}
+
+function deriveStripeSeedFromProjectLayers(layers: Layer[]): StripeLayerSeed | null {
+  const stripeLayers = layers.filter((layer): layer is StripeLayer => layer.type === 'stripe')
+  if (stripeLayers.length === 0) return null
+  const oldestStripe = stripeLayers.reduce((oldest, current) =>
+    current.createdAt < oldest.createdAt ? current : oldest,
+  stripeLayers[0])
+  return makeStripeSeedFromLayer(oldestStripe)
+}
 
 const createSplitLayer = (count: number): SplitLayer => ({
   id: makeId('split'),
@@ -422,6 +498,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
             ...state.project.carStripe,
             enabled: false,
           },
+          stripeLayerSeed: null,
           layers: [],
           meshClassifications: merged,
         },
@@ -738,7 +815,9 @@ export const useEditorStore = create<EditorStore>((set) => ({
   addStripeLayer: () =>
     set((state) => {
       const layerCount = state.project.layers.filter((l) => l.type === 'stripe').length + 1
-      const next = createStripeLayer(layerCount)
+      const hasExistingStripeLayers = state.project.layers.some((layer) => layer.type === 'stripe')
+      const existingSeed = hasExistingStripeLayers ? state.project.stripeLayerSeed : null
+      const next = applyStripeSeed(createStripeLayer(layerCount), existingSeed ?? DEFAULT_STRIPE_LAYER_SEED)
       return {
         historyPast: pushHistory(state, 'Add Stripe'),
         historyFuture: [],
@@ -746,6 +825,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
         project: {
           ...state.project,
           meta: { ...state.project.meta, updatedAt: now() },
+          stripeLayerSeed: existingSeed ?? makeStripeSeedFromLayer(next),
           layers: [...state.project.layers, next],
         },
       }
@@ -769,14 +849,24 @@ export const useEditorStore = create<EditorStore>((set) => ({
 
   addStripeLayerPreset: (overrides) =>
     set((state) => {
+      if (overrides.length === 0) return state
       const base = state.project.layers.filter((l) => l.type === 'stripe').length
-      const newLayers = overrides.map((ov, i) => ({
-        ...createStripeLayer(base + i + 1),
-        ...ov,
-        id: makeId('stripe'),
-        createdAt: now(),
-        updatedAt: now(),
-      }))
+      const hasExistingStripeLayers = state.project.layers.some((layer) => layer.type === 'stripe')
+      const existingSeed = hasExistingStripeLayers ? state.project.stripeLayerSeed : null
+      const newLayers = overrides.map((ov, i) => {
+        const created = createStripeLayer(base + i + 1)
+        const seededLayer = applyStripeSeed(created, existingSeed ?? DEFAULT_STRIPE_LAYER_SEED)
+        const effectiveOverrides = existingSeed ? sanitizeStripeOverridesForSeed(ov) : ov
+        const patched = patchLayer(seededLayer, effectiveOverrides as Partial<Layer>) as StripeLayer
+        return {
+          ...patched,
+          id: makeId('stripe'),
+          createdAt: now(),
+          updatedAt: now(),
+        }
+      })
+
+      const seedFromFirstLayer = existingSeed ?? makeStripeSeedFromLayer(newLayers[0])
       return {
         historyPast: pushHistory(state, 'Add Stripe Preset'),
         historyFuture: [],
@@ -784,6 +874,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
         project: {
           ...state.project,
           meta: { ...state.project.meta, updatedAt: now() },
+          stripeLayerSeed: seedFromFirstLayer,
           layers: [...state.project.layers, ...newLayers],
         },
       }
@@ -884,28 +975,54 @@ export const useEditorStore = create<EditorStore>((set) => ({
     }),
 
   updateLayerTransient: (layerId, patch) =>
-    set((state) => ({
-      project: {
-        ...state.project,
-        meta: { ...state.project.meta, updatedAt: now() },
-        layers: state.project.layers.map((layer) =>
-          layer.id === layerId ? patchLayer(layer, patch) : layer,
-        ),
-      },
-    })),
+    set((state) => {
+      let nextStripeLayer: StripeLayer | null = null
+      const nextLayers = state.project.layers.map((layer) => {
+        if (layer.id !== layerId) {
+          return layer
+        }
+        const updated = patchLayer(layer, patch)
+        if (updated.type === 'stripe') {
+          nextStripeLayer = updated
+        }
+        return updated
+      })
+
+      return {
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          carStripe: nextStripeLayer ? carStripeFromLayer(nextStripeLayer) : state.project.carStripe,
+          layers: nextLayers,
+        },
+      }
+    }),
 
   updateLayer: (layerId, patch) =>
-    set((state) => ({
-      historyPast: pushHistory(state, 'Edit Layer'),
-      historyFuture: [],
-      project: {
-        ...state.project,
-        meta: { ...state.project.meta, updatedAt: now() },
-        layers: state.project.layers.map((layer) =>
-          layer.id === layerId ? patchLayer(layer, patch) : layer,
-        ),
-      },
-    })),
+    set((state) => {
+      let nextStripeLayer: StripeLayer | null = null
+      const nextLayers = state.project.layers.map((layer) => {
+        if (layer.id !== layerId) {
+          return layer
+        }
+        const updated = patchLayer(layer, patch)
+        if (updated.type === 'stripe') {
+          nextStripeLayer = updated
+        }
+        return updated
+      })
+
+      return {
+        historyPast: pushHistory(state, 'Edit Layer'),
+        historyFuture: [],
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          carStripe: nextStripeLayer ? carStripeFromLayer(nextStripeLayer) : state.project.carStripe,
+          layers: nextLayers,
+        },
+      }
+    }),
 
   reorderLayer: (fromIndex, toIndex) =>
     set((state) => {
@@ -999,17 +1116,26 @@ export const useEditorStore = create<EditorStore>((set) => ({
   },
 
   removeLayer: (layerId) =>
-    set((state) => ({
-      historyPast: pushHistory(state, 'Delete Layer'),
-      historyFuture: [],
-      selectedLayerId:
-        state.selectedLayerId === layerId ? null : state.selectedLayerId,
-      project: {
-        ...state.project,
-        meta: { ...state.project.meta, updatedAt: now() },
-        layers: state.project.layers.filter((layer) => layer.id !== layerId),
-      },
-    })),
+    set((state) => {
+      const removedLayer = state.project.layers.find((layer) => layer.id === layerId)
+      const nextLayers = state.project.layers.filter((layer) => layer.id !== layerId)
+      const nextStripeSeed = removedLayer?.type === 'stripe'
+        ? deriveStripeSeedFromProjectLayers(nextLayers)
+        : state.project.stripeLayerSeed
+
+      return {
+        historyPast: pushHistory(state, 'Delete Layer'),
+        historyFuture: [],
+        selectedLayerId:
+          state.selectedLayerId === layerId ? null : state.selectedLayerId,
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: now() },
+          stripeLayerSeed: nextStripeSeed,
+          layers: nextLayers,
+        },
+      }
+    }),
 
   undo: () =>
     set((state) => {
@@ -1150,6 +1276,9 @@ export const useEditorStore = create<EditorStore>((set) => ({
           softEdge: project.carStripe?.softEdge ?? 0.02,
           angle: project.carStripe?.angle ?? 0,
         },
+        stripeLayerSeed: project.layers.some((layer) => layer.type === 'stripe')
+          ? (project.stripeLayerSeed ?? deriveStripeSeedFromProjectLayers(project.layers) ?? null)
+          : null,
         vehicleCalibration: {
           ...DEFAULT_VEHICLE_CALIBRATION,
           ...(project.vehicleCalibration ?? {}),

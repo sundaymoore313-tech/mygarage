@@ -1,9 +1,12 @@
 .app-root {
   width: 100vw;
   height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Prevent accidental text highlight while dragging/painting in the editor UI. */
@@ -24,7 +27,10 @@
   --garage-accent: #3ec9ff;
   --garage-accent-soft: rgba(62, 201, 255, 0.22);
   height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   padding: 0;
   background:
     radial-gradient(1200px 560px at 8% -10%, rgba(62, 201, 255, 0.18), transparent 58%),
@@ -5065,8 +5071,17 @@ hr {
 }
 
 @media (max-width: 860px) {
+  .app-root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .car-selector-page {
     height: 100vh;
+    min-height: 100dvh;
+    height: 100dvh;
   }
 
   .car-selector-header {
@@ -5142,10 +5157,66 @@ hr {
 
   .top-bar {
     grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .top-bar-left,
+  .top-bar-center,
+  .top-bar-right {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .top-bar-left::-webkit-scrollbar,
+  .top-bar-center::-webkit-scrollbar,
+  .top-bar-right::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .tool-strip {
+    flex-wrap: nowrap;
+  }
+
+  .top-plain-btn,
+  .top-card-btn,
+  .top-icon-btn,
+  .top-profile-bubble {
+    flex: 0 0 auto;
   }
 
   .workspace {
     grid-template-rows: minmax(340px, 1fr) auto;
+    min-height: 0;
+  }
+
+  .workspace-main {
+    min-height: min(340px, 62dvh);
+    overflow: visible;
+  }
+
+  .scene-panel {
+    min-height: min(340px, 62dvh);
+  }
+
+  .fab-group {
+    transform: scale(0.88);
+    transform-origin: top left;
+    top: 8px;
+    left: 8px;
+  }
+
+  .fab-group > button {
+    width: 48px;
+    height: 48px;
+  }
+
+  .fab-label {
+    font-size: 0.62rem;
   }
 
 
@@ -5175,7 +5246,130 @@ hr {
   }
 }
 
+@media (max-width: 860px) and (orientation: landscape) {
+  .app-root {
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 4500;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 6px;
+  }
+
+  .top-bar-left,
+  .top-bar-center,
+  .top-bar-right {
+    width: auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .top-bar-left::-webkit-scrollbar,
+  .top-bar-center::-webkit-scrollbar,
+  .top-bar-right::-webkit-scrollbar {
+    display: none;
+  }
+
+  .top-bar-center {
+    justify-content: flex-start;
+  }
+
+  .top-bar-right {
+    justify-content: flex-end;
+  }
+
+  .tool-strip {
+    flex-wrap: nowrap;
+  }
+
+  .top-plain-btn {
+    padding: 4px 6px;
+    font-size: 0.76rem;
+  }
+
+  .top-card-btn {
+    padding: 4px 7px;
+    font-size: 0.74rem;
+  }
+
+  .top-icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .top-profile-bubble {
+    width: 24px;
+    height: 24px;
+  }
+
+  .top-bar-divider {
+    display: none;
+  }
+
+  .workspace {
+    grid-template-rows: auto auto;
+    align-content: start;
+  }
+
+  .workspace-main,
+  .scene-panel {
+    min-height: 72dvh;
+  }
+
+  .fab-group {
+    transform: scale(0.72);
+    top: 6px;
+    left: 6px;
+    gap: 4px;
+  }
+
+  .fab-label {
+    display: none;
+  }
+
+  .inspector-toolbar {
+    max-height: none;
+    min-height: 96px;
+    padding: 4px;
+  }
+
+  .inspector-toolbar .inspector-panel {
+    gap: 6px;
+  }
+
+  .inspector-toolbar .field-group {
+    min-width: 104px;
+    padding: 6px 7px;
+  }
+
+  .inspector-toolbar .panel-header {
+    flex-basis: 80px;
+    min-width: 80px;
+  }
+
+  .inspector-toolbar .hint {
+    min-width: 180px;
+  }
+}
+
 @media (max-width: 560px) {
+  .top-bar {
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+
   .car-grid {
     grid-template-columns: 1fr;
   }
@@ -6427,6 +6621,18 @@ hr {
   opacity: 1;
 }
 
+.home-hero-preview-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.42;
+  mix-blend-mode: screen;
+  filter: saturate(1.08) contrast(1.04);
+}
+
 .home-hero-grid {
   position: absolute;
   inset: 0;
@@ -7277,6 +7483,45 @@ hr {
   transform: translateY(-1px);
 }
 
+.home-discord-cta {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin-top: 4px;
+}
+
+.home-discord-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: linear-gradient(180deg, rgba(34, 48, 81, 0.98), rgba(26, 37, 64, 0.98));
+  border: 1px solid rgba(147, 175, 255, 0.45);
+  border-radius: 10px;
+  color: #e8eeff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 10px 18px;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s, color 0.15s;
+}
+
+.home-discord-btn:hover {
+  border-color: rgba(183, 204, 255, 0.78);
+  background: linear-gradient(180deg, rgba(47, 67, 114, 0.98), rgba(29, 42, 73, 0.98));
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.home-discord-copy {
+  margin: 0;
+  max-width: 620px;
+  text-align: center;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #9bb0c9;
+}
+
 /* -- Stats row ------------------------------------------------- */
 .home-stats {
   display: flex;
@@ -7596,6 +7841,16 @@ hr {
   }
   .home-features {
     padding: 30px 20px 12px;
+  }
+  .home-discord-btn {
+    width: 100%;
+    max-width: 290px;
+    font-size: 0.84rem;
+    padding: 10px 14px;
+  }
+  .home-discord-copy {
+    max-width: 340px;
+    font-size: 0.78rem;
   }
   .home-hero-content {
     gap: 16px;

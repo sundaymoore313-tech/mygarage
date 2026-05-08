@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { preloadModelScene, useModelScene } from './useModelScene'
 
-const MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
+const MODEL_URL = '/models/home/hero.glb'
 const ROTATE_SPEED = 0.18   // radians / sec
 const TARGET_SIZE = 5.2     // world units
 const CAR_OFFSET_X = 3.6

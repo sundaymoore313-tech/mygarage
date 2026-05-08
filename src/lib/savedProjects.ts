@@ -253,6 +253,8 @@ async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
 }
 
 export async function syncCloudProjectsToLocal(): Promise<{ ok: boolean; count: number }> {
+  // Reset so a page reload always retries (avoids lock-in from earlier 404s)
+  cloudReadUnavailable = false
   try {
     const rows = await listCloudProjectRows()
     if (rows.length === 0) {
@@ -289,18 +291,25 @@ export async function migrateLocalProjectsToCloud(): Promise<{ ok: boolean; migr
   try {
     const user = await getCurrentUser()
     if (!user) return { ok: true, migrated: 0 }
-    if (readMigrationFlag(user.id)) return { ok: true, migrated: 0 }
 
     const cards = readSavedProjects()
     let migrated = 0
+    let anyFailed = false
     for (const card of cards) {
       const full = loadFullProjectById(card.id)
       if (!full) continue
-      await saveCloudProject(full)
-      migrated += 1
+      try {
+        await saveCloudProject(full)
+        migrated += 1
+      } catch {
+        anyFailed = true
+      }
     }
 
-    writeMigrationFlag(user.id)
+    // Only lock the migration flag when all local projects were pushed successfully
+    if (!anyFailed) {
+      writeMigrationFlag(user.id)
+    }
     return { ok: true, migrated }
   } catch {
     return { ok: false, migrated: 0 }

@@ -173,9 +173,10 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         includeLightsAndCamera: glbIncludeLightsCamera,
       })
       setGlbStatus(result?.fileName ? `Saved ${result.fileName}` : 'GLB export completed.')
-    } catch {
-      setGlbStatus('GLB export failed. Please try again.')
-      alert('GLB export failed. Please try again.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown export error'
+      setGlbStatus(`GLB export failed: ${message}`)
+      alert(`GLB export failed: ${message}`)
     } finally {
       setGlbExporting(false)
     }
@@ -188,11 +189,11 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   }
 
   const handlePrintExport = () => {
-    const featureId: FeatureId = isSvgMode ? 'svg-export' : 'print-export'
-    if (!isFeatureAllowed(planTier, featureId)) { onAccessNudge?.(featureId); return }
     if (isSvgMode) {
+      if (!isFeatureAllowed(planTier, 'svg-export')) { onAccessNudge?.('svg-export'); return }
       onSvgExport?.()
     } else {
+      if (isGuest) { onGuestNudge?.('2D Template Editor'); return }
       onPrintExport?.()
     }
     setOpen(false)

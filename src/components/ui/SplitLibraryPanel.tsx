@@ -77,7 +77,7 @@ export function SplitLibraryPanel({ onClose }: SplitLibraryPanelProps) {
 
   const applyPreset = (preset: SplitPreset) => {
     setCarSplit({ ...preset.config, enabled: true })
-    setActiveCarTool('split')
+    setActiveCarTool(null)
     onClose?.()
   }
 

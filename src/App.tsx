@@ -14,13 +14,14 @@ import { endPerfSpan, markPerfOnce, resetPerfSpan, startPerfSpan } from './lib/p
 import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
-import { readResumeSnapshot } from './lib/resumeSnapshot'
-import { loadFullProjectById, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
-import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured } from './lib/supabase'
+import { readResumeSnapshot, saveResumeSnapshot } from './lib/resumeSnapshot'
+import { loadFullProjectById, migrateLocalProjectsToCloud, readSavedProjects, saveFullProjectToProfile, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
 const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
+const LAST_CAR_KEY = 'mygarage-last-car'
 
 const loadEditorCanvasModule = async () => import('./components/scene/EditorCanvas')
 
@@ -242,6 +243,8 @@ function App() {
   const [cloudStatusTone, setCloudStatusTone] = useState<'neutral' | 'ok' | 'warn' | 'error'>('neutral')
   const is2DOpen = printExportOpen
   const editorWarmRef = useRef(false)
+  const cloudResumeAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cloudResumeSignatureRef = useRef('')
   const accountPlan = isGuest ? 'guest' : userPlan
 
   const refreshPlanFromCloud = useCallback(async () => {
@@ -316,39 +319,120 @@ function App() {
 
   const orbitEnabled = !orbitLockToScenePanel || sceneHovered
 
-  useEffect(() => {
-    void (async () => {
-      if (!isSupabaseConfigured) {
-        setCloudStatusLabel('Cloud: off')
-        setCloudStatusTone('warn')
-        return
+  const runCloudSync = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setCloudStatusLabel('Cloud: off')
+      setCloudStatusTone('warn')
+      return
+    }
+
+    const user = await getCurrentUser()
+    if (!user) {
+      setCloudStatusLabel('Cloud: sign in')
+      setCloudStatusTone('warn')
+      return
+    }
+
+    await refreshPlanFromCloud()
+
+    setCloudStatusLabel('Cloud: syncing...')
+    setCloudStatusTone('neutral')
+
+    const migrated = await migrateLocalProjectsToCloud()
+    const synced = await syncCloudProjectsToLocal()
+
+    if (migrated.ok && synced.ok) {
+      const migratedPart = migrated.migrated > 0 ? `migrated ${migrated.migrated}` : 'up to date'
+      setCloudStatusLabel(`Cloud: synced (${migratedPart}, ${synced.count} cached)`)
+      setCloudStatusTone('ok')
+
+      // Rebuild local resume pointer from the latest cloud-synced project so
+      // Continue Editing follows the same account across devices.
+      const latest = readSavedProjects().sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (latest) {
+        const full = loadFullProjectById(latest.id)
+        if (full) {
+          const fileName = full.modelUrl.split('/').pop() ?? ''
+          if (fileName) {
+            saveResumeSnapshot(fileName, full.project)
+            try {
+              localStorage.setItem(LAST_CAR_KEY, JSON.stringify({ fileName, name: full.carName }))
+            } catch {
+              // ignore storage failures
+            }
+          }
+        }
       }
-
-      const user = await getCurrentUser()
-      if (!user) {
-        setCloudStatusLabel('Cloud: sign in')
-        setCloudStatusTone('warn')
-        return
-      }
-
-      await refreshPlanFromCloud()
-
-      setCloudStatusLabel('Cloud: syncing...')
-      setCloudStatusTone('neutral')
-
-      const migrated = await migrateLocalProjectsToCloud()
-      const synced = await syncCloudProjectsToLocal()
-
-      if (migrated.ok && synced.ok) {
-        const migratedPart = migrated.migrated > 0 ? `migrated ${migrated.migrated}` : 'up to date'
-        setCloudStatusLabel(`Cloud: synced (${migratedPart}, ${synced.count} cached)`)
-        setCloudStatusTone('ok')
-      } else {
-        setCloudStatusLabel('Cloud: fallback local')
-        setCloudStatusTone('error')
-      }
-    })()
+    } else {
+      setCloudStatusLabel('Cloud: fallback local')
+      setCloudStatusTone('error')
+    }
   }, [refreshPlanFromCloud])
+
+  useEffect(() => {
+    const unsubscribe = useEditorStore.subscribe((state) => {
+      if (screen !== 'editor' || isGuest || !isSupabaseConfigured) return
+      const car = state.selectedCar
+      if (!car || !car.modelUrl) return
+
+      const signature = `${car.modelUrl}:${state.project.meta.id}:${state.project.meta.updatedAt}`
+      if (signature === cloudResumeSignatureRef.current) return
+      cloudResumeSignatureRef.current = signature
+
+      if (cloudResumeAutosaveTimerRef.current) {
+        clearTimeout(cloudResumeAutosaveTimerRef.current)
+      }
+
+      const snapshotProject = state.project
+      const snapshotTargetPaints = state.targetPaints
+      const snapshotTargetPrints = state.targetPrints
+      const snapshotCar = {
+        name: car.name,
+        modelUrl: car.modelUrl,
+        groundOffsetY: car.groundOffsetY,
+      }
+
+      cloudResumeAutosaveTimerRef.current = setTimeout(() => {
+        void (async () => {
+          const user = await getCurrentUser()
+          if (!user) return
+          saveFullProjectToProfile(
+            snapshotProject,
+            snapshotCar,
+            snapshotTargetPaints,
+            snapshotTargetPrints,
+            null,
+          )
+        })()
+      }, 1500)
+    })
+
+    return () => {
+      unsubscribe()
+      if (cloudResumeAutosaveTimerRef.current) {
+        clearTimeout(cloudResumeAutosaveTimerRef.current)
+        cloudResumeAutosaveTimerRef.current = null
+      }
+    }
+  }, [isGuest, screen])
+
+  useEffect(() => {
+    void runCloudSync()
+  }, [runCloudSync])
+
+  useEffect(() => {
+    if (!supabase) return
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      void runCloudSync()
+    })
+    return () => subscription.unsubscribe()
+  }, [runCloudSync])
+
+  useEffect(() => {
+    if (screen === 'selector' || screen === 'profile') {
+      void runCloudSync()
+    }
+  }, [screen, runCloudSync])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -550,6 +634,8 @@ function App() {
             onClose={() => setPrintExportOpen(false)}
             isGuest={isGuest}
             onGuestSignIn={handleGuestSignIn}
+            planTier={accountPlan}
+            onUpgradeClick={() => setScreen('profile')}
           />
         </Suspense>
       )}

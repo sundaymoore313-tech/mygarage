@@ -12,6 +12,8 @@ type HomePageProps = {
   onStartNewProject?: () => void
   onLikelyEditorPathVisible?: () => void
   onLikelyEditorPathIntent?: () => void
+  heroModelUrl?: string
+  heroPreviewImageUrl?: string
 }
 
 type AuthMode = 'login' | 'signup'
@@ -142,6 +144,8 @@ const LEGAL_NOTICE_ITEMS = [
   'MyGarage does not provide legal advice. If rights status is unclear, consult qualified legal counsel before publishing, printing, or selling output.',
 ]
 
+const DEFAULT_DISCORD_URL = 'https://discord.gg/mygaragewrapstudio'
+
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
   if (remember) {
@@ -170,7 +174,7 @@ function clearCachedAuth() {
   sessionStorage.removeItem(AUTH_SESSION_KEY)
 }
 
-export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject, onLikelyEditorPathVisible, onLikelyEditorPathIntent }: HomePageProps) {
+export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroModelUrl, heroPreviewImageUrl }: HomePageProps) {
   const [taglineIdx, setTaglineIdx] = useState(0)
   const [fading, setFading] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
@@ -190,7 +194,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   const [carCount, setCarCount] = useState(12)
   const [fontCount, setFontCount] = useState(49)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.22)
+  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.16)
+  const discordCommunityUrl = (
+    (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
+    (import.meta.env.VITE_DISCORD_INVITE_URL as string | undefined)?.trim() ||
+    DEFAULT_DISCORD_URL
+  )
   const drawerRef = useRef<HTMLDivElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const heroCtaRef = useRef<HTMLDivElement | null>(null)
@@ -270,7 +279,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           total += 0.2126 * r + 0.7152 * g + 0.0722 * b
         }
         const avg = total / (data.length / 4)
-        const targetAlpha = Math.min(0.4, Math.max(0.12, 0.38 - avg * 0.28))
+        const targetAlpha = Math.min(0.26, Math.max(0.08, 0.22 - avg * 0.16))
         setHeroOverlayAlpha((prev) => prev * 0.7 + targetAlpha * 0.3)
       } catch {
         // Ignore transient canvas read errors while WebGL frame is initializing.
@@ -502,7 +511,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="home-hero">
         <div className="home-hero-bg" aria-hidden="true">
-          <HeroCarScene />
+          <HeroCarScene modelUrl={heroModelUrl} />
+          {heroPreviewImageUrl ? (
+            <img className="home-hero-preview-image" src={heroPreviewImageUrl} alt="Latest saved project preview" />
+          ) : null}
         </div>
         <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
 
@@ -606,6 +618,21 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </div>
           <p className="home-legal-inline">
             For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
+          </p>
+        </div>
+
+        {/* Discord CTA — centered at bottom of hero */}
+        <div className="home-discord-cta home-discord-cta--hero">
+          <a
+            className="home-discord-btn"
+            href={discordCommunityUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Join Our Discord Community
+          </a>
+          <p className="home-discord-copy">
+            Upload your car builds, send feedback, report bugs, and help shape future features.
           </p>
         </div>
       </section>

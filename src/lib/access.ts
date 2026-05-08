@@ -23,11 +23,11 @@ export type FeatureId =
 
 const FEATURE_REQUIREMENTS: Record<FeatureId, PlanTier> = {
   'svg-maker': 'paid',
-  'editor-2d': 'paid',
-  'export-glb': 'paid',
+  'editor-2d': 'free',
+  'export-glb': 'free',
   'print-export': 'paid',
   'svg-export': 'paid',
-  'record-video': 'paid',
+  'record-video': 'free',
 }
 
 const PLAN_LABELS: Record<PlanTier, string> = {

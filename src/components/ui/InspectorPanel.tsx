@@ -72,6 +72,7 @@ export function InspectorPanel() {
     ? (PAINT_TARGETS.find((target) => target.id === selectedPaintTarget)?.label ?? selectedPaintTarget)
     : null
   const uniformScale = selected?.transform.scale.x ?? 1.0
+  const offsetSnapAmount = 0.5
   const finishOptions: PaintFinish[] = ['gloss', 'matte', 'chrome', 'satin']
 
   const makeColorRefFromSwatchId = (swatchId: string): ColorReference | null => {
@@ -472,6 +473,102 @@ export function InspectorPanel() {
                 </div>
               </div>
 
+              <div className="field-group compact-field">
+                <label>Nudge</label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: clampStripeOffset((selected as StripeLayer).stripeOffsetX - 0.02) } as Partial<Layer>)}
+                  >
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: clampStripeOffset((selected as StripeLayer).stripeOffsetX + 0.02) } as Partial<Layer>)}
+                  >
+                    Right
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: 0 } as Partial<Layer>)}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, {
+                      transform: {
+                        ...selected.transform,
+                        rotation: {
+                          ...selected.transform.rotation,
+                          z: clampRotation(selected.transform.rotation.z - 0.04),
+                        },
+                      },
+                    })}
+                  >
+                    ↺
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, {
+                      transform: {
+                        ...selected.transform,
+                        rotation: {
+                          ...selected.transform.rotation,
+                          z: clampRotation(selected.transform.rotation.z + 0.04),
+                        },
+                      },
+                    })}
+                  >
+                    ↻
+                  </button>
+                </div>
+              </div>
+
+              <div className="field-group compact-field">
+                <label>Position</label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: -offsetSnapAmount } as Partial<Layer>)}
+                  >
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: 0 } as Partial<Layer>)}
+                  >
+                    Center
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { stripeOffsetX: offsetSnapAmount } as Partial<Layer>)}
+                  >
+                    Right
+                  </button>
+                </div>
+              </div>
+
+              <div className="field-group compact-field shellless-field">
+                <label>Gap</label>
+                <div className="opacity-row">
+                  <input type="range" min="0" max="0.9" step="0.01"
+                    value={(selected as StripeLayer).stripeGap ?? 0}
+                    onChange={(e) => updateLayerTransient(selected.id, { stripeGap: clampNumber(e.target.value, { min: 0, max: 0.9 }) } as Partial<Layer>)}
+                    onMouseUp={(e) => updateLayer(selected.id, { stripeGap: clampNumber((e.target as HTMLInputElement).value, { min: 0, max: 0.9 }) } as Partial<Layer>)}
+                  />
+                  <span className="hint">{((selected as StripeLayer).stripeGap ?? 0).toFixed(2)}</span>
+                </div>
+              </div>
+
               <div className="field-group compact-field shellless-field">
                 <label>Soft Edge</label>
                 <div className="opacity-row">
@@ -589,6 +686,90 @@ export function InspectorPanel() {
                     onMouseUp={(e) => updateLayer(selected.id, { splitOffsetX: clampStripeOffset((e.target as HTMLInputElement).value) } as Partial<Layer>)}
                   />
                   <span className="hint">{selected.splitOffsetX >= 0 ? '+' : ''}{selected.splitOffsetX.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="field-group compact-field">
+                <label>Nudge</label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: clampStripeOffset(selected.splitOffsetX - 0.02) } as Partial<Layer>)}
+                  >
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: clampStripeOffset(selected.splitOffsetX + 0.02) } as Partial<Layer>)}
+                  >
+                    Right
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: 0 } as Partial<Layer>)}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, {
+                      transform: {
+                        ...selected.transform,
+                        rotation: {
+                          ...selected.transform.rotation,
+                          z: clampRotation(selected.transform.rotation.z - 0.04),
+                        },
+                      },
+                    })}
+                  >
+                    ↺
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, {
+                      transform: {
+                        ...selected.transform,
+                        rotation: {
+                          ...selected.transform.rotation,
+                          z: clampRotation(selected.transform.rotation.z + 0.04),
+                        },
+                      },
+                    })}
+                  >
+                    ↻
+                  </button>
+                </div>
+              </div>
+
+              <div className="field-group compact-field">
+                <label>Position</label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: -offsetSnapAmount } as Partial<Layer>)}
+                  >
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: 0 } as Partial<Layer>)}
+                  >
+                    Center
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => updateLayer(selected.id, { splitOffsetX: offsetSnapAmount } as Partial<Layer>)}
+                  >
+                    Right
+                  </button>
                 </div>
               </div>
 
@@ -1146,6 +1327,26 @@ export function InspectorPanel() {
             </div>
           </div>
 
+          <div className="field-group compact-field">
+            <label>Nudge</label>
+            <div className="inline-actions">
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: clampNumber(carStripe.offsetX - 0.02, { min: -2, max: 2 }) })}>Left</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: clampNumber(carStripe.offsetX + 0.02, { min: -2, max: 2 }) })}>Right</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: 0 })}>Reset</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ angle: clampNumber(carStripe.angle - 0.04, { min: -3.1416, max: 3.1416 }) })}>↺</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ angle: clampNumber(carStripe.angle + 0.04, { min: -3.1416, max: 3.1416 }) })}>↻</button>
+            </div>
+          </div>
+
+          <div className="field-group compact-field">
+            <label>Position</label>
+            <div className="inline-actions">
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: -offsetSnapAmount })}>Left</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: 0 })}>Center</button>
+              <button type="button" className="chip" onClick={() => setCarStripe({ offsetX: offsetSnapAmount })}>Right</button>
+            </div>
+          </div>
+
           <div className="field-group compact-field shellless-field">
             <label>Blend</label>
             <div className="opacity-row">
@@ -1234,6 +1435,26 @@ export function InspectorPanel() {
                 onChange={(e) => setCarSplit({ offsetX: clampNumber(e.target.value, { min: -2, max: 2 }) })}
               />
               <span className="hint">{carSplit.offsetX >= 0 ? '+' : ''}{carSplit.offsetX.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="field-group compact-field">
+            <label>Nudge</label>
+            <div className="inline-actions">
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: clampNumber(carSplit.offsetX - 0.02, { min: -2, max: 2 }) })}>Left</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: clampNumber(carSplit.offsetX + 0.02, { min: -2, max: 2 }) })}>Right</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: 0 })}>Reset</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ angle: clampNumber(carSplit.angle - 0.04, { min: -3.1416, max: 3.1416 }) })}>↺</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ angle: clampNumber(carSplit.angle + 0.04, { min: -3.1416, max: 3.1416 }) })}>↻</button>
+            </div>
+          </div>
+
+          <div className="field-group compact-field">
+            <label>Position</label>
+            <div className="inline-actions">
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: -offsetSnapAmount })}>Left</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: 0 })}>Center</button>
+              <button type="button" className="chip" onClick={() => setCarSplit({ offsetX: offsetSnapAmount })}>Right</button>
             </div>
           </div>
 

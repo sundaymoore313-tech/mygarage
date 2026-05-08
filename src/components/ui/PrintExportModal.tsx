@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import jsPDF from 'jspdf'
 import type { PrintCaptureFn, PrintCaptureResult, PrintViewSpec } from '../scene/EditorCanvas'
 import { useEditorStore } from '../../store/editorStore'
+import { getAccessPrompt, type PlanTier } from '../../lib/access'
 
 const PRINT_W = 2560
 const PRINT_H = 1440
@@ -25,6 +26,8 @@ type Props = {
   onClose: () => void
   isGuest?: boolean
   onGuestSignIn?: () => void
+  planTier?: PlanTier
+  onUpgradeClick?: () => void
 }
 
 type PanelAdjustments = {
@@ -84,7 +87,7 @@ function toPanelId(label: string): string {
   return base || `panel-${Date.now().toString(36)}`
 }
 
-export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuestSignIn }: Props) {
+export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuestSignIn, planTier = 'free', onUpgradeClick }: Props) {
   const project = useEditorStore((state) => state.project)
   const selectedCar = useEditorStore((state) => state.selectedCar)
   const setVehicleCalibration = useEditorStore((state) => state.setVehicleCalibration)
@@ -106,6 +109,7 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   const [includeGuidesInExport, setIncludeGuidesInExport] = useState(false)
   const [exportRightsConfirmed, setExportRightsConfirmed] = useState(() => localStorage.getItem(EXPORT_RIGHTS_ACK_KEY) === '1')
   const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
+  const [guestPromptAction, setGuestPromptAction] = useState<'signin' | 'upgrade'>('signin')
   const [lastCaptureAt, setLastCaptureAt] = useState<number | null>(null)
   const [activePanelId, setActivePanelId] = useState(PRINT_VIEWS[0].id)
   const [combinedSheetDataUrl, setCombinedSheetDataUrl] = useState<string | null>(null)
@@ -129,6 +133,21 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
     }, 2800)
     return false
   }, [isGuest])
+
+  const requirePaidForExport = useCallback((feature: string) => {
+    if (planTier === 'paid') return true
+    const prompt = getAccessPrompt(planTier, 'print-export')
+    setGuestPrompt(`${prompt.message} (${feature})`)
+    setGuestPromptAction(planTier === 'guest' ? 'signin' : 'upgrade')
+    if (guestPromptTimerRef.current !== null) {
+      window.clearTimeout(guestPromptTimerRef.current)
+    }
+    guestPromptTimerRef.current = window.setTimeout(() => {
+      setGuestPrompt(null)
+      guestPromptTimerRef.current = null
+    }, 2800)
+    return false
+  }, [planTier])
 
   useEffect(() => {
     return () => {
@@ -527,6 +546,9 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   }, [drawImageByFitMode, loadImage, plannedPanelById, production.defaultBleedMm, production.defaultSafeMm, production.mediaWidthMm, production.tileOverlapMm])
 
   const handleDownloadPanel = async (panel: PrintCaptureResult) => {
+    if (!requirePaidForExport('Panel PNG Export')) {
+      return
+    }
     if (!requireSignedInForExport('Panel PNG Export')) {
       return
     }
@@ -544,6 +566,9 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   }
 
   const handleDownloadAll = () => {
+    if (!requirePaidForExport('All Panel PNG Export')) {
+      return
+    }
     if (!requireSignedInForExport('All Panel PNG Export')) {
       return
     }
@@ -697,6 +722,9 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   }, [panels, getAdjustedPanelDataUrl, getPanelSettings, includeGuidesInExport, loadImage, project.meta.name, getPlannedPanels])
 
   const handleDownloadCombinedSheet = async () => {
+    if (!requirePaidForExport('One-Page PNG Export')) {
+      return
+    }
     if (!requireSignedInForExport('One-Page PNG Export')) {
       return
     }
@@ -714,6 +742,9 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   }
 
   const handleExportCombinedPDF = async () => {
+    if (!requirePaidForExport('One-Page PDF Export')) {
+      return
+    }
     if (!requireSignedInForExport('One-Page PDF Export')) {
       return
     }
@@ -734,6 +765,9 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
   }
 
   const handleExportPDF = async () => {
+    if (!requirePaidForExport('Individual PDF Export')) {
+      return
+    }
     if (!requireSignedInForExport('Individual PDF Export')) {
       return
     }
@@ -1623,11 +1657,15 @@ export function PrintExportModal({ captureRef, onClose, isGuest = false, onGuest
         )}
 
         <div className="print-actions">
-          {isGuest && guestPrompt && (
+          {guestPrompt && (
             <div className="print-guest-prompt" role="status" aria-live="polite">
               <span>{guestPrompt}</span>
-              <button type="button" className="print-guest-prompt-link" onClick={onGuestSignIn}>
-                Sign In
+              <button
+                type="button"
+                className="print-guest-prompt-link"
+                onClick={guestPromptAction === 'signin' ? onGuestSignIn : onUpgradeClick}
+              >
+                {guestPromptAction === 'signin' ? 'Sign In' : 'Upgrade'}
               </button>
             </div>
           )}

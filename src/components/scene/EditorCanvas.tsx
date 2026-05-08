@@ -13,7 +13,7 @@ import { useModelScene } from './useModelScene'
 import { endPerfSpan, markPerfOnce } from '../../lib/perfDebug'
 import { DEFAULT_TARGET_PAINT, getLockedClassifications, getPaintTargetsForLabel, getResolvedPaintForLabel, PAINT_FINISH_PRESETS, isSystemLockedMesh } from '../../lib/paintTargets'
 import { useEditorStore } from '../../store/editorStore'
-import type { CameraViewId, CarObjectPart, DecalLayer, MeshClass, PaintConfig, PaintFinish, PrintConfig, TextLayer } from '../../types/editor'
+import type { CameraViewId, CarObjectPart, DecalLayer, MeshClass, PaintConfig, PaintFinish, PrintConfig, StripeLayer, TextLayer } from '../../types/editor'
 import type { ExportQuality } from '../../types/exportQuality'
 
 const CAMERA_PRESETS: Record<CameraViewId, { position: [number, number, number]; target: [number, number, number] }> = {
@@ -796,6 +796,18 @@ function LoadedCarModel({
     [layers, selectedLayerId],
   )
 
+  const activeStripeLayer = useMemo(() => {
+    const selected = layers.find((layer) => layer.id === selectedLayerId) ?? null
+    if (selected?.type === 'stripe') {
+      return selected as StripeLayer
+    }
+
+    const visibleStripeLayers = layers.filter(
+      (layer): layer is StripeLayer => layer.type === 'stripe' && layer.visible,
+    )
+    return visibleStripeLayers.length > 0 ? visibleStripeLayers[visibleStripeLayers.length - 1] : null
+  }, [layers, selectedLayerId])
+
   useEffect(() => {
     setAvailableParts(prepared.parts)
   }, [prepared.parts, setAvailableParts])
@@ -803,6 +815,18 @@ function LoadedCarModel({
   useEffect(() => {
     const modelFileName = modelUrl.split('/').pop() ?? ''
     const forceRimAlbedoOff = RIM_COLOR_FORCE_ALBEDO_OFF_FILES.has(modelFileName)
+    const stripeConfig = activeStripeLayer
+      ? {
+          enabled: activeStripeLayer.visible,
+          colorHex: activeStripeLayer.colorHex,
+          finish: activeStripeLayer.finish,
+          width: activeStripeLayer.stripeWidth,
+          gap: activeStripeLayer.stripeGap,
+          offsetX: activeStripeLayer.stripeOffsetX,
+          softEdge: activeStripeLayer.softEdge,
+          angle: activeStripeLayer.transform.rotation.z,
+        }
+      : carStripe
 
     const gradientPaint = targetPaints.fullCar
     const gradientAxis = carGradient.axis
@@ -986,7 +1010,7 @@ function LoadedCarModel({
         (!gradientPaint || paint === gradientPaint)
       )
       const useStripe = Boolean(
-        carStripe.enabled &&
+        stripeConfig.enabled &&
         gradientAllowedByClass &&
         stripeAllowedByMesh
       )
@@ -1014,7 +1038,7 @@ function LoadedCarModel({
         ? `grad-${gradientAxisIndex}-${carGradient.fromHex}-${carGradient.toHex}-${carGradient.balance}`
         : 'none'
       const stripeShaderKey = useStripe
-        ? `stripe-${carStripe.colorHex}-${carStripe.finish}-${carStripe.width.toFixed(3)}-${carStripe.gap.toFixed(3)}-${carStripe.offsetX.toFixed(3)}-${carStripe.softEdge.toFixed(3)}-${carStripe.angle.toFixed(3)}`
+        ? `stripe-${stripeConfig.colorHex}-${stripeConfig.finish}-${stripeConfig.width.toFixed(3)}-${stripeConfig.gap.toFixed(3)}-${stripeConfig.offsetX.toFixed(3)}-${stripeConfig.softEdge.toFixed(3)}-${stripeConfig.angle.toFixed(3)}`
         : 'none'
       if (
         meshMaterial.userData.gradientShaderKey !== gradientShaderKey ||
@@ -1022,6 +1046,7 @@ function LoadedCarModel({
         meshMaterial.userData.stripeShaderKey !== stripeShaderKey
       ) {
         meshMaterial.onBeforeCompile = (shader) => {
+          meshMaterial.userData.compiledShader = shader
           const useWorldPos = useSplit || useGradient || useStripe
 
           if (useSplit) {
@@ -1045,13 +1070,13 @@ function LoadedCarModel({
           }
 
           if (useStripe) {
-            const stripeFinish = PAINT_FINISH_PRESETS[carStripe.finish]
-            shader.uniforms.uStripeColor = { value: new THREE.Color(carStripe.colorHex) }
-            shader.uniforms.uStripeWidth = { value: Math.max(0.001, carStripe.width) }
-            shader.uniforms.uStripeGap = { value: Math.max(0, carStripe.gap) }
-            shader.uniforms.uStripeOffset = { value: carStripe.offsetX }
-            shader.uniforms.uStripeSoft = { value: Math.max(0.0005, carStripe.softEdge) }
-            shader.uniforms.uStripeAngle = { value: carStripe.angle }
+            const stripeFinish = PAINT_FINISH_PRESETS[stripeConfig.finish]
+            shader.uniforms.uStripeColor = { value: new THREE.Color(stripeConfig.colorHex) }
+            shader.uniforms.uStripeWidth = { value: Math.max(0.001, stripeConfig.width) }
+            shader.uniforms.uStripeGap = { value: Math.max(0, stripeConfig.gap) }
+            shader.uniforms.uStripeOffset = { value: stripeConfig.offsetX }
+            shader.uniforms.uStripeSoft = { value: Math.max(0.0005, stripeConfig.softEdge) }
+            shader.uniforms.uStripeAngle = { value: stripeConfig.angle }
             shader.uniforms.uStripeRoughness = { value: stripeFinish.roughness }
             shader.uniforms.uStripeMetallic = { value: stripeFinish.metallic }
           }
@@ -1202,6 +1227,36 @@ function LoadedCarModel({
         meshMaterial.needsUpdate = true
       }
 
+      const compiledShader = meshMaterial.userData.compiledShader as {
+        uniforms?: Record<string, { value: unknown }>
+      } | undefined
+      if (compiledShader?.uniforms) {
+        if (compiledShader.uniforms.uStripeColor && useStripe) {
+          compiledShader.uniforms.uStripeColor.value = new THREE.Color(stripeConfig.colorHex)
+        }
+        if (compiledShader.uniforms.uStripeWidth && useStripe) {
+          compiledShader.uniforms.uStripeWidth.value = Math.max(0.001, stripeConfig.width)
+        }
+        if (compiledShader.uniforms.uStripeGap && useStripe) {
+          compiledShader.uniforms.uStripeGap.value = Math.max(0, stripeConfig.gap)
+        }
+        if (compiledShader.uniforms.uStripeOffset && useStripe) {
+          compiledShader.uniforms.uStripeOffset.value = stripeConfig.offsetX
+        }
+        if (compiledShader.uniforms.uStripeSoft && useStripe) {
+          compiledShader.uniforms.uStripeSoft.value = Math.max(0.0005, stripeConfig.softEdge)
+        }
+        if (compiledShader.uniforms.uStripeAngle && useStripe) {
+          compiledShader.uniforms.uStripeAngle.value = stripeConfig.angle
+        }
+        if (compiledShader.uniforms.uStripeRoughness && useStripe) {
+          compiledShader.uniforms.uStripeRoughness.value = PAINT_FINISH_PRESETS[stripeConfig.finish].roughness
+        }
+        if (compiledShader.uniforms.uStripeMetallic && useStripe) {
+          compiledShader.uniforms.uStripeMetallic.value = PAINT_FINISH_PRESETS[stripeConfig.finish].metallic
+        }
+      }
+
       meshMaterial.metalness = activeFinish.metallic
       meshMaterial.roughness = activeFinish.roughness
       if (meshMaterial instanceof THREE.MeshPhysicalMaterial) {
@@ -1226,7 +1281,7 @@ function LoadedCarModel({
         meshMaterial.roughness = Math.min(1, Math.max(meshMaterial.roughness, 0.24))
       }
     })
-  }, [prepared.scene, targetPaints, targetPrints, printTextures, meshClassifications, windowTint, carGradient, carSplit, carStripe])
+  }, [prepared.scene, targetPaints, targetPrints, printTextures, meshClassifications, windowTint, carGradient, carSplit, carStripe, activeStripeLayer])
 
   useEffect(() => {
     if (!selectedLayer || selectedLayer.targetPartId) {
@@ -2719,7 +2774,19 @@ function RendererExposer({
 
     const useSplit = Boolean(carSplit.enabled && splitAllowed)
     const useGradient = Boolean(!useSplit && carGradient.enabled && gradientAllowed)
-    const useStripe = Boolean(carStripe.enabled && stripeAllowed)
+    const stripeConfig = activeStripeLayer
+      ? {
+          enabled: activeStripeLayer.visible,
+          colorHex: activeStripeLayer.colorHex,
+          finish: activeStripeLayer.finish,
+          width: activeStripeLayer.stripeWidth,
+          gap: activeStripeLayer.stripeGap,
+          offsetX: activeStripeLayer.stripeOffsetX,
+          softEdge: activeStripeLayer.softEdge,
+          angle: activeStripeLayer.transform.rotation.z,
+        }
+      : carStripe
+    const useStripe = Boolean(stripeConfig.enabled && stripeAllowed)
     if (!useSplit && !useGradient && !useStripe) return
 
     const sourceGeometry = mesh.geometry
@@ -2750,7 +2817,7 @@ function RendererExposer({
     const splitB = new THREE.Color(carSplit.sideBHex)
     const gradFrom = new THREE.Color(carGradient.fromHex)
     const gradTo = new THREE.Color(carGradient.toHex)
-    const stripeColor = new THREE.Color(carStripe.colorHex)
+    const stripeColor = new THREE.Color(stripeConfig.colorHex)
 
     const baseMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
     const baseColor = (baseMaterial as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial)?.color?.clone() ?? new THREE.Color('#ffffff')
@@ -2779,14 +2846,14 @@ function RendererExposer({
       }
 
       if (useStripe) {
-        const stripeCa = Math.cos(carStripe.angle)
-        const stripeSa = Math.sin(carStripe.angle)
-        const x = v.x - carStripe.offsetX
+        const stripeCa = Math.cos(stripeConfig.angle)
+        const stripeSa = Math.sin(stripeConfig.angle)
+        const x = v.x - stripeConfig.offsetX
         const z = v.z
         const stripeAxis = x * stripeCa - z * stripeSa
-        const stripeHalfGap = Math.max(0, carStripe.gap * 0.5)
+        const stripeHalfGap = Math.max(0, stripeConfig.gap * 0.5)
         const stripeDist = Math.abs(Math.abs(stripeAxis) - stripeHalfGap)
-        const stripeAlpha = 1 - smoothstep(carStripe.width, carStripe.width + Math.max(0.0005, carStripe.softEdge), stripeDist)
+        const stripeAlpha = 1 - smoothstep(stripeConfig.width, stripeConfig.width + Math.max(0.0005, stripeConfig.softEdge), stripeDist)
         color.lerp(stripeColor, stripeAlpha)
       }
 

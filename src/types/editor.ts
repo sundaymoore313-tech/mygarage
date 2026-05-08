@@ -67,8 +67,18 @@ export type StripeLayer = LayerBase & {
   colorRef: ColorReference | null
   finish: PaintFinish
   stripeWidth: number      // world-space half-width each side
+  stripeGap: number        // distance between mirrored bands (0 = single stripe)
   stripeOffsetX: number    // lateral offset from car centre
   softEdge: number         // feather amount (0–0.15)
+}
+
+export type StripeLayerSeed = {
+  stripeWidth: number
+  stripeGap: number
+  stripeOffsetX: number
+  softEdge: number
+  opacity: number
+  angle: number
 }
 
 export type SplitLayer = LayerBase & {
@@ -260,6 +270,7 @@ export type EditorProject = {
   windowTint: WindowTintConfig
   carSplit: CarSplitConfig
   carStripe: CarStripeConfig
+  stripeLayerSeed: StripeLayerSeed | null
   vehicleCalibration: VehicleCalibration
   wrapPanels: WrapPanelTemplate[]
   printProduction: PrintProductionSettings

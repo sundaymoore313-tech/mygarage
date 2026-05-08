@@ -19,6 +19,21 @@ The app is set up for Stripe-hosted billing links.
 4. For production access control, add webhook or server-side billing sync before trusting paid status.
 
 See `BILLING_SETUP.md` for the production checklist.
+For Supabase dashboard browser steps, see `SUPABASE_DASHBOARD_SETUP.md`.
+
+## Backend Setup
+
+For complete local and production backend setup (Supabase + Stripe), see:
+
+- `BACKEND_SETUP.md`
+
+Quick start:
+
+```bash
+npm run backend:start
+npm run backend:db:push
+npm run backend:functions:serve
+```
 
 ## Asset Folders
 
@@ -80,3 +95,9 @@ See these notes for naming and examples:
 Implementation plan and phase order are documented in:
 
 - EDITOR_IMPLEMENTATION_PLAN.md
+
+## Team Handoff
+
+For production architecture, ownership, operations, and incident playbooks, see:
+
+- TEAM_HANDOFF_RUNBOOK.md
