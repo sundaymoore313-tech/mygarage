@@ -611,33 +611,31 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </div>
         </div>
 
-        {/* Guest CTA + legal — pinned to bottom-center of hero */}
+        {/* Guest CTA + Discord + legal — pinned to bottom-center of hero */}
         {!(currentUser && isRememberedUser()) && (
           <div className="home-guest-cta-bottom">
             <p className="home-cta-prompt">Ready to build your dream livery?</p>
             <button ref={primaryCtaRef} type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
               <span className="home-cta-label">Continue as Guest →</span>
             </button>
+            <div className="home-discord-cta home-discord-cta--hero">
+              <a
+                className="home-discord-btn"
+                href={discordCommunityUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Join Our Discord Community
+              </a>
+              <p className="home-discord-copy">
+                Upload your car builds, send feedback, report bugs, and help shape future features.
+              </p>
+            </div>
             <p className="home-legal-inline">
               For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
             </p>
           </div>
         )}
-
-        {/* Discord CTA — centered at bottom of hero */}
-        <div className="home-discord-cta home-discord-cta--hero">
-          <a
-            className="home-discord-btn"
-            href={discordCommunityUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Join Our Discord Community
-          </a>
-          <p className="home-discord-copy">
-            Upload your car builds, send feedback, report bugs, and help shape future features.
-          </p>
-        </div>
       </section>
 
       {/* ── Features grid ────────────────────────────────────── */}
