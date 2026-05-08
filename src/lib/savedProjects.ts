@@ -25,6 +25,7 @@ const SAVED_PROJECTS_KEY = 'mygarage-profile-saved-projects'
 const FULL_PROJECT_PREFIX = 'mygarage-project-full-'
 const CLOUD_MIGRATED_PREFIX = 'mygarage-cloud-migrated-'
 const TEMPLATE_BUCKET = 'garage-templates'
+const THUMBNAIL_BUCKET = 'project-thumbnails'
 const LIMIT = 24
 let cloudReadUnavailable = false
 export const SAVED_PROJECTS_UPDATED_EVENT = 'mygarage:saved-projects-updated'
@@ -164,15 +165,42 @@ async function uploadPanelTemplateIfNeeded(
   return data.publicUrl
 }
 
+async function uploadThumbnailIfNeeded(
+  userId: string,
+  projectId: string,
+  previewImageUrl?: string | null,
+): Promise<string | null | undefined> {
+  if (!previewImageUrl) return previewImageUrl
+  if (!previewImageUrl.startsWith('data:image/')) return previewImageUrl
+  if (!supabase) return null
+  try {
+    const blob = await dataUrlToBlob(previewImageUrl)
+    const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/jpeg' ? 'jpg' : 'png'
+    const filePath = `${userId}/${projectId}/thumb.${ext}`
+    const { error } = await supabase.storage
+      .from(THUMBNAIL_BUCKET)
+      .upload(filePath, blob, { upsert: true, contentType: blob.type })
+    if (error) return null
+    const { data } = supabase.storage.from(THUMBNAIL_BUCKET).getPublicUrl(filePath)
+    return data.publicUrl
+  } catch {
+    return null
+  }
+}
+
 async function prepareProjectForCloud(userId: string, full: FullSavedProject): Promise<FullSavedProject> {
-  const wrapPanels = await Promise.all(
-    (full.project.wrapPanels ?? []).map(async (panel) => ({
-      ...panel,
-      templateImageUrl: await uploadPanelTemplateIfNeeded(userId, full.id, panel.id, panel.templateImageUrl),
-    }))
-  )
+  const [wrapPanels, previewImageUrl] = await Promise.all([
+    Promise.all(
+      (full.project.wrapPanels ?? []).map(async (panel) => ({
+        ...panel,
+        templateImageUrl: await uploadPanelTemplateIfNeeded(userId, full.id, panel.id, panel.templateImageUrl),
+      }))
+    ),
+    uploadThumbnailIfNeeded(userId, full.id, full.previewImageUrl),
+  ])
   return {
     ...full,
+    previewImageUrl: previewImageUrl ?? undefined,
     project: {
       ...full.project,
       wrapPanels,
