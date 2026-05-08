@@ -7385,6 +7385,20 @@ hr {
 }
 
 /* -- CTA buttons ----------------------------------------------- */
+.home-guest-cta-bottom {
+  position: absolute;
+  bottom: 90px; /* sit above the stats bar */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  width: min(92vw, 600px);
+}
+
 .home-cta-row {
   display: flex;
   flex-direction: column;

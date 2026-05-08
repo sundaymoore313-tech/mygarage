@@ -518,12 +518,6 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         </div>
         <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
 
-        <div className="home-hero-top-title">
-          <h1 className="home-title">
-            My<span className="home-title-accent">Garage</span>
-          </h1>
-        </div>
-
         <div className="home-auth-actions">
           <div className="home-auth-actions-row">
             {currentUser ? (
@@ -587,6 +581,9 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
         </div>
 
         <div className="home-hero-content">
+          <h1 className="home-title">
+            My<span className="home-title-accent">Garage</span>
+          </h1>
           <p className={`home-tagline${fading ? ' fade-out' : ''}`}>
             {currentUser && isRememberedUser() ? `Welcome back, ${currentUser.name.split(' ')[0]}` : TAGLINES[taglineIdx]}
           </p>
@@ -610,19 +607,22 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
                   Start New Project
                 </button>
               </>
-            ) : (
-              <>
-                <p className="home-cta-prompt">Ready to build your dream livery?</p>
-                <button ref={primaryCtaRef} type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
-                  <span className="home-cta-label">Continue as Guest →</span>
-                </button>
-              </>
-            )}
+            ) : null}
           </div>
-          <p className="home-legal-inline">
-            For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
-          </p>
         </div>
+
+        {/* Guest CTA + legal — pinned to bottom-center of hero */}
+        {!(currentUser && isRememberedUser()) && (
+          <div className="home-guest-cta-bottom">
+            <p className="home-cta-prompt">Ready to build your dream livery?</p>
+            <button ref={primaryCtaRef} type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
+              <span className="home-cta-label">Continue as Guest →</span>
+            </button>
+            <p className="home-legal-inline">
+              For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
+            </p>
+          </div>
+        )}
 
         {/* Discord CTA — centered at bottom of hero */}
         <div className="home-discord-cta home-discord-cta--hero">
