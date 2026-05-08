@@ -86,10 +86,30 @@ export function readSavedProjects(): SavedProjectCard[] {
 }
 
 function writeSavedProjects(items: SavedProjectCard[]) {
-  localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(items))
+  try {
+    localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(items))
+  } catch {
+    const stripped = items.map((item) => ({
+      ...item,
+      previewImageUrl: item.previewImageUrl?.startsWith('data:image/') ? undefined : item.previewImageUrl,
+    }))
+    localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(stripped))
+  }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(SAVED_PROJECTS_UPDATED_EVENT))
   }
+}
+
+function normalizePreviewForLocal(url?: string | null): string | undefined {
+  if (!url) return undefined
+  return url.startsWith('data:image/') ? undefined : url
+}
+
+function normalizeCardsForLocal(cards: SavedProjectCard[]): SavedProjectCard[] {
+  return cards.map((card) => ({
+    ...card,
+    previewImageUrl: normalizePreviewForLocal(card.previewImageUrl),
+  }))
 }
 
 function pruneStoredFullProjects(keepProjectIds: Set<string>): number {
@@ -391,7 +411,7 @@ export function saveFullProjectToProfile(
   targetPrints: Partial<Record<PaintTargetId, PrintConfig | null>>,
   previewImageUrl?: string | null,
 ): SaveProfileResult {
-  const existing = readSavedProjects()
+  const existing = normalizeCardsForLocal(readSavedProjects())
   const prior = existing.find((p) => p.id === project.meta.id)
   const card: SavedProjectCard = {
     id: project.meta.id,
@@ -399,7 +419,7 @@ export function saveFullProjectToProfile(
     carName: car.name,
     modelUrl: car.modelUrl,
     groundOffsetY: car.groundOffsetY,
-    previewImageUrl: previewImageUrl ?? prior?.previewImageUrl,
+    previewImageUrl: normalizePreviewForLocal(previewImageUrl) ?? prior?.previewImageUrl,
     updatedAt: Date.now(),
     createdAt: prior?.createdAt ?? project.meta.createdAt,
     layerCount: project.layers.length,
@@ -448,9 +468,9 @@ export function saveFullProjectToProfile(
       }
     } catch {
       return {
-        ok: false,
+        ok: true,
         fullSaved: false,
-        error: 'Could not save project to local storage. Storage may be full or unavailable.',
+        error: 'Saved to cloud, but local cache could not be updated due to browser storage limits.',
       }
     }
   }
