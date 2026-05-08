@@ -15,7 +15,7 @@ import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
 import { readResumeSnapshot, saveResumeSnapshot } from './lib/resumeSnapshot'
-import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, readSavedProjects, saveFullProjectToProfile, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, readSavedProjects, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
@@ -268,8 +268,6 @@ function App() {
   const [cloudStatusTone, setCloudStatusTone] = useState<'neutral' | 'ok' | 'warn' | 'error'>('neutral')
   const is2DOpen = printExportOpen
   const editorWarmRef = useRef(false)
-  const cloudResumeAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const cloudResumeSignatureRef = useRef('')
   const skipHistoryPushRef = useRef(false)
   const historyHydratedRef = useRef(false)
   const accountPlan = isGuest ? 'guest' : userPlan
@@ -437,53 +435,6 @@ function App() {
       setCloudStatusTone('error')
     }
   }, [refreshPlanFromCloud])
-
-  useEffect(() => {
-    const unsubscribe = useEditorStore.subscribe((state) => {
-      if (screen !== 'editor' || isGuest || !isSupabaseConfigured) return
-      const car = state.selectedCar
-      if (!car || !car.modelUrl) return
-
-      const signature = `${car.modelUrl}:${state.project.meta.id}:${state.project.meta.updatedAt}`
-      if (signature === cloudResumeSignatureRef.current) return
-      cloudResumeSignatureRef.current = signature
-
-      if (cloudResumeAutosaveTimerRef.current) {
-        clearTimeout(cloudResumeAutosaveTimerRef.current)
-      }
-
-      const snapshotProject = state.project
-      const snapshotTargetPaints = state.targetPaints
-      const snapshotTargetPrints = state.targetPrints
-      const snapshotCar = {
-        name: car.name,
-        modelUrl: car.modelUrl,
-        groundOffsetY: car.groundOffsetY,
-      }
-
-      cloudResumeAutosaveTimerRef.current = setTimeout(() => {
-        void (async () => {
-          const user = await getCurrentUser()
-          if (!user) return
-          saveFullProjectToProfile(
-            snapshotProject,
-            snapshotCar,
-            snapshotTargetPaints,
-            snapshotTargetPrints,
-            null,
-          )
-        })()
-      }, 1500)
-    })
-
-    return () => {
-      unsubscribe()
-      if (cloudResumeAutosaveTimerRef.current) {
-        clearTimeout(cloudResumeAutosaveTimerRef.current)
-        cloudResumeAutosaveTimerRef.current = null
-      }
-    }
-  }, [isGuest, screen])
 
   useEffect(() => {
     void runCloudSync()
