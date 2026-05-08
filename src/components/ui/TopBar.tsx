@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Home, Redo2, Undo2 } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
 import { saveFullProjectToProfile } from '../../lib/savedProjects'
+import { makeId } from '../../lib/id'
 import { getAccessPrompt, getPlanLabel, isFeatureAllowed, type FeatureId, type PlanTier } from '../../lib/access'
 import { LegalDocsModal } from './LegalDocsModal'
 import type { CameraViewId, EditorProject } from '../../types/editor'
@@ -99,7 +100,16 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
     if (selectedCar) {
       const previewImageUrl = onCaptureProfilePreview?.() ?? null
-      const result = saveFullProjectToProfile(project, selectedCar, targetPaints, targetPrints, previewImageUrl)
+      const snapshotProject: EditorProject = {
+        ...project,
+        meta: {
+          ...project.meta,
+          id: makeId('project'),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+      const result = saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
       if (!result.ok || !result.fullSaved) {
         alert(result.error ?? 'Project save completed with warnings.')
       }
