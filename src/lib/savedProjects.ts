@@ -92,6 +92,24 @@ function writeSavedProjects(items: SavedProjectCard[]) {
   }
 }
 
+function pruneStoredFullProjects(keepProjectIds: Set<string>): number {
+  const keysToRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i)
+    if (!key || !key.startsWith(FULL_PROJECT_PREFIX)) continue
+    const id = key.slice(FULL_PROJECT_PREFIX.length)
+    if (!keepProjectIds.has(id)) {
+      keysToRemove.push(key)
+    }
+  }
+
+  for (const key of keysToRemove) {
+    localStorage.removeItem(key)
+  }
+
+  return keysToRemove.length
+}
+
 function writeMigrationFlag(userId: string) {
   try {
     localStorage.setItem(CLOUD_MIGRATED_PREFIX + userId, '1')
@@ -391,28 +409,49 @@ export function saveFullProjectToProfile(
 
   // Save full data keyed by project id
   const full: FullSavedProject = { ...card, project, targetPaints, targetPrints }
+  // Cloud save is attempted regardless of local cache pressure.
+  void saveCloudProject(full)
+
   let fullSaved = true
   try {
     localStorage.setItem(FULL_PROJECT_PREFIX + card.id, JSON.stringify(full))
   } catch {
-    // localStorage might be full; card metadata can still be saved.
+    // localStorage might be full; try pruning old full snapshots and retry once.
     fullSaved = false
+    pruneStoredFullProjects(new Set([card.id]))
+    try {
+      localStorage.setItem(FULL_PROJECT_PREFIX + card.id, JSON.stringify(full))
+      fullSaved = true
+    } catch {
+      // Keep going: card metadata and cloud save can still succeed.
+    }
   }
 
+  const nextCards = [card, ...existing.filter((p) => p.id !== card.id)].slice(0, LIMIT)
   try {
-    const others = existing.filter((p) => p.id !== card.id)
-    writeSavedProjects([card, ...others].slice(0, LIMIT))
-    void saveCloudProject(full)
+    writeSavedProjects(nextCards)
     return {
       ok: true,
       fullSaved,
       error: fullSaved ? undefined : 'Saved card metadata, but full project data could not be stored. Clear local storage or reduce template image size.',
     }
   } catch {
-    return {
-      ok: false,
-      fullSaved,
-      error: 'Could not save project to local storage. Storage may be full or unavailable.',
+    // Last attempt: clear heavy cached full projects and retry card write.
+    const keepIds = new Set(nextCards.map((p) => p.id))
+    pruneStoredFullProjects(keepIds)
+    try {
+      writeSavedProjects(nextCards)
+      return {
+        ok: true,
+        fullSaved: false,
+        error: 'Saved card metadata after clearing old cache. Full project cache is limited on this device.',
+      }
+    } catch {
+      return {
+        ok: false,
+        fullSaved: false,
+        error: 'Could not save project to local storage. Storage may be full or unavailable.',
+      }
     }
   }
 }

@@ -110,7 +110,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         },
       }
       const result = saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
-      if (!result.ok || !result.fullSaved) {
+      if (!result.ok) {
         alert(result.error ?? 'Project save completed with warnings.')
       }
     }
