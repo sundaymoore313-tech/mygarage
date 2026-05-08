@@ -6620,8 +6620,9 @@ hr {
   width: 100% !important;
   height: 100% !important;
   pointer-events: none;
-  /* Car is offset right in 3D — fade out left/top/bottom edges */
   opacity: 1;
+  object-fit: cover;
+  object-position: center;
 }
 
 .home-hero-preview-image {
