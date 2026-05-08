@@ -3,8 +3,8 @@ import { Canvas } from '@react-three/fiber'
 import { Camera, User } from 'lucide-react'
 import { getPlanLabel, type NonGuestPlanTier } from '../../lib/access'
 import { canUseBillingDevOverride, getBillingConfig, openStripeBillingPortal, startStripeCheckout } from '../../lib/billing'
-import { readSavedProjects, removeSavedProject, syncCloudProjectsToLocal, type SavedProjectCard } from '../../lib/savedProjects'
-import { supabaseSignOut } from '../../lib/supabase'
+import { readSavedProjects, removeSavedProject, SAVED_PROJECTS_UPDATED_EVENT, syncCloudProjectsToLocal, type SavedProjectCard } from '../../lib/savedProjects'
+import { supabase, supabaseSignOut } from '../../lib/supabase'
 import * as THREE from 'three'
 import { DEFAULT_TARGET_PAINT, getMergedClassifications, getResolvedPaintForLabel } from '../../lib/paintTargets'
 import { NativeOrbitControls } from '../scene/NativeOrbitControls'
@@ -344,12 +344,45 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
   }, [user])
 
   useEffect(() => {
-    void (async () => {
+    let active = true
+
+    const refreshProjects = async () => {
+      if (!active) return
+      setProjects(readSavedProjects())
       const result = await syncCloudProjectsToLocal()
-      if (result.ok && result.count >= 0) {
+      if (active && result.ok && result.count >= 0) {
         setProjects(readSavedProjects())
       }
-    })()
+    }
+
+    const handleProjectsUpdated = () => {
+      if (!active) return
+      setProjects(readSavedProjects())
+    }
+
+    const handleWindowFocus = () => {
+      void refreshProjects()
+    }
+
+    window.addEventListener(SAVED_PROJECTS_UPDATED_EVENT, handleProjectsUpdated)
+    window.addEventListener('focus', handleWindowFocus)
+
+    let subscription: { unsubscribe: () => void } | null = null
+    if (supabase) {
+      const authState = supabase.auth.onAuthStateChange(() => {
+        void refreshProjects()
+      })
+      subscription = authState.data.subscription
+    }
+
+    void refreshProjects()
+
+    return () => {
+      active = false
+      window.removeEventListener(SAVED_PROJECTS_UPDATED_EVENT, handleProjectsUpdated)
+      window.removeEventListener('focus', handleWindowFocus)
+      subscription?.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {

@@ -15,13 +15,38 @@ import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
 import { readResumeSnapshot, saveResumeSnapshot } from './lib/resumeSnapshot'
-import { loadFullProjectById, migrateLocalProjectsToCloud, readSavedProjects, saveFullProjectToProfile, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, readSavedProjects, saveFullProjectToProfile, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
 const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const LAST_CAR_KEY = 'mygarage-last-car'
+const SCREEN_QUERY_KEY = 'screen'
+
+type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
+
+function isAppScreen(value: unknown): value is AppScreen {
+  return value === 'home' || value === 'profile' || value === 'selector' || value === 'editor'
+}
+
+function readScreenFromUrl(): AppScreen | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const value = params.get(SCREEN_QUERY_KEY)
+  return isAppScreen(value) ? value : null
+}
+
+function buildUrlForScreen(screen: AppScreen): string {
+  if (typeof window === 'undefined') return ''
+  const url = new URL(window.location.href)
+  if (screen === 'home') {
+    url.searchParams.delete(SCREEN_QUERY_KEY)
+  } else {
+    url.searchParams.set(SCREEN_QUERY_KEY, screen)
+  }
+  return `${url.pathname}${url.search}${url.hash}`
+}
 
 const loadEditorCanvasModule = async () => import('./components/scene/EditorCanvas')
 
@@ -207,7 +232,7 @@ function ClassifyLegend({
 function App() {
   const selectCar = useEditorStore((state) => state.selectCar)
   const selectedCar = useEditorStore((state) => state.selectedCar)
-  const [screen, setScreen] = useState<'home' | 'profile' | 'selector' | 'editor'>('home')
+  const [screen, setScreen] = useState<AppScreen>(() => readScreenFromUrl() ?? 'home')
   const [isGuest, setIsGuest] = useState(false)
   const [userPlan, setUserPlan] = useState<NonGuestPlanTier>(() => readCachedPlanTier())
   const [classifyWindowClickThrough, setClassifyWindowClickThrough] = useState(false)
@@ -245,7 +270,51 @@ function App() {
   const editorWarmRef = useRef(false)
   const cloudResumeAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cloudResumeSignatureRef = useRef('')
+  const skipHistoryPushRef = useRef(false)
+  const historyHydratedRef = useRef(false)
   const accountPlan = isGuest ? 'guest' : userPlan
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const initialScreen = readScreenFromUrl() ?? 'home'
+    window.history.replaceState({ mygarage: true, screen: initialScreen }, '', buildUrlForScreen(initialScreen))
+
+    if (initialScreen !== screen) {
+      skipHistoryPushRef.current = true
+      setScreen(initialScreen)
+    }
+
+    const onPopState = (event: PopStateEvent) => {
+      const stateScreen = (event.state as { screen?: unknown } | null)?.screen
+      const nextScreen = isAppScreen(stateScreen) ? stateScreen : (readScreenFromUrl() ?? 'home')
+      skipHistoryPushRef.current = true
+      setScreen(nextScreen)
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!historyHydratedRef.current) {
+      historyHydratedRef.current = true
+      return
+    }
+    if (skipHistoryPushRef.current) {
+      skipHistoryPushRef.current = false
+      return
+    }
+
+    window.history.pushState({ mygarage: true, screen }, '', buildUrlForScreen(screen))
+  }, [screen])
+
+  useEffect(() => {
+    if (screen === 'editor' && !selectedCar) {
+      setScreen('selector')
+    }
+  }, [screen, selectedCar])
 
   const refreshPlanFromCloud = useCallback(async () => {
     // Owner always gets paid — read from the authenticated session so it can't be spoofed.
@@ -350,7 +419,7 @@ function App() {
       // Continue Editing follows the same account across devices.
       const latest = readSavedProjects().sort((a, b) => b.updatedAt - a.updatedAt)[0]
       if (latest) {
-        const full = loadFullProjectById(latest.id)
+        const full = await loadFullProjectByIdWithCloud(latest.id)
         if (full) {
           const fileName = full.modelUrl.split('/').pop() ?? ''
           if (fileName) {
@@ -539,9 +608,9 @@ function App() {
     setScreen('selector')
   }
 
-  const handleOpenProject = (id: string) => {
+  const handleOpenProject = async (id: string) => {
     beginEditorOpen('open_project')
-    const full = loadFullProjectById(id)
+    const full = await loadFullProjectByIdWithCloud(id)
     if (!full || !full.modelUrl) return
     selectCar({
       name: full.carName,

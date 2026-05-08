@@ -462,11 +462,12 @@ export const useEditorStore = create<EditorStore>((set) => ({
   historyFuture: [],
 
   selectCar: (car) =>
-    set((state) => {
+    set(() => {
       const fileName = car.modelUrl.split('/').pop() ?? ''
       const locked = getLockedClassifications(fileName)
       const personal = loadPersonalClassifications(fileName)
       const merged = getMergedClassifications(fileName, personal)
+      const freshProject = createProject()
       return {
         selectedCar: car,
         selectedLayerId: null,
@@ -477,29 +478,13 @@ export const useEditorStore = create<EditorStore>((set) => ({
         selectedPaintTarget: 'fullCar',
         targetPaints: {},
         targetPrints: {},
+        activeTool: 'orbit',
+        activeCarTool: null,
+        historyPast: [],
+        historyFuture: [],
         classifyLocked: locked !== null,
         project: {
-          ...state.project,
-          // Fresh ID so every new project gets its own save slot,
-          // not an overwrite of the previously loaded project.
-          meta: {
-            ...state.project.meta,
-            id: makeId('project'),
-            name: 'Untitled Car Project',
-            createdAt: now(),
-            updatedAt: now(),
-          },
-          paint: { ...DEFAULT_TARGET_PAINT },
-          carSplit: {
-            ...state.project.carSplit,
-            enabled: false,
-          },
-          carStripe: {
-            ...state.project.carStripe,
-            enabled: false,
-          },
-          stripeLayerSeed: null,
-          layers: [],
+          ...freshProject,
           meshClassifications: merged,
         },
       }

@@ -27,6 +27,7 @@ const CLOUD_MIGRATED_PREFIX = 'mygarage-cloud-migrated-'
 const TEMPLATE_BUCKET = 'garage-templates'
 const LIMIT = 24
 let cloudReadUnavailable = false
+export const SAVED_PROJECTS_UPDATED_EVENT = 'mygarage:saved-projects-updated'
 
 function isMissingCloudEndpointError(error: unknown): boolean {
   const maybe = error as { code?: string; message?: string; details?: string; hint?: string } | null
@@ -59,6 +60,20 @@ type CloudProjectRow = {
   target_prints_json: Partial<Record<PaintTargetId, PrintConfig | null>>
 }
 
+type CloudProjectCardRow = {
+  project_id: string
+  name: string
+  car_name: string
+  model_url: string
+  ground_offset_y: number | null
+  preview_image_url: string | null
+  updated_at_ms: number
+  created_at_ms: number
+  layer_count: number
+  custom_decal_count: number
+  paint_color_hex: string
+}
+
 export function readSavedProjects(): SavedProjectCard[] {
   try {
     const raw = localStorage.getItem(SAVED_PROJECTS_KEY)
@@ -72,6 +87,9 @@ export function readSavedProjects(): SavedProjectCard[] {
 
 function writeSavedProjects(items: SavedProjectCard[]) {
   localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(items))
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SAVED_PROJECTS_UPDATED_EVENT))
+  }
 }
 
 function writeMigrationFlag(userId: string) {
@@ -203,7 +221,23 @@ function cloudRowToFull(row: CloudProjectRow): FullSavedProject {
   }
 }
 
-async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
+function cloudCardToSavedCard(row: CloudProjectCardRow): SavedProjectCard {
+  return {
+    id: row.project_id,
+    name: row.name,
+    carName: row.car_name,
+    modelUrl: row.model_url,
+    groundOffsetY: row.ground_offset_y ?? undefined,
+    previewImageUrl: row.preview_image_url ?? undefined,
+    updatedAt: row.updated_at_ms,
+    createdAt: row.created_at_ms,
+    layerCount: row.layer_count,
+    customDecalCount: row.custom_decal_count,
+    paintColorHex: row.paint_color_hex,
+  }
+}
+
+async function listCloudProjectCards(): Promise<CloudProjectCardRow[]> {
   if (!isSupabaseConfigured || !supabase || cloudReadUnavailable) return []
   const client = supabase
   const user = await getCurrentUser()
@@ -216,20 +250,12 @@ async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
   }
 
   if (Array.isArray(rpcCards) && rpcCards.length > 0) {
-    const rows = await Promise.all(
-      rpcCards.map(async (card: { project_id: string }) => {
-        const { data, error } = await client.rpc('get_garage_project', { p_project_id: card.project_id })
-        if (error) return null
-        const row = Array.isArray(data) ? data[0] : data
-        return row as CloudProjectRow | null
-      })
-    )
-    return rows.filter((r): r is CloudProjectRow => Boolean(r))
+    return rpcCards as CloudProjectCardRow[]
   }
 
   const { data, error } = await client
     .from('garage_projects')
-    .select('project_id,name,car_name,model_url,ground_offset_y,preview_image_url,updated_at_ms,created_at_ms,layer_count,custom_decal_count,paint_color_hex,project_json,target_paints_json,target_prints_json')
+    .select('project_id,name,car_name,model_url,ground_offset_y,preview_image_url,updated_at_ms,created_at_ms,layer_count,custom_decal_count,paint_color_hex')
     .eq('user_id', user.id)
     .order('updated_at_ms', { ascending: false })
     .limit(LIMIT)
@@ -241,32 +267,64 @@ async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
     return []
   }
 
-  return (data ?? []) as CloudProjectRow[]
+  return (data ?? []) as CloudProjectCardRow[]
+}
+
+async function getCloudProjectRowById(projectId: string): Promise<CloudProjectRow | null> {
+  if (!isSupabaseConfigured || !supabase || cloudReadUnavailable) return null
+  const client = supabase
+  const user = await getCurrentUser()
+  if (!user) return null
+
+  const { data: rpcData, error: rpcError } = await client.rpc('get_garage_project', { p_project_id: projectId })
+  if (!rpcError) {
+    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData
+    if (row) return row as CloudProjectRow
+  }
+
+  const { data, error } = await client
+    .from('garage_projects')
+    .select('project_id,name,car_name,model_url,ground_offset_y,preview_image_url,updated_at_ms,created_at_ms,layer_count,custom_decal_count,paint_color_hex,project_json,target_paints_json,target_prints_json')
+    .eq('user_id', user.id)
+    .eq('project_id', projectId)
+    .maybeSingle<CloudProjectRow>()
+
+  if (error) {
+    if (isMissingCloudEndpointError(error)) {
+      cloudReadUnavailable = true
+    }
+    return null
+  }
+
+  return data ?? null
+}
+
+async function listCloudProjectRows(): Promise<CloudProjectRow[]> {
+  if (!isSupabaseConfigured || !supabase || cloudReadUnavailable) return []
+  const cards = await listCloudProjectCards()
+  if (cards.length === 0) return []
+
+  const rows = await Promise.all(cards.map((card) => getCloudProjectRowById(card.project_id)))
+  const valid = rows.filter((row): row is CloudProjectRow => Boolean(row))
+  return valid
 }
 
 export async function syncCloudProjectsToLocal(): Promise<{ ok: boolean; count: number }> {
   // Reset so a page reload always retries (avoids lock-in from earlier 404s)
   cloudReadUnavailable = false
   try {
+    const cardsFromCloud = await listCloudProjectCards()
+    const cards = cardsFromCloud.map(cloudCardToSavedCard)
+    if (cards.length > 0) {
+      writeSavedProjects(cards)
+    }
+
     const rows = await listCloudProjectRows()
     if (rows.length === 0) {
-      return { ok: true, count: 0 }
+      return { ok: true, count: cards.length }
     }
 
     const full = rows.map(cloudRowToFull)
-    const cards = full.map((item) => ({
-      id: item.id,
-      name: item.name,
-      carName: item.carName,
-      modelUrl: item.modelUrl,
-      groundOffsetY: item.groundOffsetY,
-      previewImageUrl: item.previewImageUrl,
-      updatedAt: item.updatedAt,
-      createdAt: item.createdAt,
-      layerCount: item.layerCount,
-      customDecalCount: item.customDecalCount,
-      paintColorHex: item.paintColorHex,
-    }))
     writeSavedProjects(cards)
     for (const item of full) {
       localStorage.setItem(FULL_PROJECT_PREFIX + item.id, JSON.stringify(item))
@@ -367,6 +425,38 @@ export function loadFullProjectById(id: string): FullSavedProject | null {
   } catch {
     return null
   }
+}
+
+export async function loadFullProjectByIdWithCloud(id: string): Promise<FullSavedProject | null> {
+  const local = loadFullProjectById(id)
+  if (local) return local
+
+  const row = await getCloudProjectRowById(id)
+  if (!row) return null
+  const full = cloudRowToFull(row)
+
+  try {
+    localStorage.setItem(FULL_PROJECT_PREFIX + id, JSON.stringify(full))
+    const existing = readSavedProjects().filter((p) => p.id !== full.id)
+    const next: SavedProjectCard = {
+      id: full.id,
+      name: full.name,
+      carName: full.carName,
+      modelUrl: full.modelUrl,
+      groundOffsetY: full.groundOffsetY,
+      previewImageUrl: full.previewImageUrl,
+      updatedAt: full.updatedAt,
+      createdAt: full.createdAt,
+      layerCount: full.layerCount,
+      customDecalCount: full.customDecalCount,
+      paintColorHex: full.paintColorHex,
+    }
+    writeSavedProjects([next, ...existing].slice(0, LIMIT))
+  } catch {
+    // ignore cache write errors
+  }
+
+  return full
 }
 
 /** @deprecated — use saveFullProjectToProfile for new code */
