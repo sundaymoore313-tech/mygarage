@@ -31,7 +31,6 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number>(0)
-  const extRef = useRef<string>('webm')
   const rafRef = useRef<number | null>(null)
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
   const offscreenRef = useRef<HTMLCanvasElement | null>(null)
@@ -67,15 +66,13 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
     }
   }, [blobUrl])
 
-  function pickMimeType(): { mimeType: string; ext: string } {
+  function pickMp4MimeType(): string | null {
     const candidates = [
-      { mimeType: 'video/webm;codecs=vp9', ext: 'webm' },
-      { mimeType: 'video/webm;codecs=vp8', ext: 'webm' },
-      { mimeType: 'video/webm', ext: 'webm' },
-      { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
-      { mimeType: 'video/mp4', ext: 'mp4' },
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4;codecs=avc1',
+      'video/mp4',
     ]
-    return candidates.find((c) => MediaRecorder.isTypeSupported(c.mimeType)) ?? { mimeType: '', ext: 'webm' }
+    return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? null
   }
 
   function startRecording() {
@@ -134,30 +131,29 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
         captureStream = oc.captureStream(fps)
       }
 
-      const { mimeType, ext } = pickMimeType()
+      const mimeType = pickMp4MimeType()
+      if (!mimeType) {
+        setError('This browser cannot record MP4 directly. Please use a browser/device with MP4 MediaRecorder support.')
+        setRecording(false)
+        onRecordingChange?.(false)
+        return
+      }
+
       const recorderOptions: MediaRecorderOptions = {
         videoBitsPerSecond: bitrate,
-        ...(mimeType ? { mimeType } : {}),
+        mimeType,
       }
       let recorder: MediaRecorder
-      let effectiveMimeType = mimeType
-      let effectiveExt = ext
+      const effectiveMimeType = mimeType
       try {
         recorder = new MediaRecorder(captureStream, recorderOptions)
       } catch {
-        try {
-          recorder = new MediaRecorder(captureStream)
-          effectiveMimeType = 'video/webm'
-          effectiveExt = 'webm'
-        } catch {
-          setError('Recording is not supported by this browser/device configuration.')
-          setRecording(false)
-          onRecordingChange?.(false)
-          return
-        }
+        setError('MP4 recorder failed to start. Try a different browser/device that supports MP4 recording.')
+        setRecording(false)
+        onRecordingChange?.(false)
+        return
       }
       recorderRef.current = recorder
-      extRef.current = effectiveExt
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
@@ -177,7 +173,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
           return
         }
 
-        const blob = new Blob(chunksRef.current, { type: effectiveMimeType || 'video/webm' })
+        const blob = new Blob(chunksRef.current, { type: effectiveMimeType })
         setBlobUrl(URL.createObjectURL(blob))
         setRecording(false)
         setProgress(100)
@@ -212,7 +208,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
     if (!blobUrl) return
     const a = document.createElement('a')
     a.href = blobUrl
-    a.download = `mygarage-${duration}s-${Date.now()}.${extRef.current}`
+    a.download = `mygarage-${duration}s-${Date.now()}.mp4`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -326,7 +322,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
           {blobUrl && (
             <>
               <button type="button" className="social-download-btn" onClick={handleDownload}>
-                Download {extRef.current.toUpperCase()} 🎬
+                Download MP4 🎬
               </button>
               <button type="button" className="social-cancel-btn" onClick={() => { setBlobUrl(null); setProgress(0) }}>
                 Re-record
