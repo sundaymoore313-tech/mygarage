@@ -594,7 +594,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           </p>
           )}
 
-          <div ref={heroCtaRef} className="home-cta-row">
+          <div
+            ref={heroCtaRef}
+            className={`home-cta-row${currentUser && isRememberedUser() ? ' home-cta-row--returning' : ''}`}
+          >
             {currentUser && isRememberedUser() ? (
               <>
                 <button ref={primaryCtaRef} type="button" className="home-cta-primary home-cta-returning" onClick={onContinueEditing ?? onEnter}>

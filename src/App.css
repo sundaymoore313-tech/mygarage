@@ -7410,6 +7410,10 @@ hr {
   margin-top: 10px;
 }
 
+.home-cta-row--returning {
+  margin-top: clamp(72px, 14vh, 160px);
+}
+
 .home-cta-prompt {
   margin: 0;
   font-size: clamp(0.95rem, 1.6vw, 1.1rem);
@@ -7877,6 +7881,9 @@ hr {
   }
   .home-hero-content {
     gap: 16px;
+  }
+  .home-cta-row--returning {
+    margin-top: clamp(32px, 8vh, 80px);
   }
   .home-hero-stats-bar {
     padding: 18px 18px 16px;
