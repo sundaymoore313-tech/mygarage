@@ -8,6 +8,14 @@ type ResumeSnapshot = {
 
 const RESUME_SNAPSHOT_KEY = 'mygarage-resume-snapshot-v1'
 
+export function clearResumeSnapshot(): void {
+  try {
+    localStorage.removeItem(RESUME_SNAPSHOT_KEY)
+  } catch {
+    // Ignore storage access errors.
+  }
+}
+
 export function readResumeSnapshot(fileName?: string): ResumeSnapshot | null {
   try {
     const raw = localStorage.getItem(RESUME_SNAPSHOT_KEY)

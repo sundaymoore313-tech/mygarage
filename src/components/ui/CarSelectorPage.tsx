@@ -4,7 +4,7 @@ import type { ChangeEvent } from 'react'
 import * as THREE from 'three'
 import { NativeOrbitControls } from '../scene/NativeOrbitControls'
 import { useModelScene } from '../scene/useModelScene'
-import { readResumeSnapshot } from '../../lib/resumeSnapshot'
+import { clearResumeSnapshot, readResumeSnapshot } from '../../lib/resumeSnapshot'
 import { useEditorStore } from '../../store/editorStore'
 
 type CarManifestItem = {
@@ -407,10 +407,10 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
         }))
         setImportedItems(importedMapped)
 
-        // Resolve last-used car: prefer resume snapshot (represents actual unsaved work)
-        // so that switching car models without saving doesn't clobber "Continue Editing".
-        const resumeFileName = readResumeSnapshot()?.fileName ?? null
-        const lastFileName = resumeFileName ?? loadLastCarFileName()
+        // Resolve last-used car from explicit selector choice.
+        // Unsaved resume snapshots are intentionally ignored here so switching
+        // cars without saving promotes the newly selected car to Continue Editing.
+        const lastFileName = loadLastCarFileName()
         if (lastFileName) {
           const found =
             visibleItems.find((item) => item.fileName === lastFileName) ??
@@ -600,14 +600,15 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
   }
 
   const handleSelectCar = (car: CarManifestItem, restoreResume = false) => {
-    saveLastCar(car)
-    // Only update the "Continue Editing" banner to this car if:
-    //  - the user explicitly clicked "Continue Editing" (restoreResume=true), OR
-    //  - there is no existing resume snapshot with unsaved work for a different car
-    const existingResume = readResumeSnapshot()
-    if (restoreResume || !existingResume || existingResume.fileName === car.fileName) {
-      setLastUsedCar(car)
+    if (!restoreResume) {
+      const existingResume = readResumeSnapshot()
+      if (existingResume && existingResume.fileName !== car.fileName) {
+        clearResumeSnapshot()
+      }
     }
+
+    saveLastCar(car)
+    setLastUsedCar(car)
     selectCar({
       name: car.name,
       modelUrl: car.modelUrl,
