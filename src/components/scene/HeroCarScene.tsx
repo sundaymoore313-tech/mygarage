@@ -3,16 +3,16 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { preloadModelScene, useModelScene } from './useModelScene'
 
-const MODEL_URL = '/models/home/hero.glb'
+const DEFAULT_MODEL_URL = '/models/home/hero.glb'
 const ROTATE_SPEED = 0.18   // radians / sec
 const TARGET_SIZE = 5.2     // world units
 const CAR_OFFSET_X = 3.6
 
-// Pre-warm the loader so the model is cached when the editor opens later
-preloadModelScene(MODEL_URL)
+// Pre-warm the default loader so the model is cached when the editor opens later
+preloadModelScene(DEFAULT_MODEL_URL)
 
-function RotatingCar() {
-  const { scene } = useModelScene(MODEL_URL)
+function RotatingCar({ modelUrl }: { modelUrl: string }) {
+  const { scene } = useModelScene(modelUrl)
   const groupRef = useRef<THREE.Group>(null)
 
   // Clone + scale + ground-snap once on mount
@@ -53,7 +53,11 @@ function CameraAim() {
   return null
 }
 
-export function HeroCarScene() {
+export function HeroCarScene({ modelUrl = DEFAULT_MODEL_URL }: { modelUrl?: string }) {
+  useEffect(() => {
+    preloadModelScene(modelUrl)
+  }, [modelUrl])
+
   return (
     <Canvas
       shadows="percentage"
@@ -73,7 +77,7 @@ export function HeroCarScene() {
       <pointLight position={[CAR_OFFSET_X + 4, 5, -4]} intensity={1.05} color="#ffffff" />
 
       <Suspense fallback={null}>
-        <RotatingCar />
+        <RotatingCar modelUrl={modelUrl} />
       </Suspense>
 
       {/* Reflective floor */}

@@ -74,14 +74,6 @@ function writeSavedProjects(items: SavedProjectCard[]) {
   localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(items))
 }
 
-function readMigrationFlag(userId: string): boolean {
-  try {
-    return localStorage.getItem(CLOUD_MIGRATED_PREFIX + userId) === '1'
-  } catch {
-    return false
-  }
-}
-
 function writeMigrationFlag(userId: string) {
   try {
     localStorage.setItem(CLOUD_MIGRATED_PREFIX + userId, '1')

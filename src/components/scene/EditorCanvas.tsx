@@ -815,18 +815,7 @@ function LoadedCarModel({
   useEffect(() => {
     const modelFileName = modelUrl.split('/').pop() ?? ''
     const forceRimAlbedoOff = RIM_COLOR_FORCE_ALBEDO_OFF_FILES.has(modelFileName)
-    const stripeConfig = activeStripeLayer
-      ? {
-          enabled: activeStripeLayer.visible,
-          colorHex: activeStripeLayer.colorHex,
-          finish: activeStripeLayer.finish,
-          width: activeStripeLayer.stripeWidth,
-          gap: activeStripeLayer.stripeGap,
-          offsetX: activeStripeLayer.stripeOffsetX,
-          softEdge: activeStripeLayer.softEdge,
-          angle: activeStripeLayer.transform.rotation.z,
-        }
-      : carStripe
+    const stripeConfig = carStripe
 
     const gradientPaint = targetPaints.fullCar
     const gradientAxis = carGradient.axis
@@ -2774,18 +2763,7 @@ function RendererExposer({
 
     const useSplit = Boolean(carSplit.enabled && splitAllowed)
     const useGradient = Boolean(!useSplit && carGradient.enabled && gradientAllowed)
-    const stripeConfig = activeStripeLayer
-      ? {
-          enabled: activeStripeLayer.visible,
-          colorHex: activeStripeLayer.colorHex,
-          finish: activeStripeLayer.finish,
-          width: activeStripeLayer.stripeWidth,
-          gap: activeStripeLayer.stripeGap,
-          offsetX: activeStripeLayer.stripeOffsetX,
-          softEdge: activeStripeLayer.softEdge,
-          angle: activeStripeLayer.transform.rotation.z,
-        }
-      : carStripe
+    const stripeConfig = carStripe
     const useStripe = Boolean(stripeConfig.enabled && stripeAllowed)
     if (!useSplit && !useGradient && !useStripe) return
 
