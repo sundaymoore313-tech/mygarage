@@ -12,7 +12,7 @@ export function HeroCarScene({ modelUrl: _modelUrl }: { modelUrl?: string }) {
       disablePictureInPicture
       aria-hidden="true"
     >
-      <source src="/hero.webm" type="video/webm" />
+      <source src="/mygarage-30s-1778230926076.webm" type="video/webm" />
       <source src="/hero.mp4" type="video/mp4" />
     </video>
   )
