@@ -407,8 +407,10 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
         }))
         setImportedItems(importedMapped)
 
-        // Resolve last-used car from fileName reference (works for both preloaded and imported)
-        const lastFileName = loadLastCarFileName()
+        // Resolve last-used car: prefer resume snapshot (represents actual unsaved work)
+        // so that switching car models without saving doesn't clobber "Continue Editing".
+        const resumeFileName = readResumeSnapshot()?.fileName ?? null
+        const lastFileName = resumeFileName ?? loadLastCarFileName()
         if (lastFileName) {
           const found =
             visibleItems.find((item) => item.fileName === lastFileName) ??
@@ -599,7 +601,13 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
 
   const handleSelectCar = (car: CarManifestItem, restoreResume = false) => {
     saveLastCar(car)
-    setLastUsedCar(car)
+    // Only update the "Continue Editing" banner to this car if:
+    //  - the user explicitly clicked "Continue Editing" (restoreResume=true), OR
+    //  - there is no existing resume snapshot with unsaved work for a different car
+    const existingResume = readResumeSnapshot()
+    if (restoreResume || !existingResume || existingResume.fileName === car.fileName) {
+      setLastUsedCar(car)
+    }
     selectCar({
       name: car.name,
       modelUrl: car.modelUrl,
