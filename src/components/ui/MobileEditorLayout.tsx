@@ -251,7 +251,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 {([
                   { axis: 'x' as const, label: 'Horiz' },
                   { axis: 'y' as const, label: 'Vert' },
-                  { axis: 'z' as const, label: 'Front' },
+                  { axis: 'z' as const, label: 'Front/Back' },
                 ]).map(({ axis, label }) => (
                   <button key={axis} type="button"
                     className={`mobile-chip${carGradient.axis === axis ? ' active' : ''}`}
@@ -260,7 +260,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 ))}
                 <span className="mobile-chips-sep" />
                 <span className="mobile-grad-label">Balance</span>
-                <input type="range" min={-1} max={1} step={0.01} value={carGradient.balance ?? 0}
+                <input type="range" min={-95} max={95} step={1} value={carGradient.balance ?? 0}
                   onChange={e => setCarGradient({ enabled: true, balance: Number(e.target.value) })}
                   className="mobile-slider" style={{ width: 90 }}
                 />
@@ -370,28 +370,28 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
           {textLayer && (
             <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
               <span className="mobile-strip-label">Horz</span>
-              <input type="range" min={-4} max={4} step={0.01}
-                value={textLayer.transform.position.x}
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={textLayer.transform.scale.x}
                 onChange={e => {
                   const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
+                  updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
                 }}
                 onPointerUp={e => {
                   const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayer>[1])
+                  updateLayer(textLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayer>[1])
                 }}
                 className="mobile-slider mobile-slider--wide"
               />
               <span className="mobile-strip-label">Vert</span>
-              <input type="range" min={-4} max={4} step={0.01}
-                value={textLayer.transform.position.y}
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={textLayer.transform.scale.y}
                 onChange={e => {
                   const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
+                  updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
                 }}
                 onPointerUp={e => {
                   const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayer>[1])
+                  updateLayer(textLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayer>[1])
                 }}
                 className="mobile-slider mobile-slider--wide"
               />
@@ -447,28 +447,28 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
           {decalLayer && (
             <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
               <span className="mobile-strip-label">Horz</span>
-              <input type="range" min={-4} max={4} step={0.01}
-                value={decalLayer.transform.position.x}
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={decalLayer.transform.scale.x}
                 onChange={e => {
                   const v = Number(e.target.value)
-                  updateLayerTransient(decalLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
+                  updateLayerTransient(decalLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
                 }}
                 onPointerUp={e => {
                   const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(decalLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayer>[1])
+                  updateLayer(decalLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayer>[1])
                 }}
                 className="mobile-slider mobile-slider--wide"
               />
               <span className="mobile-strip-label">Vert</span>
-              <input type="range" min={-4} max={4} step={0.01}
-                value={decalLayer.transform.position.y}
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={decalLayer.transform.scale.y}
                 onChange={e => {
                   const v = Number(e.target.value)
-                  updateLayerTransient(decalLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
+                  updateLayerTransient(decalLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
                 }}
                 onPointerUp={e => {
                   const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(decalLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayer>[1])
+                  updateLayer(decalLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayer>[1])
                 }}
                 className="mobile-slider mobile-slider--wide"
               />
