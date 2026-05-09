@@ -786,6 +786,15 @@ function App() {
       name: 'Dodge Charger SRT Hellcat',
       modelUrl: GUEST_MODEL_URL,
     })
+    const freshProject = useEditorStore.getState().project
+    setProjectId(freshProject.meta.id)
+    saveDraftProject(freshProject.meta.id, freshProject)
+    writeSession({
+      projectId: freshProject.meta.id,
+      screen: 'editor',
+      lastSaveMs: Date.now(),
+      lastAutoSaveMs: Date.now(),
+    })
     setScreen('editor')
   }
 
@@ -929,7 +938,7 @@ function App() {
 
   if (screen === 'home') {
     return <HomePage
-      onEnter={() => { beginEditorOpen('home_enter'); setScreen('editor') }}
+      onEnter={() => { beginEditorOpen('home_enter'); setScreen('selector') }}
       onOpenProfile={() => setScreen('profile')}
       onContinueAsGuest={handleContinueAsGuest}
       onLikelyEditorPathVisible={() => warmLikelyEditorPath('home_cta_visible')}
@@ -938,11 +947,23 @@ function App() {
   }
 
   if (screen === 'profile' && !isGuest) {
-    return <ProfilePage planTier={userPlan} onPlanChange={handlePlanChange} onRefreshPlan={refreshPlanFromCloud} onGoHome={() => setScreen('home')} onGoEditor={() => { beginEditorOpen('profile_editor'); setScreen('editor') }} onOpenProject={handleOpenProject} />
+    return <ProfilePage planTier={userPlan} onPlanChange={handlePlanChange} onRefreshPlan={refreshPlanFromCloud} onGoHome={() => setScreen('home')} onGoEditor={() => { beginEditorOpen('profile_editor'); setScreen('selector') }} onOpenProject={handleOpenProject} />
   }
 
   if (screen === 'selector' || !selectedCar) {
-    return <CarSelectorPage onGoHome={() => setScreen('home')} onOpenProfile={() => setScreen('profile')} onEnterEditor={() => { beginEditorOpen('selector_enter'); setScreen('editor') }} isGuest={isGuest} onGuestSignIn={handleGuestSignIn} />
+    return <CarSelectorPage onGoHome={() => setScreen('home')} onOpenProfile={() => setScreen('profile')} onEnterEditor={() => {
+      beginEditorOpen('selector_enter')
+      const freshProject = useEditorStore.getState().project
+      setProjectId(freshProject.meta.id)
+      saveDraftProject(freshProject.meta.id, freshProject)
+      writeSession({
+        projectId: freshProject.meta.id,
+        screen: 'editor',
+        lastSaveMs: Date.now(),
+        lastAutoSaveMs: Date.now(),
+      })
+      setScreen('editor')
+    }} isGuest={isGuest} onGuestSignIn={handleGuestSignIn} />
   }
 
   // EditorCanvas component for both layouts
