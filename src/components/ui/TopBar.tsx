@@ -238,7 +238,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
       {open && (
         <>
           <div className="file-menu-backdrop" onClick={() => setOpen(false)} />
-          <div className="file-menu-dropdown">
+          <div className={mobileCompact ? 'file-menu-dropdown file-menu-dropdown-mobile' : 'file-menu-dropdown'}>
             {mobileCompact ? (
               <>
                 <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
@@ -625,6 +625,41 @@ export function TopBar({
             >
               Change Car
             </button>
+            <div className="top-mobile-account-slot">
+              {isGuest ? (
+                <button
+                  type="button"
+                  className="top-guest-signin"
+                  onClick={onGuestSignIn}
+                  title="Sign in to create an account"
+                  aria-label="Sign in"
+                >
+                  Sign In
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="top-profile-bubble"
+                  onClick={onOpenProfile}
+                  title="Open profile"
+                  aria-label="Open profile"
+                >
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt="Profile"
+                      className="top-profile-bubble-img"
+                      onError={() => {
+                        localStorage.removeItem(PROFILE_AVATAR_KEY)
+                        setAvatarUrl(null)
+                      }}
+                    />
+                  ) : (
+                    <span className="top-profile-bubble-fallback">{avatarInitials}</span>
+                  )}
+                </button>
+              )}
+            </div>
           </>
         )}
         {!isSvgMode && !mobileCompact && <HistoryMenu />}
@@ -782,7 +817,7 @@ export function TopBar({
           </>
         )}
 
-        {!isSvgMode && (
+        {!isSvgMode && !mobileCompact && (
           <>
             <div className="top-bar-divider" />
             {isGuest ? (
