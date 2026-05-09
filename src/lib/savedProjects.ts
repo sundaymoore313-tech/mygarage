@@ -506,7 +506,7 @@ export async function saveFullProjectToProfile(
   try {
     cloudSaved = await saveCloudProject(full)
   } catch {
-    cloudSaved = false
+    // cloudSaved stays false
   }
 
   const warningParts = [localWriteWarning]

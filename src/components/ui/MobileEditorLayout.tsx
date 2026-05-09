@@ -119,7 +119,7 @@ function hexToHsl(hex: string) {
     ? delta / (2 - maxChannel - minChannel)
     : delta / (maxChannel + minChannel)
 
-  let hue = 0
+  let hue: number
   switch (maxChannel) {
     case red:
       hue = (green - blue) / delta + (green < blue ? 6 : 0)

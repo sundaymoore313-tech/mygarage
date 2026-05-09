@@ -18,6 +18,7 @@ import { saveGeneratedClassifyPreset } from './lib/paintTargets'
 import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession, clearSession } from './lib/sessionPersistence'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
@@ -287,7 +288,7 @@ function App() {
   const [classifyBodyClickThrough, setClassifyBodyClickThrough] = useState(false)
   const [classifyShowMeshNames, setClassifyShowMeshNames] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [lastSaveMs, setLastSaveMs] = useState(Date.now())
+  const [lastSaveMs, setLastSaveMs] = useState(() => Date.now())
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false)
   const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
   const [tabSyncNotification, setTabSyncNotification] = useState<string | null>(null)
@@ -464,7 +465,7 @@ function App() {
 
     let isDisposed = false
     let clearNotificationTimer: number | null = null
-    let channel: any = null
+    let channel: RealtimeChannel | null = null
 
     const setupRealtime = async () => {
       const authUser = await getCurrentUser()
