@@ -25,6 +25,20 @@ export function MobileEditorLayout({
   simplified = true,
 }: MobileEditorLayoutProps) {
   const [activePanel, setActivePanel] = useState<PanelType>(null)
+  const [activeCarHeaderColor, setActiveCarHeaderColor] = useState('#ffffff')
+
+  const carHeaderColors = [
+    '#ff3b30',
+    '#ff9500',
+    '#ffcc00',
+    '#34c759',
+    '#00c7be',
+    '#007aff',
+    '#5856d6',
+    '#af52de',
+    '#8e8e93',
+    '#ffffff',
+  ]
 
   const tabs: Array<{
     id: PanelType
@@ -115,6 +129,21 @@ export function MobileEditorLayout({
             <h3 className="mobile-panel-title">
               {tabs.find((t) => t.id === activePanel)?.label}
             </h3>
+            {activePanel === 'car' && (
+              <div className="mobile-panel-inline-colors" aria-label="Quick colors">
+                {carHeaderColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`mobile-inline-color-swatch${activeCarHeaderColor === color ? ' active' : ''}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setActiveCarHeaderColor(color)}
+                    aria-label={`Select color ${color}`}
+                    title={color}
+                  />
+                ))}
+              </div>
+            )}
             <button
               type="button"
               className="mobile-panel-close"
