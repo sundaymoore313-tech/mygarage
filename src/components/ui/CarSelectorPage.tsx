@@ -46,6 +46,21 @@ const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
 
+function shouldUseStaticSelectorThumbnails(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const ua = navigator.userAgent
+  const isAppleMobile = /iPhone|iPad|iPod/i.test(ua)
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+
+  // Mobile Safari and low-memory devices can crash when many WebGL contexts
+  // are created at once in the selector grid.
+  return isAppleMobile || isMobile || (typeof memory === 'number' && memory <= 4)
+}
+
 function loadImportedCarsFromStorage(): ImportedCarRecord[] {
   try {
     const raw = localStorage.getItem(IMPORTED_CARS_STORAGE_KEY)
@@ -283,7 +298,28 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
   return <primitive object={cloned} />
 }
 
-function CarThumbnail({ modelUrl, fileName, groundOffsetY }: { modelUrl: string; fileName: string; groundOffsetY?: number }) {
+function CarThumbnail({
+  modelUrl,
+  fileName,
+  groundOffsetY,
+  carName,
+  staticMode,
+}: {
+  modelUrl: string
+  fileName: string
+  groundOffsetY?: number
+  carName: string
+  staticMode: boolean
+}) {
+  if (staticMode) {
+    return (
+      <div className="car-thumbnail-fallback" aria-hidden="true">
+        <span className="car-thumbnail-fallback-badge">Mobile Safe Preview</span>
+        <span className="car-thumbnail-fallback-name">{getDisplayCarName(carName)}</span>
+      </div>
+    )
+  }
+
   return (
     <Canvas
       camera={{ position: [-2.2, 1.6, 3.8], fov: 36 }}
@@ -348,6 +384,7 @@ type CarSelectorPageProps = {
 
 export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGuest = false, onGuestSignIn }: CarSelectorPageProps) {
   const selectCar = useEditorStore((state) => state.selectCar)
+  const [useStaticThumbnails] = useState(() => shouldUseStaticSelectorThumbnails())
   const [avatarUrl, setAvatarUrl] = useState<string | null>(() => readStoredAvatarDataUrl())
   const [avatarInitials] = useState(() => readAvatarInitials())
   const [preloadedItems, setPreloadedItems] = useState<CarManifestItem[]>([])
@@ -759,7 +796,13 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
         {filteredItems.map((car) => (
           <article key={car.fileName} className="car-card" role="listitem">
             <div className="car-visual">
-              <CarThumbnail modelUrl={car.modelUrl} fileName={car.fileName} groundOffsetY={car.groundOffsetY} />
+              <CarThumbnail
+                modelUrl={car.modelUrl}
+                fileName={car.fileName}
+                groundOffsetY={car.groundOffsetY}
+                carName={car.name}
+                staticMode={useStaticThumbnails}
+              />
             </div>
             <div className="car-card-name-row">
               {selectorView === 'imported' && renamingFileName === car.fileName ? (

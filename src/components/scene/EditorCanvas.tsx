@@ -217,6 +217,22 @@ const RIM_COLOR_FORCE_ALBEDO_OFF_FILES = new Set([
   '2020_dodge_challenger_srt_super_stock.glb',
 ])
 
+function disposeClonedSceneMaterials(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) {
+      return
+    }
+
+    const material = child.material
+    if (Array.isArray(material)) {
+      material.forEach((entry) => entry.dispose())
+      return
+    }
+
+    material?.dispose()
+  })
+}
+
 function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[]): number {
   let globalMinY = Number.POSITIVE_INFINITY
   let filteredMinY = Number.POSITIVE_INFINITY
@@ -756,6 +772,15 @@ function LoadedCarModel({
       partCount: prepared.parts.length,
     })
   }, [modelUrl, prepared.meshes.length, prepared.parts.length, prepared.scene])
+
+  useEffect(() => {
+    const sceneClone = prepared.scene
+    return () => {
+      // Materials are cloned per-model switch and must be released to avoid
+      // GPU memory spikes on mobile Safari while swapping cars.
+      disposeClonedSceneMaterials(sceneClone)
+    }
+  }, [prepared.scene])
 
   // Re-stamp userData.projectableMesh when custom classifications change
   useEffect(() => {
@@ -3221,16 +3246,30 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
   const autoRotate = useEditorStore((state) => state.autoRotate)
   const controlsRef = useRef<OrbitControllerHandle | null>(null)
   const [isLayerDragging, setIsLayerDragging] = useState(false)
+  const isLikelyMobile = useMemo(() => {
+    if (typeof navigator === 'undefined') {
+      return false
+    }
+    const ua = navigator.userAgent
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+  }, [])
 
   // Keep recording DPR conservative to avoid GPU stalls/freeze on start.
   const recordingDpr: number = recordingQuality === 'ultra' ? 2.5 : recordingQuality === 'standard' ? 1.5 : 2
+  const idleDpr: number | [number, number] = isLikelyMobile ? [1, 1.25] : [1, 2]
+  const shadowMode: false | 'percentage' = isLikelyMobile ? false : 'percentage'
 
   return (
     <Canvas
-      shadows="percentage"
+      shadows={shadowMode}
       camera={{ position: CAMERA_START_POSITION, fov: 35 }}
-      dpr={isRecording ? recordingDpr : [1, 2]}
-      gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
+      dpr={isRecording ? recordingDpr : idleDpr}
+      gl={{
+        antialias: !isLikelyMobile,
+        alpha: false,
+        preserveDrawingBuffer: isRecording,
+        powerPreference: isLikelyMobile ? 'low-power' : 'high-performance',
+      }}
       onPointerMissed={() => {
         setSelectedLayer(null)
       }}
@@ -3251,8 +3290,8 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         intensity={preset.dirIntensity}
         position={preset.dirPosition}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={isLikelyMobile ? 1024 : 2048}
+        shadow-mapSize-height={isLikelyMobile ? 1024 : 2048}
       />
       <directionalLight
         intensity={0.65}

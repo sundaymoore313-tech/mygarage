@@ -28,6 +28,7 @@ type AuthUser = {
 // Supabase session is the source of truth; we mirror name+email here for fast reads.
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
+const AUTH_REMEMBER_KEY = 'mygarage-auth-remember'
 const LAST_CAR_KEY = 'mygarage-last-car'
 const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
@@ -42,7 +43,14 @@ function readStoredAvatarDataUrl() {
 }
 
 function isRememberedUser(): boolean {
-  return localStorage.getItem(AUTH_LOCAL_KEY) !== null
+  return localStorage.getItem(AUTH_LOCAL_KEY) !== null || sessionStorage.getItem(AUTH_SESSION_KEY) !== null
+}
+
+function readRememberPreference(defaultValue = true): boolean {
+  const saved = localStorage.getItem(AUTH_REMEMBER_KEY)
+  if (saved === '0') return false
+  if (saved === '1') return true
+  return defaultValue
 }
 
 function readLastCarName(): string | null {
@@ -145,9 +153,12 @@ const LEGAL_NOTICE_ITEMS = [
 ]
 
 const DEFAULT_DISCORD_URL = 'https://discord.gg/mygaragewrapstudio'
+const CASHAPP_TAG = '$sundaymoore9'
+const CASHAPP_SUPPORT_URL = 'https://cash.app/$sundaymoore9'
 
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
+  localStorage.setItem(AUTH_REMEMBER_KEY, remember ? '1' : '0')
   if (remember) {
     localStorage.setItem(AUTH_LOCAL_KEY, value)
     sessionStorage.removeItem(AUTH_SESSION_KEY)
@@ -172,6 +183,7 @@ function readCachedAuth(): AuthUser | null {
 function clearCachedAuth() {
   localStorage.removeItem(AUTH_LOCAL_KEY)
   sessionStorage.removeItem(AUTH_SESSION_KEY)
+  localStorage.removeItem(AUTH_REMEMBER_KEY)
 }
 
 export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroModelUrl, heroPreviewImageUrl }: HomePageProps) {
@@ -182,7 +194,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(true)
+  const [rememberMe, setRememberMe] = useState(() => readRememberPreference(true))
   const [authError, setAuthError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   const [authConfirmPending, setAuthConfirmPending] = useState(false)
@@ -308,7 +320,8 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
   // Sync Supabase session on mount (handles page refresh with an active session).
   useEffect(() => {
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => {
+    const client = supabase
+    client.auth.getSession().then(({ data }) => {
       const user = data.session?.user
       if (user && !currentUser) {
         const synced: AuthUser = {
@@ -316,12 +329,23 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           email: user.email ?? '',
         }
         setCurrentUser(synced)
-        cacheAuthLocally(synced, true)
+        cacheAuthLocally(synced, readRememberPreference(true))
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
+        const { data } = await client.auth.getSession()
+        if (data.session?.user) {
+          const u = data.session.user
+          const synced: AuthUser = {
+            name: (u.user_metadata?.name as string | undefined) ?? u.email?.split('@')[0] ?? 'User',
+            email: u.email ?? '',
+          }
+          setCurrentUser(synced)
+          cacheAuthLocally(synced, readRememberPreference(true))
+          return
+        }
         clearCachedAuth()
         setCurrentUser(null)
       } else if (session?.user) {
@@ -331,7 +355,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           email: u.email ?? '',
         }
         setCurrentUser(synced)
-        cacheAuthLocally(synced, true)
+        cacheAuthLocally(synced, readRememberPreference(true))
       }
     })
 
@@ -434,7 +458,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
     setName('')
     setEmail('')
     setPassword('')
-    setRememberMe(true)
+    setRememberMe(readRememberPreference(true))
     setAuthError(null)
   }
 
@@ -633,6 +657,19 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
               <p className="home-discord-copy">
                 Upload your car builds, send feedback, report bugs, and help shape future features.
               </p>
+            </div>
+            <div className="home-support-creator" role="group" aria-label="Support MyGarage">
+              <p className="home-support-creator-title">Support MyGarage</p>
+              <p className="home-support-creator-copy">If this app helps you, you can tip the creator on Cash App.</p>
+              <a
+                className="home-support-creator-btn"
+                href={CASHAPP_SUPPORT_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Support the app on Cash App ${CASHAPP_TAG}`}
+              >
+                Tip on Cash App {CASHAPP_TAG}
+              </a>
             </div>
             <p className="home-legal-inline">
               For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
