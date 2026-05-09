@@ -15,9 +15,9 @@ import { endPerfSpan, markPerfOnce, startPerfSpan } from './lib/perfDebug'
 import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
-import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal, saveFullProjectToProfile } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
-import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession } from './lib/sessionPersistence'
+import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession, clearSession } from './lib/sessionPersistence'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
@@ -279,8 +279,6 @@ function App() {
   const clearSelectedCar = useEditorStore((state) => state.clearSelectedCar)
   const selectedCar = useEditorStore((state) => state.selectedCar)
   const project = useEditorStore((state) => state.project)
-  const targetPaints = useEditorStore((state) => state.targetPaints)
-  const targetPrints = useEditorStore((state) => state.targetPrints)
   const [screen, setScreen] = useState<AppScreen>(() => readScreenFromUrl() ?? 'home')
   const [projectId, setProjectId] = useState<string | null>(() => readProjectIdFromUrl())
   const [isGuest, setIsGuest] = useState(false)
@@ -593,19 +591,6 @@ function App() {
         setIsSaving(true)
         try {
           saveDraftProject(projectId, project, selectedCar ?? undefined)
-          // Phase 2: Cloud sync for authenticated users
-          if (!isGuest && selectedCar) {
-            void saveFullProjectToProfile(
-              project,
-              {
-                name: selectedCar.name,
-                modelUrl: selectedCar.modelUrl,
-                groundOffsetY: selectedCar.groundOffsetY ?? 0,
-              },
-              targetPaints,
-              targetPrints,
-            )
-          }
           setLastSaveMs(Date.now())
           setIsSaving(false)
           // Update session
@@ -630,7 +615,7 @@ function App() {
         autoSaveIntervalRef.current = null
       }
     }
-  }, [screen, projectId, project, isGuest, selectedCar, targetPaints, targetPrints])
+  }, [screen, projectId, project, selectedCar])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -892,6 +877,13 @@ function App() {
     if (isMobileViewport) {
       setIsCarSwitching(true)
     }
+    if (projectId) {
+      clearDraftProject(projectId)
+    }
+    clearSession()
+    setShowRecoveryPrompt(false)
+    setRecoverableProjectId(null)
+    lastAutoSaveStateRef.current = ''
     setFloatingPanel(null)
     setPrintExportOpen(false)
     setSvgMakerOpen(false)
@@ -903,7 +895,7 @@ function App() {
     clearSelectedCar()
     setProjectId(null)
     setScreen('selector')
-  }, [isMobileViewport, clearSelectedCar])
+  }, [isMobileViewport, clearSelectedCar, projectId])
 
   // Handle recovery prompt
   const handleRecoverProject = async () => {
