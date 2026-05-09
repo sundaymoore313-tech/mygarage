@@ -25,7 +25,7 @@ port = 54324
 enabled = true
 site_url = "http://localhost:5173"
 additional_redirect_urls = ["http://127.0.0.1:5173", "http://localhost:4173"]
-jwt_expiry = 3600
+jwt_expiry = 86400
 enable_signup = true
 enable_anonymous_sign_ins = false
 
