@@ -23,6 +23,18 @@ export type SaveState = {
   lastSaveMs: number
 }
 
+export type DraftProjectCar = {
+  name: string
+  modelUrl: string
+  groundOffsetY?: number
+}
+
+export type DraftProjectState = {
+  project: EditorProject
+  savedAtMs: number
+  car?: DraftProjectCar
+}
+
 /** Read session metadata from sessionStorage */
 export function readSession(): SessionState | null {
   try {
@@ -52,10 +64,10 @@ export function clearSession(): void {
 }
 
 /** Save full project to localStorage (for reload recovery + persistence) */
-export function saveDraftProject(projectId: string, project: EditorProject): boolean {
+export function saveDraftProject(projectId: string, project: EditorProject, car?: DraftProjectCar): boolean {
   try {
     const key = `${PROJECT_DRAFT_PREFIX}${projectId}`
-    localStorage.setItem(key, JSON.stringify({ project, savedAtMs: Date.now() }))
+    localStorage.setItem(key, JSON.stringify({ project, savedAtMs: Date.now(), car }))
     return true
   } catch {
     console.warn(`Failed to save draft for project ${projectId}`)
@@ -64,11 +76,11 @@ export function saveDraftProject(projectId: string, project: EditorProject): boo
 }
 
 /** Load draft project from localStorage */
-export function readDraftProject(projectId: string): { project: EditorProject; savedAtMs: number } | null {
+export function readDraftProject(projectId: string): DraftProjectState | null {
   try {
     const key = `${PROJECT_DRAFT_PREFIX}${projectId}`
     const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as { project: EditorProject; savedAtMs: number }) : null
+    return raw ? (JSON.parse(raw) as DraftProjectState) : null
   } catch {
     return null
   }

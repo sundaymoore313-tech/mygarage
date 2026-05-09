@@ -517,6 +517,9 @@ function App() {
           })
           // Restore draft state if it exists
           const draft = readDraftProject(projectId)
+          if (draft?.car) {
+            selectCar(draft.car)
+          }
           if (draft) {
             const loadProject = useEditorStore.getState().loadProject
             loadProject(draft.project)
@@ -557,7 +560,7 @@ function App() {
         lastAutoSaveStateRef.current = currentStateJson
         setIsSaving(true)
         try {
-          saveDraftProject(projectId, project)
+          saveDraftProject(projectId, project, selectedCar ?? undefined)
           // Phase 2: Cloud sync for authenticated users
           if (!isGuest && selectedCar) {
             void saveFullProjectToProfile(
@@ -796,7 +799,10 @@ function App() {
     })
     const freshProject = useEditorStore.getState().project
     setProjectId(freshProject.meta.id)
-    saveDraftProject(freshProject.meta.id, freshProject)
+    saveDraftProject(freshProject.meta.id, freshProject, {
+      name: 'Dodge Charger SRT Hellcat',
+      modelUrl: GUEST_MODEL_URL,
+    })
     writeSession({
       projectId: freshProject.meta.id,
       screen: 'editor',
@@ -818,7 +824,11 @@ function App() {
     useEditorStore.getState().loadProject(full.project)
     useEditorStore.setState({ targetPaints: full.targetPaints, targetPrints: full.targetPrints })
     setProjectId(full.id)
-    saveDraftProject(full.id, full.project)
+    saveDraftProject(full.id, full.project, {
+      name: full.carName,
+      modelUrl: full.modelUrl,
+      groundOffsetY: full.groundOffsetY,
+    })
     writeSession({
       projectId: full.id,
       screen: 'editor',
@@ -962,8 +972,9 @@ function App() {
     return <CarSelectorPage onGoHome={() => setScreen('home')} onOpenProfile={() => setScreen('profile')} onEnterEditor={() => {
       beginEditorOpen('selector_enter')
       const freshProject = useEditorStore.getState().project
+      const selectedCarSnapshot = useEditorStore.getState().selectedCar
       setProjectId(freshProject.meta.id)
-      saveDraftProject(freshProject.meta.id, freshProject)
+      saveDraftProject(freshProject.meta.id, freshProject, selectedCarSnapshot ?? undefined)
       writeSession({
         projectId: freshProject.meta.id,
         screen: 'editor',
