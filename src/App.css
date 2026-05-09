@@ -383,6 +383,55 @@
   max-width: 120px;
 }
 
+/* ── Transform slider row (scale/rotate in bottom panel) ─── */
+.mobile-transform-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 10px;
+}
+
+.mobile-slider--transform {
+  flex: 1;
+  min-width: 0;
+  max-width: none !important;
+}
+
+.mobile-slider-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #3ec9ff;
+  min-width: 42px;
+  white-space: nowrap;
+}
+
+.mobile-slider-val {
+  font-size: 0.78rem;
+  color: #8ea0b4;
+  min-width: 38px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── Inline text-edit input (inside bottom panel) ────────── */
+.mobile-layer-input-row {
+  padding: 6px 12px 0;
+}
+
+.mobile-layer-text-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(62,201,255,0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  outline: none;
+}
+.mobile-layer-text-input:focus {
+  border-color: #3ec9ff;
+}
+
 /* ── Font chips ──────────────────────────────────────────── */
 .mobile-font-chip {
   padding: 6px 12px;

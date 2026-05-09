@@ -87,9 +87,11 @@ type FontItem = { label: string; family: string; url?: string }
 type DecalItem = { name: string; url: string; fileName: string }
 
 // ── Component ──────────────────────────────────────────────────
+type LayerScaleMode = 'uniform' | 'horl' | 'vert' | 'rotate'
+
 export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: MobileEditorLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabId | null>(null)
-  const [showTextEditDropdown, setShowTextEditDropdown] = useState(false)
+  const [layerScaleMode, setLayerScaleMode] = useState<LayerScaleMode>('uniform')
 
   // Car paint
   const setPaint               = useEditorStore(s => s.setPaint)
@@ -144,13 +146,10 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null
   const textLayer = selectedLayer?.type === 'text' ? selectedLayer as any : null
 
-  // Auto-show text dropdown when text layer is selected
+  // Sync editing text content when selected text layer changes
   useEffect(() => {
     if (activeTab === 'text' && textLayer) {
-      setShowTextEditDropdown(true)
       setEditingTextContent(textLayer.text || '')
-    } else {
-      setShowTextEditDropdown(false)
     }
   }, [activeTab, textLayer?.id])
 
@@ -319,9 +318,10 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── TEXT ─────────────────────────────────────────────────
       case 'text': {
-        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { position: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
+          {/* Font chips */}
           <div className="mobile-chips-row">
             <span className="mobile-strip-label">Font</span>
             {fonts.map(f => (
@@ -332,6 +332,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               >{f.label}</button>
             ))}
           </div>
+          {/* Add text + color row */}
           <div className="mobile-swatches-row">
             <button type="button" className="mobile-add-btn"
               onClick={async () => {
@@ -344,7 +345,6 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               }}
             >+ Add Text</button>
             <span className="mobile-chips-sep" />
-            {/* Color swatches — apply to selected text layer if one is selected */}
             {CAR_COLORS.map(c => (
               <button key={c.hex} type="button" className="mobile-color-swatch"
                 style={{ backgroundColor: c.hex, boxShadow: textLayer?.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
@@ -361,54 +361,85 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               />
             ))}
           </div>
-          {/* Scale slider for selected text layer */}
+          {/* Text input + transform controls — shown when a text layer is selected */}
           {textLayer && (
-            <div className="mobile-chips-row" style={{ paddingTop: 4, paddingBottom: 6 }}>
-              <span className="mobile-strip-label">Scale</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={textLayer.transform.scale.x}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider" style={{ flex: 1, maxWidth: 160 }}
-              />
-              <span className="mobile-grad-label">{textLayer.transform.scale.x.toFixed(2)}×</span>
-            </div>
-          )}
-          {textLayer && (
-            <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
-              <span className="mobile-strip-label">Horz</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={textLayer.transform.scale.x}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider mobile-slider--wide"
-              />
-              <span className="mobile-strip-label">Vert</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={textLayer.transform.scale.y}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider mobile-slider--wide"
-              />
-            </div>
+            <>
+              {/* Inline text edit input */}
+              <div className="mobile-layer-input-row">
+                <input
+                  type="text"
+                  value={editingTextContent}
+                  onChange={e => setEditingTextContent(e.target.value)}
+                  onBlur={() => updateLayer(textLayer.id, { text: editingTextContent } as any)}
+                  placeholder="Change text…"
+                  className="mobile-layer-text-input"
+                  style={{ fontFamily: textLayer.fontFamily || 'Arial' }}
+                />
+              </div>
+              {/* Scale / Rotate mode tabs */}
+              <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
+                <span className="mobile-strip-label">Transform</span>
+                {(['uniform', 'horl', 'vert', 'rotate'] as LayerScaleMode[]).map(m => (
+                  <button key={m} type="button"
+                    className={`mobile-chip${layerScaleMode === m ? ' active' : ''}`}
+                    onClick={() => setLayerScaleMode(m)}
+                  >
+                    {m === 'uniform' ? 'Scale' : m === 'horl' ? 'Wide' : m === 'vert' ? 'Tall' : 'Rotate'}
+                  </button>
+                ))}
+              </div>
+              {/* Slider for active mode */}
+              <div className="mobile-transform-slider-row">
+                {layerScaleMode === 'uniform' && (
+                  <>
+                    <span className="mobile-slider-label">Scale</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={textLayer.transform.scale.x}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'horl' && (
+                  <>
+                    <span className="mobile-slider-label">Wide</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={textLayer.transform.scale.x}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { x: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'vert' && (
+                  <>
+                    <span className="mobile-slider-label">Tall</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={textLayer.transform.scale.y}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { y: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{textLayer.transform.scale.y.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'rotate' && (
+                  <>
+                    <span className="mobile-slider-label">Rotate</span>
+                    <input type="range" min={-3.14} max={3.14} step={0.02}
+                      value={textLayer.transform.rotation?.z ?? 0}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{Math.round(((textLayer.transform.rotation?.z ?? 0) * 180) / Math.PI)}°</span>
+                  </>
+                )}
+              </div>
+            </>
           )}
         </div>
         )
@@ -416,7 +447,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── ELEMENTS ─────────────────────────────────────────────
       case 'elements': {
-        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { position: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
@@ -425,7 +456,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               <button type="button" className="mobile-chip" onClick={onGuestSignIn}>Sign in to import</button>
             )}
           </div>
-          {/* Color + scale row for selected decal */}
+          {/* Color swatches for selected decal */}
           {decalLayer && (
             <div className="mobile-swatches-row" style={{ paddingTop: 4 }}>
               <span className="mobile-strip-label">Color</span>
@@ -439,53 +470,71 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               ))}
             </div>
           )}
+          {/* Scale / Rotate mode tabs + slider for selected decal */}
           {decalLayer && (
-            <div className="mobile-chips-row" style={{ paddingTop: 4, paddingBottom: 4 }}>
-              <span className="mobile-strip-label">Scale</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={decalLayer.transform.scale.x}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider" style={{ flex: 1, maxWidth: 160 }}
-              />
-              <span className="mobile-grad-label">{decalLayer.transform.scale.x.toFixed(2)}×</span>
-            </div>
-          )}
-          {decalLayer && (
-            <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
-              <span className="mobile-strip-label">Horz</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={decalLayer.transform.scale.x}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(decalLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(decalLayer.id, { transform: { scale: { x: v } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider mobile-slider--wide"
-              />
-              <span className="mobile-strip-label">Vert</span>
-              <input type="range" min={0.1} max={4} step={0.05}
-                value={decalLayer.transform.scale.y}
-                onChange={e => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(decalLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
-                }}
-                onPointerUp={e => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(decalLayer.id, { transform: { scale: { y: v } } } as Parameters<typeof updateLayer>[1])
-                }}
-                className="mobile-slider mobile-slider--wide"
-              />
-            </div>
+            <>
+              <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
+                <span className="mobile-strip-label">Transform</span>
+                {(['uniform', 'horl', 'vert', 'rotate'] as LayerScaleMode[]).map(m => (
+                  <button key={m} type="button"
+                    className={`mobile-chip${layerScaleMode === m ? ' active' : ''}`}
+                    onClick={() => setLayerScaleMode(m)}
+                  >
+                    {m === 'uniform' ? 'Scale' : m === 'horl' ? 'Wide' : m === 'vert' ? 'Tall' : 'Rotate'}
+                  </button>
+                ))}
+              </div>
+              <div className="mobile-transform-slider-row">
+                {layerScaleMode === 'uniform' && (
+                  <>
+                    <span className="mobile-slider-label">Scale</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={decalLayer.transform.scale.x}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{decalLayer.transform.scale.x.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'horl' && (
+                  <>
+                    <span className="mobile-slider-label">Wide</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={decalLayer.transform.scale.x}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(decalLayer.id, { transform: { scale: { x: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(decalLayer.id, { transform: { scale: { x: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{decalLayer.transform.scale.x.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'vert' && (
+                  <>
+                    <span className="mobile-slider-label">Tall</span>
+                    <input type="range" min={0.1} max={4} step={0.05}
+                      value={decalLayer.transform.scale.y}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(decalLayer.id, { transform: { scale: { y: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(decalLayer.id, { transform: { scale: { y: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{decalLayer.transform.scale.y.toFixed(2)}×</span>
+                  </>
+                )}
+                {layerScaleMode === 'rotate' && (
+                  <>
+                    <span className="mobile-slider-label">Rotate</span>
+                    <input type="range" min={-3.14} max={3.14} step={0.02}
+                      value={decalLayer.transform.rotation?.z ?? 0}
+                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(decalLayer.id, { transform: { rotation: { ...decalLayer.transform.rotation, z: v } } } as any) }}
+                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(decalLayer.id, { transform: { rotation: { ...decalLayer.transform.rotation, z: v } } } as any) }}
+                      className="mobile-slider mobile-slider--transform"
+                    />
+                    <span className="mobile-slider-val">{Math.round(((decalLayer.transform.rotation?.z ?? 0) * 180) / Math.PI)}°</span>
+                  </>
+                )}
+              </div>
+            </>
           )}
           <div className="mobile-decals-row">
             {decalsLoading && <span className="mobile-strip-label">Loading…</span>}
@@ -719,82 +768,6 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   return (
     <div className="mobile-editor-layout">
       <div className="mobile-viewport-container">{editorCanvas}</div>
-
-      {/* Text Edit Dropdown — appears at top when text layer is selected */}
-      {showTextEditDropdown && textLayer && (
-        <div style={{
-          position: 'relative',
-          zIndex: 10,
-          background: 'rgba(14,18,24,0.97)',
-          borderBottom: '1px solid rgba(62,201,255,0.15)',
-          padding: '12px 16px',
-          backdropFilter: 'blur(10px)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#3ec9ff' }}>Edit Text</span>
-            <button type="button" onClick={() => setShowTextEditDropdown(false)} style={{
-              background: 'rgba(62,201,255,0.1)',
-              border: 'none',
-              color: '#8ea0b4',
-              width: 28, height: 28, borderRadius: 6,
-              cursor: 'pointer', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>×</button>
-          </div>
-          <input type="text" value={editingTextContent} onChange={(e) => setEditingTextContent(e.target.value)}
-            onBlur={() => textLayer && updateLayer(textLayer.id, { text: editingTextContent } as any)}
-            placeholder="Enter text..." style={{
-              width: '100%', padding: '10px 12px', marginBottom: 12, background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(62,201,255,0.2)', borderRadius: 6, color: '#fff', fontSize: '1rem',
-              fontFamily: textLayer.fontFamily || 'Arial'
-            }}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Scale</span>
-              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.x}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any)
-                }}
-                onPointerUp={(e) => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any)
-                }}
-                style={{ flex: 1, minWidth: 100 }}
-              />
-              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 40, textAlign: 'right' }}>{textLayer.transform.scale.x.toFixed(2)}×</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Horz</span>
-              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.x}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as any)
-                }}
-                onPointerUp={(e) => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { scale: { x: v } } } as any)
-                }}
-                style={{ flex: 1, minWidth: 100 }}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Vert</span>
-              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.y}
-                onChange={(e) => {
-                  const v = Number(e.target.value)
-                  updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as any)
-                }}
-                onPointerUp={(e) => {
-                  const v = Number((e.target as HTMLInputElement).value)
-                  updateLayer(textLayer.id, { transform: { scale: { y: v } } } as any)
-                }}
-                style={{ flex: 1, minWidth: 100 }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {activeTab && (
         <div className="mobile-controls-strip">
