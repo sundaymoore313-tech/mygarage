@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+﻿import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Layers, Type, Car } from 'lucide-react'
 import { useEditorStore } from './store/editorStore'
 import { CarSelectorPage } from './components/ui/CarSelectorPage'
@@ -15,7 +15,7 @@ import { endPerfSpan, markPerfOnce, startPerfSpan } from './lib/perfDebug'
 import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
-import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal, saveFullProjectToProfile } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession } from './lib/sessionPersistence'
 import type { ExportQuality } from './types/exportQuality'
@@ -46,6 +46,14 @@ function detectMobileEditorViewport(): boolean {
 }
 
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
+
+type GarageProjectRealtimeRow = {
+  user_id?: string | null
+  updated_at_ms?: number | null
+  project_json?: unknown
+  target_paints_json?: unknown
+  target_prints_json?: unknown
+}
 
 function isAppScreen(value: unknown): value is AppScreen {
   return value === 'home' || value === 'profile' || value === 'selector' || value === 'editor'
@@ -189,7 +197,7 @@ function ClassifyLegend({
 
   return (
     <div className="classify-legend">
-      <div className="classify-legend-title">Mesh Classifier — click to cycle</div>
+      <div className="classify-legend-title">Mesh Classifier - click to cycle</div>
       <div className="classify-legend-row">
         <span className="classify-dot" style={{ background: '#22c55e' }} />
         <span>Paintable (decals &amp; stripes)</span>
@@ -267,6 +275,8 @@ function App() {
   const clearSelectedCar = useEditorStore((state) => state.clearSelectedCar)
   const selectedCar = useEditorStore((state) => state.selectedCar)
   const project = useEditorStore((state) => state.project)
+  const targetPaints = useEditorStore((state) => state.targetPaints)
+  const targetPrints = useEditorStore((state) => state.targetPrints)
   const [screen, setScreen] = useState<AppScreen>(() => readScreenFromUrl() ?? 'home')
   const [projectId, setProjectId] = useState<string | null>(() => readProjectIdFromUrl())
   const [isGuest, setIsGuest] = useState(false)
@@ -278,6 +288,7 @@ function App() {
   const [lastSaveMs, setLastSaveMs] = useState(Date.now())
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false)
   const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
+  const [tabSyncNotification, setTabSyncNotification] = useState<string | null>(null)
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
@@ -317,7 +328,13 @@ function App() {
   const historyHydratedRef = useRef(false)
   const autoSaveIntervalRef = useRef<number | null>(null)
   const lastAutoSaveStateRef = useRef<string>('')
+  const lastRealtimeUpdateMsRef = useRef<number>(0)
+  const lastSaveMsRef = useRef<number>(lastSaveMs)
   const accountPlan = isGuest ? 'guest' : userPlan
+
+  useEffect(() => {
+    lastSaveMsRef.current = lastSaveMs
+  }, [lastSaveMs])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -377,6 +394,104 @@ function App() {
     }
   }, [screen])
 
+  // Tab sync: Listen for draft updates from other tabs (Phase 4)
+  useEffect(() => {
+    if (typeof window === 'undefined' || screen !== 'editor' || !projectId) return
+
+    const handleStorageChange = (event: StorageEvent) => {
+      const draftKey = `mygarage-draft-${projectId}`
+      if (event.key === draftKey && event.newValue && event.oldValue !== event.newValue) {
+        try {
+          const newDraft = JSON.parse(event.newValue)
+          const loadProject = useEditorStore.getState().loadProject
+          loadProject(newDraft)
+          setTabSyncNotification('Project synced from another tab')
+          setTimeout(() => setTabSyncNotification(null), 3000)
+        } catch (err) {
+          console.error('Failed to sync project from another tab:', err)
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [projectId, screen])
+
+  // Phase 5: Collaborative editing via Supabase realtime
+  useEffect(() => {
+    if (screen !== 'editor' || !projectId || isGuest || !isSupabaseConfigured || !supabase) return
+    const supabaseClient = supabase
+
+    let isDisposed = false
+    let clearNotificationTimer: number | null = null
+    let channel: any = null
+
+    const setupRealtime = async () => {
+      const authUser = await getCurrentUser()
+      if (!authUser || isDisposed) return
+
+      channel = supabaseClient
+        .channel(`garage-project-${projectId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'garage_projects',
+            filter: `project_id=eq.${projectId}`,
+          },
+          (payload) => {
+            if (isDisposed) return
+            const row = (payload.new ?? null) as GarageProjectRealtimeRow | null
+            if (!row || !row.project_json) return
+            if (row.user_id && row.user_id !== authUser.id) return
+
+            const incomingUpdatedAtMs = Number(row.updated_at_ms ?? 0)
+            if (!Number.isFinite(incomingUpdatedAtMs) || incomingUpdatedAtMs <= 0) return
+
+            // Ignore stale events and local echoes; apply only newer remote states.
+            if (incomingUpdatedAtMs <= lastRealtimeUpdateMsRef.current || incomingUpdatedAtMs <= lastSaveMsRef.current) {
+              return
+            }
+
+            const store = useEditorStore.getState()
+            const incomingProject = row.project_json as typeof store.project
+            const incomingJson = JSON.stringify(incomingProject)
+            const currentJson = JSON.stringify(store.project)
+            if (incomingJson === currentJson) {
+              lastRealtimeUpdateMsRef.current = incomingUpdatedAtMs
+              return
+            }
+
+            store.loadProject(incomingProject)
+            useEditorStore.setState({
+              targetPaints: (row.target_paints_json as typeof store.targetPaints) ?? store.targetPaints,
+              targetPrints: (row.target_prints_json as typeof store.targetPrints) ?? store.targetPrints,
+            })
+
+            lastRealtimeUpdateMsRef.current = incomingUpdatedAtMs
+            lastAutoSaveStateRef.current = incomingJson
+            setLastSaveMs(incomingUpdatedAtMs)
+            setTabSyncNotification('Live update synced from another session')
+
+            if (clearNotificationTimer) window.clearTimeout(clearNotificationTimer)
+            clearNotificationTimer = window.setTimeout(() => setTabSyncNotification(null), 3000)
+          },
+        )
+        .subscribe()
+    }
+
+    void setupRealtime()
+
+    return () => {
+      isDisposed = true
+      if (clearNotificationTimer) window.clearTimeout(clearNotificationTimer)
+      if (channel) {
+        void supabaseClient.removeChannel(channel)
+      }
+    }
+  }, [projectId, screen, isGuest])
+
   // Load project when projectId changes and restore editor state
   useEffect(() => {
     if (screen !== 'editor' || !projectId) return
@@ -431,6 +546,19 @@ function App() {
         setIsSaving(true)
         try {
           saveDraftProject(projectId, project)
+          // Phase 2: Cloud sync for authenticated users
+          if (!isGuest && selectedCar) {
+            void saveFullProjectToProfile(
+              project,
+              {
+                name: selectedCar.name,
+                modelUrl: selectedCar.modelUrl,
+                groundOffsetY: selectedCar.groundOffsetY ?? 0,
+              },
+              targetPaints,
+              targetPrints,
+            )
+          }
           setLastSaveMs(Date.now())
           setIsSaving(false)
           // Update session
@@ -455,7 +583,7 @@ function App() {
         autoSaveIntervalRef.current = null
       }
     }
-  }, [screen, projectId, project])
+  }, [screen, projectId, project, isGuest, selectedCar, targetPaints, targetPrints])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -490,7 +618,7 @@ function App() {
   }, [floatingPanel, isMobileViewport])
 
   const refreshPlanFromCloud = useCallback(async () => {
-    // Owner always gets paid — read from the authenticated session so it can't be spoofed.
+    // Owner always gets paid - read from the authenticated session so it cannot be spoofed.
     const authUser = await getCurrentUser()
     if (authUser && isOwnerEmail(authUser.email)) {
       writeCachedPlanTier('paid')
@@ -1276,8 +1404,30 @@ function App() {
           </div>
         </div>
       )}
+
+      {tabSyncNotification && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          background: 'rgba(74, 222, 128, 0.1)',
+          border: '1px solid rgba(74, 222, 128, 0.3)',
+          borderRadius: 8,
+          padding: '12px 16px',
+          color: '#4ade80',
+          fontSize: '0.9rem',
+          fontWeight: 500,
+          zIndex: 1000,
+          backdropFilter: 'blur(10px)',
+          animation: 'slideInRight 0.3s ease-out',
+        }}>
+          ✓ {tabSyncNotification}
+        </div>
+      )}
     </div>
   )
 }
 
 export default App
+
+

@@ -450,6 +450,8 @@ export function TopBar({
   exportQuality = 'high',
   onExportQualityChange,
   mobileCompact = false,
+  isSaving = false,
+  lastSaveMs,
 }: TopBarProps) {
   const cameraView = useEditorStore((state) => state.cameraView)
   const setCameraView = useEditorStore((state) => state.setCameraView)
@@ -545,6 +547,18 @@ export function TopBar({
     onOpenSvgMaker?.()
   }
 
+  // Phase 3: Save status badge
+  const getSaveStatus = () => {
+    if (isSaving) return { text: 'Saving...', color: '#3ec9ff' }
+    if (!lastSaveMs) return { text: 'Not saved', color: '#f87171' }
+    const now = Date.now()
+    const diffMs = now - lastSaveMs
+    if (diffMs < 5000) return { text: 'Just saved', color: '#4ade80' }
+    if (diffMs < 60000) return { text: `${Math.round(diffMs / 1000)}s ago`, color: '#8ea0b4' }
+    if (diffMs < 3600000) return { text: `${Math.round(diffMs / 60000)}m ago`, color: '#8ea0b4' }
+    return { text: 'Saved', color: '#8ea0b4' }
+  }
+
   return (
     <header className={isSvgMode ? 'top-bar top-bar-svg-mode' : 'top-bar'}>
       <div className="top-bar-left">
@@ -570,6 +584,36 @@ export function TopBar({
         <button type="button" className="top-icon-btn" onClick={isSvgMode ? onSvgRedo : redo} title="Redo (Ctrl+Y)" aria-label="Redo">
           <Redo2 size={14} />
         </button>
+        {!mobileCompact && !isSvgMode && (() => {
+          const saveStatus = getSaveStatus()
+          return (
+            <>
+              <div className="top-bar-divider" />
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: '0.8rem',
+                color: saveStatus.color,
+                fontWeight: 500,
+                padding: '4px 8px',
+                borderRadius: 4,
+                background: 'rgba(62, 201, 255, 0.05)',
+              }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: saveStatus.color,
+                  opacity: isSaving ? 0.6 : 1,
+                  animation: isSaving ? 'pulse 1.5s infinite' : 'none',
+                }} />
+                {saveStatus.text}
+              </div>
+            </>
+          )
+        })()}
         {mobileCompact && !isSvgMode && (
           <>
             <div className="top-bar-divider" />

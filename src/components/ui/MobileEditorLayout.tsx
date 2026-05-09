@@ -89,6 +89,7 @@ type DecalItem = { name: string; url: string; fileName: string }
 // ── Component ──────────────────────────────────────────────────
 export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: MobileEditorLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabId | null>(null)
+  const [showTextEditDropdown, setShowTextEditDropdown] = useState(false)
 
   // Car paint
   const setPaint               = useEditorStore(s => s.setPaint)
@@ -106,6 +107,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const setTool      = useEditorStore(s => s.setTool)
   const [fonts, setFonts] = useState<FontItem[]>(FONT_PRESETS)
   const [selectedFont, setSelectedFont] = useState<string>('Impact')
+  const [editingTextContent, setEditingTextContent] = useState<string>('')
 
   // Elements / decals
   const addDecalLayer = useEditorStore(s => s.addDecalLayer)
@@ -140,9 +142,19 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
   // Selected layer (derived)
   const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null
+  const textLayer = selectedLayer?.type === 'text' ? selectedLayer as any : null
 
   // Load fonts
   useEffect(() => {
+      // Auto-show text dropdown when text layer is selected
+      useEffect(() => {
+        if (activeTab === 'text' && textLayer) {
+          setShowTextEditDropdown(true)
+          setEditingTextContent(textLayer.text || '')
+        } else {
+          setShowTextEditDropdown(false)
+        }
+      }, [activeTab, textLayer?.id])
     fetch('/fonts/manifest.json', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then((json: { items?: Array<{ name: string; family: string; url: string }> } | null) => {
@@ -706,6 +718,82 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   return (
     <div className="mobile-editor-layout">
       <div className="mobile-viewport-container">{editorCanvas}</div>
+
+      {/* Text Edit Dropdown — appears at top when text layer is selected */}
+      {showTextEditDropdown && textLayer && (
+        <div style={{
+          position: 'relative',
+          zIndex: 10,
+          background: 'rgba(14,18,24,0.97)',
+          borderBottom: '1px solid rgba(62,201,255,0.15)',
+          padding: '12px 16px',
+          backdropFilter: 'blur(10px)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#3ec9ff' }}>Edit Text</span>
+            <button type="button" onClick={() => setShowTextEditDropdown(false)} style={{
+              background: 'rgba(62,201,255,0.1)',
+              border: 'none',
+              color: '#8ea0b4',
+              width: 28, height: 28, borderRadius: 6,
+              cursor: 'pointer', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>×</button>
+          </div>
+          <input type="text" value={editingTextContent} onChange={(e) => setEditingTextContent(e.target.value)}
+            onBlur={() => textLayer && updateLayer(textLayer.id, { text: editingTextContent } as any)}
+            placeholder="Enter text..." style={{
+              width: '100%', padding: '10px 12px', marginBottom: 12, background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(62,201,255,0.2)', borderRadius: 6, color: '#fff', fontSize: '1rem',
+              fontFamily: textLayer.fontFamily || 'Arial'
+            }}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Scale</span>
+              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.x}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any)
+                }}
+                onPointerUp={(e) => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any)
+                }}
+                style={{ flex: 1, minWidth: 100 }}
+              />
+              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 40, textAlign: 'right' }}>{textLayer.transform.scale.x.toFixed(2)}×</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Horz</span>
+              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.x}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as any)
+                }}
+                onPointerUp={(e) => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { scale: { x: v } } } as any)
+                }}
+                style={{ flex: 1, minWidth: 100 }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.85rem', color: '#8ea0b4', minWidth: 45 }}>Vert</span>
+              <input type="range" min={0.1} max={4} step={0.05} value={textLayer.transform.scale.y}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as any)
+                }}
+                onPointerUp={(e) => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { scale: { y: v } } } as any)
+                }}
+                style={{ flex: 1, minWidth: 100 }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab && (
         <div className="mobile-controls-strip">
