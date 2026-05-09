@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Home, Redo2, Undo2 } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
-import { saveFullProjectToProfile } from '../../lib/savedProjects'
-import { makeId } from '../../lib/id'
+import { saveFullProjectToProfile, BETA_SAVE_LIMIT, readSavedProjects } from '../../lib/savedProjects'
 import { getAccessPrompt, getPlanLabel, isFeatureAllowed, type FeatureId, type PlanTier } from '../../lib/access'
 import { LegalDocsModal } from './LegalDocsModal'
 import type { CameraViewId, EditorProject } from '../../types/editor'
@@ -94,6 +93,8 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const [glbExporting, setGlbExporting] = useState(false)
   const [glbStatus, setGlbStatus] = useState<string | null>(null)
   const [profileSaving, setProfileSaving] = useState(false)
+  const [saveToast, setSaveToast] = useState<{ type: 'ok' | 'error'; msg: string } | null>(null)
+  const saveToastTimerRef = useRef<number | null>(null)
   const menuRootRef = useRef<HTMLDivElement | null>(null)
   const mobileModalRef = useRef<HTMLDivElement | null>(null)
   const project = useEditorStore((state) => state.project)
@@ -103,22 +104,36 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const targetPrints = useEditorStore((state) => state.targetPrints)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const showSaveToast = (type: 'ok' | 'error', msg: string) => {
+    if (saveToastTimerRef.current) window.clearTimeout(saveToastTimerRef.current)
+    setSaveToast({ type, msg })
+    saveToastTimerRef.current = window.setTimeout(() => setSaveToast(null), 4000)
+  }
+
   const handleSaveToProfile = async () => {
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
     if (profileSaving) return
     if (!selectedCar) {
-      alert('No car selected yet. Pick a car first, then save to profile.')
+      showSaveToast('error', 'No car selected. Pick a car first.')
+      setOpen(false)
+      return
+    }
+
+    // Beta limit: check before saving (only blocks brand-new entries)
+    const existing = readSavedProjects()
+    const isUpdate = existing.some((p) => p.id === project.meta.id)
+    if (!isUpdate && existing.length >= BETA_SAVE_LIMIT) {
+      showSaveToast('error', `Beta limit: ${BETA_SAVE_LIMIT} cars max. Delete a car from your Profile to save a new one.`)
       setOpen(false)
       return
     }
 
     const previewImageUrl = onCaptureProfilePreview?.() ?? null
+    // Use the real project ID so re-saves update rather than create duplicates
     const snapshotProject: EditorProject = {
       ...project,
       meta: {
         ...project.meta,
-        id: makeId('project'),
-        createdAt: Date.now(),
         updatedAt: Date.now(),
       },
     }
@@ -126,12 +141,15 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
     try {
       const result = await saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
 
-      if (!result.ok) {
-        alert(result.error ?? 'Project save completed with warnings.')
+      if (result.limitReached) {
+        showSaveToast('error', result.error ?? `Beta limit: ${BETA_SAVE_LIMIT} cars max. Delete a car from your Profile to save a new one.`)
+      } else if (!result.ok) {
+        showSaveToast('error', result.error ?? 'Save failed. Please try again.')
       } else if (result.error) {
-        alert(result.error)
+        // Saved but with a warning (e.g. cloud sync pending)
+        showSaveToast('ok', 'Saved to Profile ✓')
       } else {
-        alert('Saved to Profile successfully.')
+        showSaveToast('ok', 'Saved to Profile ✓')
       }
     } finally {
       setProfileSaving(false)
@@ -352,6 +370,35 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         style={{ display: 'none' }}
         onChange={handleFileChange}
       />
+
+      {/* Save toast — fixed overlay, works in PWA/standalone mode (no alert() dependency) */}
+      {saveToast && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 28,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 20000,
+            background: saveToast.type === 'ok' ? 'rgba(22, 46, 22, 0.97)' : 'rgba(52, 18, 18, 0.97)',
+            border: `1px solid ${saveToast.type === 'ok' ? '#4ade80' : '#f87171'}`,
+            color: saveToast.type === 'ok' ? '#4ade80' : '#f87171',
+            borderRadius: 12,
+            padding: '12px 22px',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            maxWidth: 'calc(100vw - 32px)',
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          {saveToast.msg}
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

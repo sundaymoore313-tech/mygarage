@@ -26,7 +26,8 @@ const FULL_PROJECT_PREFIX = 'mygarage-project-full-'
 const CLOUD_MIGRATED_PREFIX = 'mygarage-cloud-migrated-'
 const TEMPLATE_BUCKET = 'garage-templates'
 const THUMBNAIL_BUCKET = 'project-thumbnails'
-const LIMIT = 24
+export const BETA_SAVE_LIMIT = 10
+const LIMIT = BETA_SAVE_LIMIT
 let cloudReadUnavailable = false
 export const SAVED_PROJECTS_UPDATED_EVENT = 'mygarage:saved-projects-updated'
 
@@ -42,6 +43,7 @@ export type SaveProfileResult = {
   ok: boolean
   fullSaved: boolean
   cloudSaved: boolean
+  limitReached?: boolean
   error?: string
 }
 
@@ -383,18 +385,26 @@ export async function syncCloudProjectsToLocal(): Promise<{ ok: boolean; count: 
   cloudReadUnavailable = false
   try {
     const cardsFromCloud = await listCloudProjectCards()
-    const cards = cardsFromCloud.map(cloudCardToSavedCard)
-    if (cards.length > 0) {
-      writeSavedProjects(cards)
+    const cloudCards = cardsFromCloud.map(cloudCardToSavedCard)
+
+    // MERGE: keep local-only cards not yet synced to cloud so a just-saved project
+    // isn't erased when the cloud save hasn't completed yet.
+    const localCards = readSavedProjects()
+    const cloudIds = new Set(cloudCards.map((c) => c.id))
+    const localOnly = localCards.filter((c) => !cloudIds.has(c.id))
+    // Cloud wins for any card that exists in both; local-only stay at the end.
+    const merged = [...cloudCards, ...localOnly].slice(0, LIMIT)
+
+    if (cloudCards.length > 0 || localOnly.length > 0) {
+      writeSavedProjects(merged)
     }
 
     const rows = await listCloudProjectRows()
     if (rows.length === 0) {
-      return { ok: true, count: cards.length }
+      return { ok: true, count: merged.length }
     }
 
     const full = rows.map(cloudRowToFull)
-    writeSavedProjects(cards)
     for (const item of full) {
       localStorage.setItem(FULL_PROJECT_PREFIX + item.id, JSON.stringify(item))
     }
@@ -444,6 +454,19 @@ export async function saveFullProjectToProfile(
 ): Promise<SaveProfileResult> {
   const existing = normalizeCardsForLocal(readSavedProjects())
   const prior = existing.find((p) => p.id === project.meta.id)
+
+  // Beta: enforce 10-car limit for brand-new saves (not updates to existing entries)
+  const isNewEntry = !prior
+  if (isNewEntry && existing.length >= BETA_SAVE_LIMIT) {
+    return {
+      ok: false,
+      fullSaved: false,
+      cloudSaved: false,
+      limitReached: true,
+      error: `Beta limit reached (${BETA_SAVE_LIMIT} cars). Delete a car from your Profile to save a new one.`,
+    }
+  }
+
   const card: SavedProjectCard = {
     id: project.meta.id,
     name: project.meta.name,
