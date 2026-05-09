@@ -215,10 +215,14 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
   async function handleDownload() {
     if (!blobUrl || !recordedBlob) return
 
+    const fileName = `mygarage-${duration}s-${Date.now()}.mp4`
+    const file = typeof File !== 'undefined'
+      ? new File([recordedBlob], fileName, { type: recordedBlob.type || 'video/mp4' })
+      : null
+
     // On mobile Safari/Chrome this opens the share sheet so users can Save Video to Photos.
-    if (typeof navigator !== 'undefined' && 'share' in navigator && typeof File !== 'undefined') {
+    if (typeof navigator !== 'undefined' && 'share' in navigator && file) {
       try {
-        const file = new File([recordedBlob], `mygarage-${duration}s-${Date.now()}.mp4`, { type: recordedBlob.type || 'video/mp4' })
         const canShare = 'canShare' in navigator
           ? (navigator as Navigator & { canShare?: (data?: ShareData) => boolean }).canShare?.({ files: [file] })
           : true
@@ -235,9 +239,41 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
       }
     }
 
+    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as typeof window & {
+          showSaveFilePicker?: (options?: {
+            suggestedName?: string
+            types?: Array<{ description?: string; accept: Record<string, string[]> }>
+          }) => Promise<{
+            createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }>
+          }>
+        }).showSaveFilePicker?.({
+          suggestedName: fileName,
+          types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }],
+        })
+        if (handle) {
+          const writable = await handle.createWritable()
+          await writable.write(recordedBlob)
+          await writable.close()
+          return
+        }
+      } catch {
+        // Fall back to download/open behavior.
+      }
+    }
+
+    const isIosLike = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+    if (isIosLike && typeof window !== 'undefined') {
+      const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+      if (opened) return
+      window.location.href = blobUrl
+      return
+    }
+
     const a = document.createElement('a')
     a.href = blobUrl
-    a.download = `mygarage-${duration}s-${Date.now()}.mp4`
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

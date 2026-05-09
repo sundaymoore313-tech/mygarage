@@ -94,6 +94,10 @@ export type SignInResult =
   | { ok: true; user: AuthUser }
   | { ok: false; error: string }
 
+export type SignOutResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
 export async function supabaseSignIn(
   email: string,
   password: string,
@@ -114,6 +118,18 @@ export async function supabaseSignIn(
   return { ok: true, user: authUser }
 }
 
-export async function supabaseSignOut(): Promise<void> {
-  await supabase?.auth.signOut()
+export async function supabaseSignOut(): Promise<SignOutResult> {
+  if (!supabase) return { ok: true }
+
+  const globalResult = await supabase.auth.signOut()
+  if (!globalResult.error) {
+    return { ok: true }
+  }
+
+  const localResult = await supabase.auth.signOut({ scope: 'local' })
+  if (!localResult.error) {
+    return { ok: true }
+  }
+
+  return { ok: false, error: globalResult.error.message }
 }

@@ -41,6 +41,7 @@ function isMissingCloudEndpointError(error: unknown): boolean {
 export type SaveProfileResult = {
   ok: boolean
   fullSaved: boolean
+  cloudSaved: boolean
   error?: string
 }
 
@@ -208,10 +209,10 @@ async function prepareProjectForCloud(userId: string, full: FullSavedProject): P
   }
 }
 
-async function saveCloudProject(full: FullSavedProject): Promise<void> {
-  if (!isSupabaseConfigured || !supabase) return
+async function saveCloudProject(full: FullSavedProject): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return true
   const user = await getCurrentUser()
-  if (!user) return
+  if (!user) return false
 
   const prepared = await prepareProjectForCloud(user.id, full)
 
@@ -233,9 +234,9 @@ async function saveCloudProject(full: FullSavedProject): Promise<void> {
   }
 
   const { error: rpcError } = await supabase.rpc('save_garage_project', payload)
-  if (!rpcError) return
+  if (!rpcError) return true
 
-  await supabase.from('garage_projects').upsert({
+  const { error: upsertError } = await supabase.from('garage_projects').upsert({
     user_id: user.id,
     project_id: prepared.id,
     name: prepared.name,
@@ -252,6 +253,8 @@ async function saveCloudProject(full: FullSavedProject): Promise<void> {
     target_paints_json: prepared.targetPaints,
     target_prints_json: prepared.targetPrints,
   }, { onConflict: 'user_id,project_id' })
+
+  return !upsertError
 }
 
 async function removeCloudProject(projectId: string): Promise<void> {
@@ -432,13 +435,13 @@ export async function migrateLocalProjectsToCloud(): Promise<{ ok: boolean; migr
   }
 }
 
-export function saveFullProjectToProfile(
+export async function saveFullProjectToProfile(
   project: EditorProject,
   car: { name: string; modelUrl: string; groundOffsetY?: number },
   targetPaints: Partial<Record<PaintTargetId, PaintConfig>>,
   targetPrints: Partial<Record<PaintTargetId, PrintConfig | null>>,
   previewImageUrl?: string | null,
-): SaveProfileResult {
+): Promise<SaveProfileResult> {
   const existing = normalizeCardsForLocal(readSavedProjects())
   const prior = existing.find((p) => p.id === project.meta.id)
   const card: SavedProjectCard = {
@@ -457,8 +460,6 @@ export function saveFullProjectToProfile(
 
   // Save full data keyed by project id
   const full: FullSavedProject = { ...card, project, targetPaints, targetPrints }
-  // Cloud save is attempted regardless of local cache pressure.
-  void saveCloudProject(full)
 
   let fullSaved = true
   try {
@@ -476,31 +477,48 @@ export function saveFullProjectToProfile(
   }
 
   const nextCards = [card, ...existing.filter((p) => p.id !== card.id)].slice(0, LIMIT)
+  let localWriteWarning: string | undefined
   try {
     writeSavedProjects(nextCards)
-    return {
-      ok: true,
-      fullSaved,
-      error: fullSaved ? undefined : 'Saved card metadata, but full project data could not be stored. Clear local storage or reduce template image size.',
-    }
+    localWriteWarning = fullSaved ? undefined : 'Saved card metadata, but full project data could not be stored. Clear local storage or reduce template image size.'
   } catch {
     // Last attempt: clear heavy cached full projects and retry card write.
     const keepIds = new Set(nextCards.map((p) => p.id))
     pruneStoredFullProjects(keepIds)
     try {
       writeSavedProjects(nextCards)
-      return {
-        ok: true,
-        fullSaved: false,
-        error: 'Saved card metadata after clearing old cache. Full project cache is limited on this device.',
-      }
+      fullSaved = false
+      localWriteWarning = 'Saved card metadata after clearing old cache. Full project cache is limited on this device.'
     } catch {
+      const cloudSaved = await saveCloudProject(full)
       return {
         ok: true,
         fullSaved: false,
-        error: 'Saved to cloud, but local cache could not be updated due to browser storage limits.',
+        cloudSaved,
+        error: cloudSaved
+          ? 'Saved to cloud, but local cache could not be updated due to browser storage limits.'
+          : 'Project could not be fully saved. Local cache is full and cloud sync is unavailable right now.',
       }
     }
+  }
+
+  let cloudSaved = false
+  try {
+    cloudSaved = await saveCloudProject(full)
+  } catch {
+    cloudSaved = false
+  }
+
+  const warningParts = [localWriteWarning]
+  if (!cloudSaved) {
+    warningParts.push('Saved on this device, but cloud sync did not finish. Open Profile again in a moment or check your connection.')
+  }
+
+  return {
+    ok: true,
+    fullSaved,
+    cloudSaved,
+    error: warningParts.filter(Boolean).join(' ' ) || undefined,
   }
 }
 

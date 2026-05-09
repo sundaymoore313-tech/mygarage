@@ -521,7 +521,11 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   }
 
   async function handleLogout() {
-    await supabaseSignOut()
+    const result = await supabaseSignOut()
+    if (!result.ok) {
+      alert(result.error)
+      return
+    }
     clearCachedAuth()
     setCurrentUser(null)
   }

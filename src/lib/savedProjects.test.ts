@@ -56,6 +56,7 @@ function makeProject(id: string, name: string): EditorProject {
       softEdge: 0.02,
       angle: 0,
     },
+    stripeLayerSeed: null,
     vehicleCalibration: {
       lengthMm: null,
       widthMm: null,
@@ -97,9 +98,9 @@ describe('savedProjects', () => {
     localStorage.clear()
   })
 
-  it('overwrites an existing project card by id', () => {
+  it('overwrites an existing project card by id', async () => {
     const project = makeProject('p1', 'Project One')
-    saveFullProjectToProfile(
+    await saveFullProjectToProfile(
       project,
       { name: 'Car A', modelUrl: '/models/a.glb' },
       { fullCar: { ...project.paint } },
@@ -107,7 +108,7 @@ describe('savedProjects', () => {
       'data:image/png;base64,one',
     )
 
-    saveFullProjectToProfile(
+    await saveFullProjectToProfile(
       { ...project, paint: { ...project.paint, colorHex: '#333333' } },
       { name: 'Car A', modelUrl: '/models/a.glb' },
       { fullCar: { ...project.paint, colorHex: '#333333' } },
@@ -122,9 +123,9 @@ describe('savedProjects', () => {
     expect(cards[0].paintColorHex).toBe('#333333')
   })
 
-  it('stores and loads full project payload', () => {
+  it('stores and loads full project payload', async () => {
     const project = makeProject('p2', 'Project Two')
-    saveFullProjectToProfile(
+    await saveFullProjectToProfile(
       project,
       { name: 'Car B', modelUrl: '/models/b.glb' },
       { fullCar: { ...project.paint } },
@@ -146,9 +147,9 @@ describe('savedProjects', () => {
     expect(full?.targetPrints.fullCar?.imageUrl).toBe('/prints/pattern.png')
   })
 
-  it('removes both card and full project payload', () => {
+  it('removes both card and full project payload', async () => {
     const project = makeProject('p3', 'Project Three')
-    saveFullProjectToProfile(
+    await saveFullProjectToProfile(
       project,
       { name: 'Car C', modelUrl: '/models/c.glb' },
       { fullCar: { ...project.paint } },
@@ -162,7 +163,7 @@ describe('savedProjects', () => {
   })
     // Round-trip serialization tests for Phase 2 stability
     describe('round-trip serialization', () => {
-      it('preserves all DecalLayer properties', () => {
+      it('preserves all DecalLayer properties', async () => {
         const now = Date.now()
         const project = makeProject('p-decal', 'Decal Test')
           const decalLayer: DecalLayer = {
@@ -193,7 +194,7 @@ describe('savedProjects', () => {
           }
           project.layers = [decalLayer]
 
-        saveFullProjectToProfile(
+        await saveFullProjectToProfile(
           project,
           { name: 'Car D', modelUrl: '/models/d.glb' },
           { fullCar: { ...project.paint } },
@@ -215,7 +216,7 @@ describe('savedProjects', () => {
         expect(savedDecal?.transform.scale.x).toBe(1.5)
       })
 
-      it('preserves all TextLayer properties', () => {
+      it('preserves all TextLayer properties', async () => {
         const now = Date.now()
         const project = makeProject('p-text', 'Text Test')
           const textLayer: TextLayer = {
@@ -230,6 +231,7 @@ describe('savedProjects', () => {
             finish: 'matte' as const,
             targetPartId: null,
             textCurve: 0.5,
+            mirroredTextReadable: true,
             mirrorX: false,
             mirrorToOtherSide: true,
             mirrorColorHex: '#ff00ff',
@@ -248,7 +250,7 @@ describe('savedProjects', () => {
           }
           project.layers = [textLayer]
 
-        saveFullProjectToProfile(
+        await saveFullProjectToProfile(
           project,
           { name: 'Car E', modelUrl: '/models/e.glb' },
           { fullCar: { ...project.paint } },
@@ -275,7 +277,7 @@ describe('savedProjects', () => {
         expect(savedText?.transform.opacity).toBe(0.5)
       })
 
-      it('handles multiple layers without data loss', () => {
+      it('handles multiple layers without data loss', async () => {
         const now = Date.now()
         const project = makeProject('p-multi', 'Multi Layer Test')
           const decal: DecalLayer = {
@@ -316,6 +318,7 @@ describe('savedProjects', () => {
             finish: 'gloss' as const,
             targetPartId: null,
             textCurve: 0,
+            mirroredTextReadable: true,
             mirrorX: false,
             mirrorToOtherSide: false,
             mirrorColorHex: null,
@@ -334,7 +337,7 @@ describe('savedProjects', () => {
           }
           project.layers = [decal, text]
 
-        saveFullProjectToProfile(
+        await saveFullProjectToProfile(
           project,
           { name: 'Car F', modelUrl: '/models/f.glb' },
           { fullCar: { ...project.paint } },

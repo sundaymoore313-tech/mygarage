@@ -456,7 +456,11 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
   }
 
   async function handleLogout() {
-    await supabaseSignOut()
+    const result = await supabaseSignOut()
+    if (!result.ok) {
+      alert(result.error)
+      return
+    }
     clearCachedAuth()
     onGoHome()
   }

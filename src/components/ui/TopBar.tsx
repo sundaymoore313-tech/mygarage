@@ -93,6 +93,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const [glbIncludeLightsCamera, setGlbIncludeLightsCamera] = useState(false)
   const [glbExporting, setGlbExporting] = useState(false)
   const [glbStatus, setGlbStatus] = useState<string | null>(null)
+  const [profileSaving, setProfileSaving] = useState(false)
   const menuRootRef = useRef<HTMLDivElement | null>(null)
   const project = useEditorStore((state) => state.project)
   const loadProject = useEditorStore((state) => state.loadProject)
@@ -101,8 +102,9 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const targetPrints = useEditorStore((state) => state.targetPrints)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleSaveToProfile = () => {
+  const handleSaveToProfile = async () => {
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
+    if (profileSaving) return
     if (!selectedCar) {
       alert('No car selected yet. Pick a car first, then save to profile.')
       setOpen(false)
@@ -119,14 +121,19 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         updatedAt: Date.now(),
       },
     }
-    const result = saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
+    setProfileSaving(true)
+    try {
+      const result = await saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
 
-    if (!result.ok) {
-      alert(result.error ?? 'Project save completed with warnings.')
-    } else if (result.error) {
-      alert(result.error)
-    } else {
-      alert('Saved to Profile successfully.')
+      if (!result.ok) {
+        alert(result.error ?? 'Project save completed with warnings.')
+      } else if (result.error) {
+        alert(result.error)
+      } else {
+        alert('Saved to Profile successfully.')
+      }
+    } finally {
+      setProfileSaving(false)
     }
 
     setOpen(false)
@@ -252,8 +259,8 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
             <div className="file-menu-backdrop file-menu-backdrop-mobile" onClick={() => setOpen(false)} />
             <div className="file-menu-mobile-modal" role="dialog" aria-modal="true" aria-label="File actions">
               <div className="file-menu-mobile-title">Quick Actions</div>
-              <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
-                <span className="file-menu-icon">⭐</span> Save to Profile
+              <button type="button" className="file-menu-item" onClick={() => { void handleSaveToProfile() }} disabled={profileSaving}>
+                <span className="file-menu-icon">⭐</span> {profileSaving ? 'Saving to Profile...' : 'Save to Profile'}
               </button>
               <button type="button" className="file-menu-item" onClick={handleExportPng}>
                 <span className="file-menu-icon">🖼</span> Take Screenshot
@@ -272,7 +279,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
           <>
             <div className="file-menu-backdrop" onClick={() => setOpen(false)} />
             <div className="file-menu-dropdown">
-                <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
+                <button type="button" className="file-menu-item" onClick={() => { void handleSaveToProfile() }} disabled={profileSaving}>
                   <span className="file-menu-icon">⭐</span> Add to Profile
                 </button>
                 <button type="button" className="file-menu-item" onClick={handleDownloadProject}>
