@@ -25,6 +25,13 @@ const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const SCREEN_QUERY_KEY = 'screen'
 const PROJECT_ID_QUERY_KEY = 'projectId'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
+const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
+
+function isChunkLoadFailure(error: unknown): boolean {
+  if (!error) return false
+  const message = error instanceof Error ? error.message : String(error)
+  return /ChunkLoadError|Failed to fetch dynamically imported module|Loading chunk|Importing a module script failed|dynamically imported module/i.test(message)
+}
 
 function detectMobileEditorViewport(): boolean {
   if (typeof window === 'undefined') return false
@@ -334,6 +341,31 @@ function App() {
   useEffect(() => {
     lastSaveMsRef.current = lastSaveMs
   }, [lastSaveMs])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleChunkLoadFailure = (event: ErrorEvent) => {
+      if (!isChunkLoadFailure(event.error ?? event.message)) return
+      if (sessionStorage.getItem(CHUNK_RELOAD_SESSION_KEY) === '1') return
+      sessionStorage.setItem(CHUNK_RELOAD_SESSION_KEY, '1')
+      window.location.reload()
+    }
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!isChunkLoadFailure(event.reason)) return
+      if (sessionStorage.getItem(CHUNK_RELOAD_SESSION_KEY) === '1') return
+      sessionStorage.setItem(CHUNK_RELOAD_SESSION_KEY, '1')
+      window.location.reload()
+    }
+
+    window.addEventListener('error', handleChunkLoadFailure)
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    return () => {
+      window.removeEventListener('error', handleChunkLoadFailure)
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
