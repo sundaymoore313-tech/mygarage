@@ -509,31 +509,31 @@ function App() {
     const loadProjectAndRestore = async () => {
       try {
         const full = await loadFullProjectByIdWithCloud(projectId)
+        const draft = readDraftProject(projectId)
         if (full) {
           selectCar({
             name: full.carName,
             modelUrl: full.modelUrl,
             groundOffsetY: full.groundOffsetY,
           })
-          // Restore draft state if it exists
-          const draft = readDraftProject(projectId)
-          if (draft?.car) {
-            selectCar(draft.car)
-          }
-          if (draft) {
-            const loadProject = useEditorStore.getState().loadProject
-            loadProject(draft.project)
-            setLastSaveMs(draft.savedAtMs)
-          }
-          // Update session
-          writeSession({
-            projectId,
-            screen: 'editor',
-            lastSaveMs: Date.now(),
-            lastAutoSaveMs: Date.now(),
-          })
-          confirmSession()
+        } else if (draft?.car) {
+          selectCar(draft.car)
         }
+
+        if (draft) {
+          const loadProject = useEditorStore.getState().loadProject
+          loadProject(draft.project)
+          setLastSaveMs(draft.savedAtMs)
+        }
+
+        // Update session
+        writeSession({
+          projectId,
+          screen: 'editor',
+          lastSaveMs: Date.now(),
+          lastAutoSaveMs: Date.now(),
+        })
+        confirmSession()
       } catch (err) {
         console.error('Failed to load project:', err)
       } finally {
