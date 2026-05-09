@@ -7227,8 +7227,8 @@ hr {
    --------------------------------------------------------------- */
 
 .home-page {
-  height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   background: #080c10;
   color: #e8edf2;
   overflow: hidden;
@@ -7238,7 +7238,7 @@ hr {
 /* -- Hero ----------------------------------------------------- */
 .home-hero {
   position: relative;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: flex-start;
   justify-content: center;

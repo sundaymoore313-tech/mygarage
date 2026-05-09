@@ -144,17 +144,18 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null
   const textLayer = selectedLayer?.type === 'text' ? selectedLayer as any : null
 
+  // Auto-show text dropdown when text layer is selected
+  useEffect(() => {
+    if (activeTab === 'text' && textLayer) {
+      setShowTextEditDropdown(true)
+      setEditingTextContent(textLayer.text || '')
+    } else {
+      setShowTextEditDropdown(false)
+    }
+  }, [activeTab, textLayer?.id])
+
   // Load fonts
   useEffect(() => {
-      // Auto-show text dropdown when text layer is selected
-      useEffect(() => {
-        if (activeTab === 'text' && textLayer) {
-          setShowTextEditDropdown(true)
-          setEditingTextContent(textLayer.text || '')
-        } else {
-          setShowTextEditDropdown(false)
-        }
-      }, [activeTab, textLayer?.id])
     fetch('/fonts/manifest.json', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then((json: { items?: Array<{ name: string; family: string; url: string }> } | null) => {
