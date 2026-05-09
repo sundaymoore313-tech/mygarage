@@ -1,5 +1,5 @@
 import { Suspense, useState } from 'react'
-import { Layers, Type, Car } from 'lucide-react'
+import { Layers, Type, Car, Palette } from 'lucide-react'
 import { DecalLibraryPanel } from './DecalLibraryPanel'
 import { TextLibraryPanel } from './TextLibraryPanel'
 import { CarLibraryPanel } from './CarLibraryPanel'
@@ -8,8 +8,9 @@ import { StripeLibraryPanel } from './StripeLibraryPanel'
 import { WindowTintPanel } from './WindowTintPanel'
 import { LayerPanel } from './LayerPanel'
 import { InspectorPanel } from './InspectorPanel'
+import { MobileColorPickerPanel } from './MobileColorPickerPanel'
 
-type PanelType = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'prints' | 'tint' | 'layers' | null
+type PanelType = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'prints' | 'tint' | 'color' | 'layers' | null
 
 interface MobileEditorLayoutProps {
   editorCanvas: React.ReactNode
@@ -25,6 +26,19 @@ export function MobileEditorLayout({
   simplified = true,
 }: MobileEditorLayoutProps) {
   const [activePanel, setActivePanel] = useState<PanelType>(null)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+
+  const handleColorChange = (hue: number, saturation: number, lightness: number, part: string) => {
+    // TODO: Integrate with editor store to update car paint colors
+    // Example: 
+    // editorStore.applyPaint({
+    //   part,
+    //   hue,
+    //   saturation,
+    //   lightness
+    // })
+    console.log(`Paint ${part} with HSL(${hue}, ${saturation}%, ${lightness}%)`)
+  }
 
   const tabs: Array<{
     id: PanelType
@@ -33,6 +47,7 @@ export function MobileEditorLayout({
   }> = [
     { id: 'car', label: 'Car', icon: <Car size={24} /> },
     { id: 'text', label: 'Text', icon: <Type size={24} /> },
+    { id: 'color', label: 'Color', icon: <Palette size={24} /> },
     { id: 'elements', label: 'Elements', icon: <Layers size={24} /> },
     {
       id: 'stripes',
@@ -82,6 +97,8 @@ export function MobileEditorLayout({
         return <TextLibraryPanel onFontPicked={() => setActivePanel(null)} isGuest={isGuest} onGuestSignIn={onGuestSignIn} />
       case 'car':
         return <CarLibraryPanel onClose={() => setActivePanel(null)} />
+      case 'color':
+        return null // Color picker is rendered separately below
       case 'split':
         return <SplitLibraryPanel onClose={() => setActivePanel(null)} />
       case 'stripes':
@@ -103,7 +120,7 @@ export function MobileEditorLayout({
       {/* Bottom sheet panel + tab bar */}
       <div className="mobile-bottom-sheet">
         {/* Content panel (slides up when a tab is selected) */}
-        {activePanel && (
+        {activePanel && activePanel !== 'color' && (
           <div className="mobile-content-panel">
             <div className="mobile-panel-header">
               <h3 className="mobile-panel-title">
@@ -139,7 +156,15 @@ export function MobileEditorLayout({
               key={tab.id}
               type="button"
               className={`mobile-tab-button${activePanel === tab.id ? ' active' : ''}`}
-              onClick={() => setActivePanel(activePanel === tab.id ? null : tab.id)}
+              onClick={() => {
+                if (tab.id === 'color') {
+                  setShowColorPicker(!showColorPicker)
+                  setActivePanel(tab.id)
+                } else {
+                  setShowColorPicker(false)
+                  setActivePanel(activePanel === tab.id ? null : tab.id)
+                }
+              }}
               aria-label={tab.label}
               title={tab.label}
             >
@@ -149,6 +174,16 @@ export function MobileEditorLayout({
           ))}
         </div>
       </div>
+
+      {/* Color Picker Bottom Sheet */}
+      <MobileColorPickerPanel
+        isOpen={showColorPicker && activePanel === 'color'}
+        onClose={() => {
+          setShowColorPicker(false)
+          setActivePanel(null)
+        }}
+        onColorChange={handleColorChange}
+      />
     </div>
   )
 }
