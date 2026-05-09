@@ -24,6 +24,25 @@ const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const SCREEN_QUERY_KEY = 'screen'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
 
+function detectMobileEditorViewport(): boolean {
+  if (typeof window === 'undefined') return false
+
+  const mediaMatch = typeof window.matchMedia === 'function'
+    ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
+    : false
+
+  const coarsePointer = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(pointer: coarse)').matches
+    : false
+
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua)
+  const shortEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0)
+  const touchMobileLike = coarsePointer && shortEdge > 0 && shortEdge <= 1024
+
+  return mediaMatch || uaMobile || touchMobileLike
+}
+
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
 
 function isAppScreen(value: unknown): value is AppScreen {
@@ -244,8 +263,7 @@ function App() {
   const redo = useEditorStore((state) => state.redo)
   const [floatingPanel, setFloatingPanel] = useState<'elements' | 'text' | 'car' | 'split' | 'stripes' | 'tint' | 'prints' | null>(null)
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-    return window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
+    return detectMobileEditorViewport()
   })
   const [mobilePanelExpanded, setMobilePanelExpanded] = useState(false)
   const carSplit = useEditorStore((state) => state.project.carSplit)
@@ -322,14 +340,26 @@ function App() {
   }, [screen, selectedCar])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mediaQuery = window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY)
-    const handleMediaQueryChange = (event: MediaQueryListEvent) => {
-      setIsMobileViewport(event.matches)
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = typeof window.matchMedia === 'function'
+      ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY)
+      : null
+
+    const updateMobileViewport = () => {
+      setIsMobileViewport(detectMobileEditorViewport())
     }
-    setIsMobileViewport(mediaQuery.matches)
-    mediaQuery.addEventListener('change', handleMediaQueryChange)
-    return () => mediaQuery.removeEventListener('change', handleMediaQueryChange)
+
+    updateMobileViewport()
+    mediaQuery?.addEventListener('change', updateMobileViewport)
+    window.addEventListener('resize', updateMobileViewport)
+    window.addEventListener('orientationchange', updateMobileViewport)
+
+    return () => {
+      mediaQuery?.removeEventListener('change', updateMobileViewport)
+      window.removeEventListener('resize', updateMobileViewport)
+      window.removeEventListener('orientationchange', updateMobileViewport)
+    }
   }, [])
 
   useEffect(() => {
