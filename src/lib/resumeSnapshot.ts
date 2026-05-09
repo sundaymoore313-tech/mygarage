@@ -7,6 +7,22 @@ type ResumeSnapshot = {
 }
 
 const RESUME_SNAPSHOT_KEY = 'mygarage-resume-snapshot-v1'
+const MAX_RESUME_SNAPSHOT_CHARS = 350_000
+
+export function shouldPersistResumeSnapshot(): boolean {
+  if (typeof navigator === 'undefined') {
+    return true
+  }
+
+  const ua = navigator.userAgent
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+
+  // Mobile Safari/low-memory devices are prone to tab crashes from large sync storage writes.
+  if (isMobile) return false
+  if (typeof memory === 'number' && memory <= 4) return false
+  return true
+}
 
 export function clearResumeSnapshot(): void {
   try {
@@ -36,6 +52,10 @@ export function readResumeSnapshot(fileName?: string): ResumeSnapshot | null {
 }
 
 export function saveResumeSnapshot(fileName: string, project: EditorProject): void {
+  if (!shouldPersistResumeSnapshot()) {
+    return
+  }
+
   const payload: ResumeSnapshot = {
     fileName,
     savedAt: Date.now(),
@@ -43,7 +63,11 @@ export function saveResumeSnapshot(fileName: string, project: EditorProject): vo
   }
 
   try {
-    localStorage.setItem(RESUME_SNAPSHOT_KEY, JSON.stringify(payload))
+    const serialized = JSON.stringify(payload)
+    if (serialized.length > MAX_RESUME_SNAPSHOT_CHARS) {
+      return
+    }
+    localStorage.setItem(RESUME_SNAPSHOT_KEY, serialized)
   } catch {
     // Ignore storage quota issues; session state remains in memory.
   }

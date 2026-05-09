@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { makeId } from '../lib/id'
 import { DEFAULT_TARGET_PAINT, resolvePaintFinishPreset, getLockedClassifications, saveLockedClassifications, clearLockedClassifications, loadPersonalClassifications, savePersonalClassifications, clearPersonalClassifications, getMergedClassifications, isSystemLockedMesh, saveGeneratedClassifyPreset } from '../lib/paintTargets'
-import { saveResumeSnapshot } from '../lib/resumeSnapshot'
+import { saveResumeSnapshot, shouldPersistResumeSnapshot } from '../lib/resumeSnapshot'
 import type {
   CarStripeConfig,
   DecalLayer,
@@ -1387,6 +1387,10 @@ let resumeAutosaveTimer: ReturnType<typeof setTimeout> | null = null
 let lastResumeSignature = ''
 
 useEditorStore.subscribe((state) => {
+  if (!shouldPersistResumeSnapshot()) {
+    return
+  }
+
   const fileName = state.selectedCar?.modelUrl.split('/').pop() ?? ''
   if (!fileName) {
     return
