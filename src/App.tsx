@@ -116,10 +116,7 @@ const VideoRecordModal = lazy(async () => {
   return { default: mod.VideoRecordModal }
 })
 
-const GuestAuthModal = lazy(async () => {
-  const mod = await import('./components/ui/GuestAuthModal')
-  return { default: mod.GuestAuthModal }
-})
+import { GuestAuthModal } from './components/ui/GuestAuthModal'
 
 const DecalLibraryPanel = lazy(async () => {
   const mod = await import('./components/ui/DecalLibraryPanel')
