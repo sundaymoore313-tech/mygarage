@@ -402,9 +402,13 @@ function App() {
       const draftKey = `mygarage-draft-${projectId}`
       if (event.key === draftKey && event.newValue && event.oldValue !== event.newValue) {
         try {
-          const newDraft = JSON.parse(event.newValue)
+          const newDraft = JSON.parse(event.newValue) as { project?: typeof project; savedAtMs?: number }
+          if (!newDraft?.project) return
           const loadProject = useEditorStore.getState().loadProject
-          loadProject(newDraft)
+          loadProject(newDraft.project)
+          if (typeof newDraft.savedAtMs === 'number') {
+            setLastSaveMs(newDraft.savedAtMs)
+          }
           setTabSyncNotification('Project synced from another tab')
           setTimeout(() => setTabSyncNotification(null), 3000)
         } catch (err) {
