@@ -5703,12 +5703,12 @@ hr {
     height: auto;
     min-height: 100dvh;
     overflow-y: auto;
-    overflow-x: visible;
+    overflow-x: hidden;
   }
 
-  /* Allow File menu dropdown to escape mobile layout overflow */
+  /* Keep editor viewport locked to screen width on mobile. */
   .mobile-editor-layout {
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   .car-selector-page {
@@ -5972,6 +5972,7 @@ hr {
     height: auto;
     min-height: 100dvh;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
   }
 
