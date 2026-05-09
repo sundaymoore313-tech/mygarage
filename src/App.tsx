@@ -601,12 +601,24 @@ function App() {
     }
 
     updateMobileViewport()
-    mediaQuery?.addEventListener('change', updateMobileViewport)
+    if (mediaQuery) {
+      if (typeof mediaQuery.addEventListener === 'function') {
+        mediaQuery.addEventListener('change', updateMobileViewport)
+      } else if (typeof mediaQuery.addListener === 'function') {
+        mediaQuery.addListener(updateMobileViewport)
+      }
+    }
     window.addEventListener('resize', updateMobileViewport)
     window.addEventListener('orientationchange', updateMobileViewport)
 
     return () => {
-      mediaQuery?.removeEventListener('change', updateMobileViewport)
+      if (mediaQuery) {
+        if (typeof mediaQuery.removeEventListener === 'function') {
+          mediaQuery.removeEventListener('change', updateMobileViewport)
+        } else if (typeof mediaQuery.removeListener === 'function') {
+          mediaQuery.removeListener(updateMobileViewport)
+        }
+      }
       window.removeEventListener('resize', updateMobileViewport)
       window.removeEventListener('orientationchange', updateMobileViewport)
     }
