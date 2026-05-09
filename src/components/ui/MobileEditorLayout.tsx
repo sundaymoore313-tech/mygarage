@@ -1,16 +1,15 @@
 import { Suspense, useState } from 'react'
-import { Layers, Type, Car, Palette } from 'lucide-react'
+import { Layers, Type, Car } from 'lucide-react'
 import { DecalLibraryPanel } from './DecalLibraryPanel'
 import { TextLibraryPanel } from './TextLibraryPanel'
-import { CarLibraryPanel } from './CarLibraryPanel'
 import { SplitLibraryPanel } from './SplitLibraryPanel'
 import { StripeLibraryPanel } from './StripeLibraryPanel'
 import { WindowTintPanel } from './WindowTintPanel'
 import { LayerPanel } from './LayerPanel'
 import { InspectorPanel } from './InspectorPanel'
-import { MobileColorPickerPanel } from './MobileColorPickerPanel'
+import { MobileCarColorsPanel } from './MobileCarColorsPanel'
 
-type PanelType = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'prints' | 'tint' | 'color' | 'layers' | null
+type PanelType = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'tint' | 'layers' | null
 
 interface MobileEditorLayoutProps {
   editorCanvas: React.ReactNode
@@ -26,19 +25,6 @@ export function MobileEditorLayout({
   simplified = true,
 }: MobileEditorLayoutProps) {
   const [activePanel, setActivePanel] = useState<PanelType>(null)
-  const [showColorPicker, setShowColorPicker] = useState(false)
-
-  const handleColorChange = (hue: number, saturation: number, lightness: number, part: string) => {
-    // TODO: Integrate with editor store to update car paint colors
-    // Example: 
-    // editorStore.applyPaint({
-    //   part,
-    //   hue,
-    //   saturation,
-    //   lightness
-    // })
-    console.log(`Paint ${part} with HSL(${hue}, ${saturation}%, ${lightness}%)`)
-  }
 
   const tabs: Array<{
     id: PanelType
@@ -47,7 +33,6 @@ export function MobileEditorLayout({
   }> = [
     { id: 'car', label: 'Car', icon: <Car size={24} /> },
     { id: 'text', label: 'Text', icon: <Type size={24} /> },
-    { id: 'color', label: 'Color', icon: <Palette size={24} /> },
     { id: 'elements', label: 'Elements', icon: <Layers size={24} /> },
     {
       id: 'stripes',
@@ -91,14 +76,12 @@ export function MobileEditorLayout({
 
   const renderPanelContent = () => {
     switch (activePanel) {
+      case 'car':
+        return <MobileCarColorsPanel onClose={() => setActivePanel(null)} />
       case 'elements':
         return <DecalLibraryPanel onDecalPicked={() => setActivePanel(null)} isGuest={isGuest} onGuestSignIn={onGuestSignIn} />
       case 'text':
         return <TextLibraryPanel onFontPicked={() => setActivePanel(null)} isGuest={isGuest} onGuestSignIn={onGuestSignIn} />
-      case 'car':
-        return <CarLibraryPanel onClose={() => setActivePanel(null)} />
-      case 'color':
-        return null // Color picker is rendered separately below
       case 'split':
         return <SplitLibraryPanel onClose={() => setActivePanel(null)} />
       case 'stripes':
@@ -117,32 +100,40 @@ export function MobileEditorLayout({
       {/* Full-width 3D viewport */}
       <div className="mobile-viewport-container">{editorCanvas}</div>
 
-      {/* Bottom sheet panel + tab bar */}
-      <div className="mobile-bottom-sheet">
-        {/* Content panel (slides up when a tab is selected) */}
-        {activePanel && activePanel !== 'color' && (
-          <div className="mobile-content-panel">
-            <div className="mobile-panel-header">
-              <h3 className="mobile-panel-title">
-                {tabs.find((t) => t.id === activePanel)?.label}
-              </h3>
-              <button
-                type="button"
-                className="mobile-panel-close"
-                onClick={() => setActivePanel(null)}
-                aria-label="Close panel"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="mobile-panel-content">
-              <Suspense fallback={<div style={{ padding: 12, textAlign: 'center', color: '#a6dfff' }}>Loading...</div>}>
-                {renderPanelContent()}
-              </Suspense>
-            </div>
-          </div>
-        )}
+      {/* Overlay when panel is open */}
+      {activePanel && (
+        <div
+          className="mobile-overlay"
+          onClick={() => setActivePanel(null)}
+        />
+      )}
 
+      {/* Content panel overlay */}
+      {activePanel && (
+        <div className="mobile-content-panel">
+          <div className="mobile-panel-header">
+            <h3 className="mobile-panel-title">
+              {tabs.find((t) => t.id === activePanel)?.label}
+            </h3>
+            <button
+              type="button"
+              className="mobile-panel-close"
+              onClick={() => setActivePanel(null)}
+              aria-label="Close panel"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="mobile-panel-content">
+            <Suspense fallback={<div style={{ padding: 12, textAlign: 'center', color: '#a6dfff' }}>Loading...</div>}>
+              {renderPanelContent()}
+            </Suspense>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom sheet: ONLY the tab bar now */}
+      <div className="mobile-bottom-sheet">
         {!simplified && (
           <div className="mobile-inspector-strip">
             <InspectorPanel />
@@ -156,15 +147,7 @@ export function MobileEditorLayout({
               key={tab.id}
               type="button"
               className={`mobile-tab-button${activePanel === tab.id ? ' active' : ''}`}
-              onClick={() => {
-                if (tab.id === 'color') {
-                  setShowColorPicker(!showColorPicker)
-                  setActivePanel(tab.id)
-                } else {
-                  setShowColorPicker(false)
-                  setActivePanel(activePanel === tab.id ? null : tab.id)
-                }
-              }}
+              onClick={() => setActivePanel(activePanel === tab.id ? null : tab.id)}
               aria-label={tab.label}
               title={tab.label}
             >
@@ -174,16 +157,6 @@ export function MobileEditorLayout({
           ))}
         </div>
       </div>
-
-      {/* Color Picker Bottom Sheet */}
-      <MobileColorPickerPanel
-        isOpen={showColorPicker && activePanel === 'color'}
-        onClose={() => {
-          setShowColorPicker(false)
-          setActivePanel(null)
-        }}
-        onColorChange={handleColorChange}
-      />
     </div>
   )
 }
