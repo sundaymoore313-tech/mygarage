@@ -5703,7 +5703,12 @@ hr {
     height: auto;
     min-height: 100dvh;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: visible;
+  }
+
+  /* Allow File menu dropdown to escape mobile layout overflow */
+  .mobile-editor-layout {
+    overflow: visible !important;
   }
 
   .car-selector-page {
