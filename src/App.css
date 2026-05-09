@@ -5795,7 +5795,7 @@ hr {
     width: 100%;
     flex-wrap: nowrap;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start;
@@ -5993,7 +5993,7 @@ hr {
     min-width: 0;
     flex-wrap: nowrap;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     scrollbar-width: none;
   }
 

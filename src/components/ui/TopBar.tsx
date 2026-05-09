@@ -625,40 +625,6 @@ export function TopBar({
             >
               Change Car
             </button>
-            <div className="top-bar-divider" />
-            {isGuest ? (
-              <button
-                type="button"
-                className="top-guest-signin"
-                onClick={onGuestSignIn}
-                title="Sign in to create an account"
-                aria-label="Sign in"
-              >
-                Sign In
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="top-profile-bubble"
-                onClick={onOpenProfile}
-                title="Open profile"
-                aria-label="Open profile"
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt="Profile"
-                    className="top-profile-bubble-img"
-                    onError={() => {
-                      localStorage.removeItem(PROFILE_AVATAR_KEY)
-                      setAvatarUrl(null)
-                    }}
-                  />
-                ) : (
-                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
-                )}
-              </button>
-            )}
           </>
         )}
         {!isSvgMode && !mobileCompact && <HistoryMenu />}
@@ -675,40 +641,6 @@ export function TopBar({
             >
               Change Car
             </button>
-            <div className="top-bar-divider" />
-            {isGuest ? (
-              <button
-                type="button"
-                className="top-guest-signin"
-                onClick={onGuestSignIn}
-                title="Sign in to create an account"
-                aria-label="Sign in"
-              >
-                Sign In
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="top-profile-bubble"
-                onClick={onOpenProfile}
-                title="Open profile"
-                aria-label="Open profile"
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt="Profile"
-                    className="top-profile-bubble-img"
-                    onError={() => {
-                      localStorage.removeItem(PROFILE_AVATAR_KEY)
-                      setAvatarUrl(null)
-                    }}
-                  />
-                ) : (
-                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
-                )}
-              </button>
-            )}
             <div className="top-bar-divider" />
             {cameraViews.map((view) => (
               <button
@@ -846,6 +778,45 @@ export function TopBar({
                   {getPlanLabel(planTier)}
                 </span>
               </>
+            )}
+          </>
+        )}
+
+        {!isSvgMode && (
+          <>
+            <div className="top-bar-divider" />
+            {isGuest ? (
+              <button
+                type="button"
+                className="top-guest-signin"
+                onClick={onGuestSignIn}
+                title="Sign in to create an account"
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="top-profile-bubble"
+                onClick={onOpenProfile}
+                title="Open profile"
+                aria-label="Open profile"
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Profile"
+                    className="top-profile-bubble-img"
+                    onError={() => {
+                      localStorage.removeItem(PROFILE_AVATAR_KEY)
+                      setAvatarUrl(null)
+                    }}
+                  />
+                ) : (
+                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
+                )}
+              </button>
             )}
           </>
         )}
