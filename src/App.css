@@ -219,9 +219,11 @@
 
 .mobile-panel-content {
   flex: 1;
+  display: flex;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px;
+  padding: 0;
   color: #e8edf2;
 }
 
