@@ -574,7 +574,7 @@ export function TopBar({
 
         <div className="top-bar-divider" />
 
-        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} />
+        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} mobileCompact={mobileCompact} />
 
         <div className="top-bar-divider" />
 
