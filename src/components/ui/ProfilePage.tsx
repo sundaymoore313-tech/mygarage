@@ -638,6 +638,7 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
         </div>
       </section>
 
+      <div className="profile-scroll-container">
       <section className="profile-about-section">
         <div className="profile-about-head">
           <h3>About Me</h3>
@@ -749,6 +750,7 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
           {clearResult && <span className="profile-clear-result">{clearResult}</span>}
         </div>
       </section>
+      </div>
     </div>
   )
 }

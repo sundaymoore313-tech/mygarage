@@ -8696,8 +8696,7 @@ hr {
   color: #e8edf2;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .profile-topbar {
@@ -8709,8 +8708,7 @@ hr {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(10, 10, 10, 0.95);
   backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 100;
 }
 
@@ -8837,9 +8835,7 @@ hr {
   background: rgba(10, 10, 10, 0.96);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  position: sticky;
-  top: 66px;
-  z-index: 99;
+  flex-shrink: 0;
 }
 
 .profile-user-name {
@@ -8953,8 +8949,6 @@ hr {
 .profile-about-section {
   margin-top: 0;
   margin-bottom: 22px;
-  margin-left: 24px;
-  margin-right: 24px;
   background: rgba(10, 10, 10, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -9272,6 +9266,12 @@ hr {
   border-color: rgba(245, 158, 11, 0.44);
   background: rgba(245, 158, 11, 0.14);
   color: #fde68a;
+}
+
+.profile-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .profile-projects-section {
