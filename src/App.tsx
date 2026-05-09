@@ -17,11 +17,13 @@ import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
 import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
+import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession } from './lib/sessionPersistence'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
 const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const SCREEN_QUERY_KEY = 'screen'
+const PROJECT_ID_QUERY_KEY = 'projectId'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
 
 function detectMobileEditorViewport(): boolean {
@@ -56,13 +58,25 @@ function readScreenFromUrl(): AppScreen | null {
   return isAppScreen(value) ? value : null
 }
 
-function buildUrlForScreen(screen: AppScreen): string {
+function readProjectIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get(PROJECT_ID_QUERY_KEY)
+}
+
+function buildUrlForScreen(screen: AppScreen, projectId?: string | null): string {
   if (typeof window === 'undefined') return ''
   const url = new URL(window.location.href)
   if (screen === 'home') {
     url.searchParams.delete(SCREEN_QUERY_KEY)
+    url.searchParams.delete(PROJECT_ID_QUERY_KEY)
   } else {
     url.searchParams.set(SCREEN_QUERY_KEY, screen)
+    if (screen === 'editor' && projectId) {
+      url.searchParams.set(PROJECT_ID_QUERY_KEY, projectId)
+    } else {
+      url.searchParams.delete(PROJECT_ID_QUERY_KEY)
+    }
   }
   return `${url.pathname}${url.search}${url.hash}`
 }
@@ -252,12 +266,18 @@ function App() {
   const selectCar = useEditorStore((state) => state.selectCar)
   const clearSelectedCar = useEditorStore((state) => state.clearSelectedCar)
   const selectedCar = useEditorStore((state) => state.selectedCar)
+  const project = useEditorStore((state) => state.project)
   const [screen, setScreen] = useState<AppScreen>(() => readScreenFromUrl() ?? 'home')
+  const [projectId, setProjectId] = useState<string | null>(() => readProjectIdFromUrl())
   const [isGuest, setIsGuest] = useState(false)
   const [userPlan, setUserPlan] = useState<NonGuestPlanTier>(() => readCachedPlanTier())
   const [classifyWindowClickThrough, setClassifyWindowClickThrough] = useState(false)
   const [classifyBodyClickThrough, setClassifyBodyClickThrough] = useState(false)
   const [classifyShowMeshNames, setClassifyShowMeshNames] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [lastSaveMs, setLastSaveMs] = useState(Date.now())
+  const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false)
+  const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
@@ -295,24 +315,32 @@ function App() {
   const editorWarmRef = useRef(false)
   const skipHistoryPushRef = useRef(false)
   const historyHydratedRef = useRef(false)
+  const autoSaveIntervalRef = useRef<number | null>(null)
+  const lastAutoSaveStateRef = useRef<string>('')
   const accountPlan = isGuest ? 'guest' : userPlan
 
   useEffect(() => {
     if (typeof window === 'undefined') return
 
     const initialScreen = readScreenFromUrl() ?? 'home'
-    window.history.replaceState({ mygarage: true, screen: initialScreen }, '', buildUrlForScreen(initialScreen))
+    const initialProjectId = readProjectIdFromUrl()
+    
+    window.history.replaceState({ mygarage: true, screen: initialScreen, projectId: initialProjectId }, '', buildUrlForScreen(initialScreen, initialProjectId))
 
-    if (initialScreen !== screen) {
+    if (initialScreen !== screen || initialProjectId !== projectId) {
       skipHistoryPushRef.current = true
       setScreen(initialScreen)
+      setProjectId(initialProjectId)
     }
 
     const onPopState = (event: PopStateEvent) => {
-      const stateScreen = (event.state as { screen?: unknown } | null)?.screen
+      const stateScreen = (event.state as { screen?: unknown; projectId?: unknown } | null)?.screen
+      const stateProjectId = (event.state as { screen?: unknown; projectId?: unknown } | null)?.projectId as string | null | undefined
       const nextScreen = isAppScreen(stateScreen) ? stateScreen : (readScreenFromUrl() ?? 'home')
+      const nextProjectId = stateProjectId ?? readProjectIdFromUrl()
       skipHistoryPushRef.current = true
       setScreen(nextScreen)
+      setProjectId(nextProjectId ?? null)
     }
 
     window.addEventListener('popstate', onPopState)
@@ -330,14 +358,104 @@ function App() {
       return
     }
 
-    window.history.pushState({ mygarage: true, screen }, '', buildUrlForScreen(screen))
-  }, [screen])
+    window.history.pushState({ mygarage: true, screen, projectId }, '', buildUrlForScreen(screen, projectId))
+  }, [screen, projectId])
 
   useEffect(() => {
     if (screen === 'editor' && !selectedCar) {
       setScreen('selector')
     }
   }, [screen, selectedCar])
+
+  // Recovery prompt on first load
+  useEffect(() => {
+    if (screen !== 'home') return // Only check on home screen
+    const recoverable = getRecoverableSession()
+    if (recoverable) {
+      setRecoverableProjectId(recoverable.projectId)
+      setShowRecoveryPrompt(true)
+    }
+  }, [screen])
+
+  // Load project when projectId changes and restore editor state
+  useEffect(() => {
+    if (screen !== 'editor' || !projectId) return
+
+    const loadProjectAndRestore = async () => {
+      try {
+        const full = await loadFullProjectByIdWithCloud(projectId)
+        if (full) {
+          selectCar({
+            name: full.carName,
+            modelUrl: full.modelUrl,
+            groundOffsetY: full.groundOffsetY,
+          })
+          // Restore draft state if it exists
+          const draft = readDraftProject(projectId)
+          if (draft) {
+            const loadProject = useEditorStore.getState().loadProject
+            loadProject(draft.project)
+            setLastSaveMs(draft.savedAtMs)
+          }
+          // Update session
+          writeSession({
+            projectId,
+            screen: 'editor',
+            lastSaveMs: Date.now(),
+            lastAutoSaveMs: Date.now(),
+          })
+          confirmSession()
+        }
+      } catch (err) {
+        console.error('Failed to load project:', err)
+      }
+    }
+
+    void loadProjectAndRestore()
+  }, [projectId, screen, selectCar])
+
+  // Auto-save effect: periodically save state to localStorage
+  useEffect(() => {
+    if (screen !== 'editor' || !projectId) {
+      if (autoSaveIntervalRef.current) {
+        clearInterval(autoSaveIntervalRef.current)
+        autoSaveIntervalRef.current = null
+      }
+      return
+    }
+
+    const performAutoSave = () => {
+      const currentStateJson = JSON.stringify(project)
+      if (currentStateJson !== lastAutoSaveStateRef.current) {
+        lastAutoSaveStateRef.current = currentStateJson
+        setIsSaving(true)
+        try {
+          saveDraftProject(projectId, project)
+          setLastSaveMs(Date.now())
+          setIsSaving(false)
+          // Update session
+          writeSession({
+            projectId,
+            screen: 'editor',
+            lastSaveMs: Date.now(),
+            lastAutoSaveMs: Date.now(),
+          })
+        } catch (err) {
+          console.error('Auto-save failed:', err)
+          setIsSaving(false)
+        }
+      }
+    }
+
+    autoSaveIntervalRef.current = window.setInterval(performAutoSave, 15000) // 15 seconds
+
+    return () => {
+      if (autoSaveIntervalRef.current) {
+        clearInterval(autoSaveIntervalRef.current)
+        autoSaveIntervalRef.current = null
+      }
+    }
+  }, [screen, projectId, project])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -538,6 +656,14 @@ function App() {
     })
     useEditorStore.getState().loadProject(full.project)
     useEditorStore.setState({ targetPaints: full.targetPaints, targetPrints: full.targetPrints })
+    setProjectId(full.id)
+    saveDraftProject(full.id, full.project)
+    writeSession({
+      projectId: full.id,
+      screen: 'editor',
+      lastSaveMs: Date.now(),
+      lastAutoSaveMs: Date.now(),
+    })
     setScreen('editor')
   }
 
@@ -572,8 +698,90 @@ function App() {
     setMobilePanelExpanded(false)
     clearModelSceneCache()
     clearSelectedCar()
+    setProjectId(null)
     setScreen('selector')
   }, [isMobileViewport, clearSelectedCar])
+
+  // Handle recovery prompt
+  const handleRecoverProject = async () => {
+    if (recoverableProjectId) {
+      setShowRecoveryPrompt(false)
+      setProjectId(recoverableProjectId)
+      setScreen('editor')
+    }
+  }
+
+  const handleDiscardRecovery = () => {
+    if (recoverableProjectId) {
+      clearDraftProject(recoverableProjectId)
+    }
+    setShowRecoveryPrompt(false)
+    setRecoverableProjectId(null)
+  }
+
+  // Recovery modal
+  if (showRecoveryPrompt && recoverableProjectId) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 9999,
+      }}>
+        <div style={{
+          backgroundColor: '#0e1218',
+          border: '1px solid rgba(62,201,255,0.2)',
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 400,
+          color: '#c8dae8',
+        }}>
+          <h2 style={{ marginTop: 0, fontSize: '1.25rem', fontWeight: 600, color: '#fff' }}>
+            Resume your project?
+          </h2>
+          <p style={{ marginBottom: 24, opacity: 0.8 }}>
+            We found an unsaved draft of your project. Would you like to resume editing it?
+          </p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={handleDiscardRecovery}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: '1px solid rgba(62,201,255,0.25)',
+                background: 'rgba(255,255,255,0.05)',
+                color: '#c8dae8',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+              }}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={handleRecoverProject}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#3ec9ff',
+                color: '#000',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+              }}
+            >
+              Resume
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (screen === 'home') {
     return <HomePage
@@ -660,6 +868,8 @@ function App() {
           cloudStatusTone={cloudStatusTone}
           exportQuality={exportQuality}
           onExportQualityChange={setExportQuality}
+          isSaving={isSaving}
+          lastSaveMs={lastSaveMs}
         />
 
         <MobileEditorLayout
@@ -780,6 +990,8 @@ function App() {
         cloudStatusTone={cloudStatusTone}
         exportQuality={exportQuality}
         onExportQualityChange={setExportQuality}
+        isSaving={isSaving}
+        lastSaveMs={lastSaveMs}
       />
 
       {printExportOpen && (

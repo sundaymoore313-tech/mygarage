@@ -75,6 +75,8 @@ type TopBarProps = {
   exportQuality?: ExportQuality
   onExportQualityChange?: (quality: ExportQuality) => void
   mobileCompact?: boolean
+  isSaving?: boolean
+  lastSaveMs?: number
 }
 
 const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
