@@ -275,40 +275,43 @@
 .mobile-gradient-row::-webkit-scrollbar { display: none; }
 
 .mobile-grad-label {
-
-  /* ── Gradient slot buttons ────────────────────────────────── */
-  .mobile-grad-slot-btn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 10px;
-    border-radius: 20px;
-    border: 2px solid rgba(62, 201, 255, 0.18);
-    background: rgba(255, 255, 255, 0.05);
-    color: #c8dae8;
-    font-size: 0.9rem;
-    font-weight: 700;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: border-color 0.15s, background 0.15s;
-    touch-action: manipulation;
-  }
-  .mobile-grad-slot-btn.active {
-    border-color: #3ec9ff;
-    background: rgba(62, 201, 255, 0.18);
-    color: #fff;
-  }
-  .mobile-grad-slot-dot {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,0.35);
-    flex-shrink: 0;
-    display: inline-block;
-  }
   font-size: 0.72rem;
   color: #6a8098;
   flex-shrink: 0;
+}
+
+.mobile-swatches-row--locked {
+  position: relative;
+}
+
+.mobile-chips-sep--swatches {
+  margin: 0 6px 0 8px;
+}
+
+.mobile-color-swatch--locked {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 0 0 2px rgba(18, 24, 32, 0.92), 0 10px 18px rgba(0, 0, 0, 0.24);
+}
+
+.mobile-color-swatch--locked-second {
+  left: 54px;
+}
+
+.mobile-color-swatch--locked.active {
+  box-shadow: 0 0 0 2px #3ec9ff, 0 10px 18px rgba(0, 0, 0, 0.24);
+}
+
+.mobile-color-swatch-number {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .mobile-color-input {
@@ -353,6 +356,11 @@
   background: #3ec9ff;
   border: 2px solid #fff;
   cursor: pointer;
+}
+
+.mobile-slider--wide {
+  min-width: 92px;
+  max-width: 120px;
 }
 
 /* ── Font chips ──────────────────────────────────────────── */

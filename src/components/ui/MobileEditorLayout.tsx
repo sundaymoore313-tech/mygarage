@@ -209,6 +209,15 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
           <div className="mobile-chips-row">
             <button type="button" className={`mobile-chip${paintMode === 'paint' ? ' active' : ''}`} onClick={() => setPaintMode('paint')}>Paint</button>
             <button type="button" className={`mobile-chip${paintMode === 'gradient' ? ' active' : ''}`} onClick={() => setPaintMode('gradient')}>Gradient</button>
+            {paintMode === 'gradient' && (
+              <button
+                type="button"
+                className={`mobile-chip${carGradient.enabled ? ' active' : ''}`}
+                onClick={() => setCarGradient({ enabled: !carGradient.enabled })}
+              >
+                {carGradient.enabled ? 'On' : 'Off'}
+              </button>
+            )}
             <span className="mobile-chips-sep" />
             {PAINT_TARGETS.map(t => (
               <button key={t.id} type="button"
@@ -237,30 +246,17 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             </div>
           ) : (
             <>
-              {/* Gradient controls row: slot selectors + axis + balance */}
+              {/* Gradient controls row: axis + balance */}
               <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
-                <button type="button"
-                  className={`mobile-grad-slot-btn${gradColorSlot === 1 ? ' active' : ''}`}
-                  style={{ '--slot-color': carGradient.fromHex } as React.CSSProperties}
-                  onClick={() => setGradColorSlot(1)}
-                  title="Color 1 (from)"
-                >
-                  <span className="mobile-grad-slot-dot" style={{ backgroundColor: carGradient.fromHex }} />①
-                </button>
-                <button type="button"
-                  className={`mobile-grad-slot-btn${gradColorSlot === 2 ? ' active' : ''}`}
-                  style={{ '--slot-color': carGradient.toHex } as React.CSSProperties}
-                  onClick={() => setGradColorSlot(2)}
-                  title="Color 2 (to)"
-                >
-                  <span className="mobile-grad-slot-dot" style={{ backgroundColor: carGradient.toHex }} />②
-                </button>
-                <span className="mobile-chips-sep" />
-                {(['x', 'y'] as const).map(axis => (
+                {([
+                  { axis: 'x' as const, label: 'Horiz' },
+                  { axis: 'y' as const, label: 'Vert' },
+                  { axis: 'z' as const, label: 'Front' },
+                ]).map(({ axis, label }) => (
                   <button key={axis} type="button"
                     className={`mobile-chip${carGradient.axis === axis ? ' active' : ''}`}
                     onClick={() => setCarGradient({ enabled: true, axis })}
-                  >{axis === 'x' ? 'Horiz' : 'Vert'}</button>
+                  >{label}</button>
                 ))}
                 <span className="mobile-chips-sep" />
                 <span className="mobile-grad-label">Balance</span>
@@ -269,8 +265,29 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                   className="mobile-slider" style={{ width: 90 }}
                 />
               </div>
-              {/* Color swatches for the selected gradient slot */}
-              <div className="mobile-swatches-row">
+              {/* Locked slot swatches followed by the palette */}
+              <div className="mobile-swatches-row mobile-swatches-row--locked">
+                <button
+                  type="button"
+                  className={`mobile-color-swatch mobile-color-swatch--locked${gradColorSlot === 1 ? ' active' : ''}`}
+                  style={{ backgroundColor: carGradient.fromHex }}
+                  onClick={() => setGradColorSlot(1)}
+                  aria-label="Gradient color 1"
+                  title="Gradient color 1"
+                >
+                  <span className="mobile-color-swatch-number">1</span>
+                </button>
+                <button
+                  type="button"
+                  className={`mobile-color-swatch mobile-color-swatch--locked mobile-color-swatch--locked-second${gradColorSlot === 2 ? ' active' : ''}`}
+                  style={{ backgroundColor: carGradient.toHex }}
+                  onClick={() => setGradColorSlot(2)}
+                  aria-label="Gradient color 2"
+                  title="Gradient color 2"
+                >
+                  <span className="mobile-color-swatch-number">2</span>
+                </button>
+                <span className="mobile-chips-sep mobile-chips-sep--swatches" />
                 {CAR_COLORS.map(c => (
                   <button key={c.name} type="button" className="mobile-color-swatch"
                     style={{ backgroundColor: c.hex }}
@@ -289,7 +306,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── TEXT ─────────────────────────────────────────────────
       case 'text': {
-        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { scale: { x: number; y: number; z: number } } } : null
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { position: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
@@ -350,13 +367,43 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               <span className="mobile-grad-label">{textLayer.transform.scale.x.toFixed(2)}×</span>
             </div>
           )}
+          {textLayer && (
+            <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
+              <span className="mobile-strip-label">Horz</span>
+              <input type="range" min={-4} max={4} step={0.01}
+                value={textLayer.transform.position.x}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider mobile-slider--wide"
+              />
+              <span className="mobile-strip-label">Vert</span>
+              <input type="range" min={-4} max={4} step={0.01}
+                value={textLayer.transform.position.y}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider mobile-slider--wide"
+              />
+            </div>
+          )}
         </div>
         )
       }
 
       // ── ELEMENTS ─────────────────────────────────────────────
       case 'elements': {
-        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { scale: { x: number; y: number; z: number } } } : null
+        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { position: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
@@ -395,6 +442,36 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 className="mobile-slider" style={{ flex: 1, maxWidth: 160 }}
               />
               <span className="mobile-grad-label">{decalLayer.transform.scale.x.toFixed(2)}×</span>
+            </div>
+          )}
+          {decalLayer && (
+            <div className="mobile-chips-row" style={{ paddingTop: 2, paddingBottom: 8, gap: 10 }}>
+              <span className="mobile-strip-label">Horz</span>
+              <input type="range" min={-4} max={4} step={0.01}
+                value={decalLayer.transform.position.x}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(decalLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(decalLayer.id, { transform: { position: { x: v } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider mobile-slider--wide"
+              />
+              <span className="mobile-strip-label">Vert</span>
+              <input type="range" min={-4} max={4} step={0.01}
+                value={decalLayer.transform.position.y}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(decalLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(decalLayer.id, { transform: { position: { y: v } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider mobile-slider--wide"
+              />
             </div>
           )}
           <div className="mobile-decals-row">
