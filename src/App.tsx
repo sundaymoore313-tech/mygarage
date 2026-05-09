@@ -287,6 +287,7 @@ function App() {
   const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
   const [tabSyncNotification, setTabSyncNotification] = useState<string | null>(null)
   const [editorProjectHydrated, setEditorProjectHydrated] = useState(false)
+  const hasCheckedRecoveryRef = useRef(false)
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
@@ -389,6 +390,8 @@ function App() {
 
   // Recovery prompt on first load
   useEffect(() => {
+    if (hasCheckedRecoveryRef.current) return
+    hasCheckedRecoveryRef.current = true
     if (screen !== 'home') return // Only check on home screen
     const recoverable = getRecoverableSession()
     if (recoverable) {
