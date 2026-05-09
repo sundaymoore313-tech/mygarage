@@ -831,7 +831,10 @@ function App() {
 
   const handleOpenProject = async (id: string) => {
     const full = await loadFullProjectByIdWithCloud(id)
-    if (!full || !full.modelUrl) return
+    if (!full || !full.modelUrl) {
+      alert('This project could not be opened on this device right now. Please try again after syncing or saving once more.')
+      return
+    }
     beginEditorOpen('profile_project')
     selectCar({
       name: full.carName,
@@ -1132,7 +1135,7 @@ function App() {
           </Suspense>
         )}
 
-        {videoRecordOpen && videoStreamGetter && (
+        {videoRecordOpen && (
           <Suspense fallback={null}>
             <VideoRecordModal
               getStream={videoStreamGetter}
@@ -1249,7 +1252,7 @@ function App() {
         </Suspense>
       )}
 
-      {videoRecordOpen && videoStreamGetter && (
+      {videoRecordOpen && (
         <Suspense fallback={null}>
           <VideoRecordModal
             getStream={videoStreamGetter}

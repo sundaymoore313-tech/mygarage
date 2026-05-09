@@ -103,7 +103,7 @@ function writeSavedProjects(items: SavedProjectCard[]) {
 
 function normalizePreviewForLocal(url?: string | null): string | undefined {
   if (!url) return undefined
-  return url.startsWith('data:image/') ? undefined : url
+  return url
 }
 
 function normalizeCardsForLocal(cards: SavedProjectCard[]): SavedProjectCard[] {

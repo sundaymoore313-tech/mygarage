@@ -89,6 +89,87 @@ type DecalItem = { name: string; url: string; fileName: string }
 // ── Component ──────────────────────────────────────────────────
 type LayerScaleMode = 'uniform' | 'horl' | 'vert' | 'rotate'
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function hexToHsl(hex: string) {
+  const normalized = hex.replace('#', '').trim()
+  const expanded = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized
+
+  const intValue = Number.parseInt(expanded, 16)
+  if (!Number.isFinite(intValue)) return { h: 0, s: 0, l: 50 }
+
+  const red = ((intValue >> 16) & 255) / 255
+  const green = ((intValue >> 8) & 255) / 255
+  const blue = (intValue & 255) / 255
+
+  const maxChannel = Math.max(red, green, blue)
+  const minChannel = Math.min(red, green, blue)
+  const lightness = (maxChannel + minChannel) / 2
+
+  if (maxChannel === minChannel) {
+    return { h: 0, s: 0, l: Math.round(lightness * 100) }
+  }
+
+  const delta = maxChannel - minChannel
+  const saturation = lightness > 0.5
+    ? delta / (2 - maxChannel - minChannel)
+    : delta / (maxChannel + minChannel)
+
+  let hue = 0
+  switch (maxChannel) {
+    case red:
+      hue = (green - blue) / delta + (green < blue ? 6 : 0)
+      break
+    case green:
+      hue = (blue - red) / delta + 2
+      break
+    default:
+      hue = (red - green) / delta + 4
+      break
+  }
+
+  return {
+    h: Math.round(hue * 60) % 360,
+    s: Math.round(saturation * 100),
+    l: Math.round(lightness * 100),
+  }
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const h = ((hue % 360) + 360) % 360
+  const s = clamp(saturation, 0, 100) / 100
+  const l = clamp(lightness, 0, 100) / 100
+
+  const chroma = (1 - Math.abs(2 * l - 1)) * s
+  const secondary = chroma * (1 - Math.abs(((h / 60) % 2) - 1))
+  const match = l - chroma / 2
+
+  let red = 0
+  let green = 0
+  let blue = 0
+
+  if (h < 60) {
+    red = chroma; green = secondary
+  } else if (h < 120) {
+    red = secondary; green = chroma
+  } else if (h < 180) {
+    green = chroma; blue = secondary
+  } else if (h < 240) {
+    green = secondary; blue = chroma
+  } else if (h < 300) {
+    red = secondary; blue = chroma
+  } else {
+    red = chroma; blue = secondary
+  }
+
+  const toHex = (channel: number) => Math.round((channel + match) * 255).toString(16).padStart(2, '0')
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`
+}
+
 export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: MobileEditorLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabId | null>(null)
   const [layerScaleMode, setLayerScaleMode] = useState<LayerScaleMode>('uniform')
@@ -97,8 +178,10 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const setPaint               = useEditorStore(s => s.setPaint)
   const setSelectedPaintTarget = useEditorStore(s => s.setSelectedPaintTarget)
   const selectedPaintTarget    = useEditorStore(s => s.selectedPaintTarget)
+  const paintColorHex          = useEditorStore(s => s.project.paint.colorHex)
   const currentFinish          = useEditorStore(s => s.project.paint.finish)
   const [paintMode, setPaintMode] = useState<'paint' | 'gradient'>('paint')
+  const paintHsl = hexToHsl(paintColorHex)
 
   // Gradient
   const carGradient    = useEditorStore(s => s.project.carGradient)
@@ -313,12 +396,36 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               </div>
             </>
           )}
+
+          {paintMode === 'paint' && (
+            <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
+              <span className="mobile-slider-label">Saturation</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={paintHsl.s}
+                onChange={(e) => {
+                  const nextSaturation = Number(e.target.value)
+                  const nextColor = hslToHex(paintHsl.h, nextSaturation, paintHsl.l)
+                  setPaint({ colorHex: nextColor })
+                }}
+                className="mobile-slider mobile-slider--transform mobile-slider--saturation"
+                style={{
+                  background: `linear-gradient(to right, hsl(${paintHsl.h}, 0%, ${paintHsl.l}%), hsl(${paintHsl.h}, 100%, ${paintHsl.l}%))`,
+                }}
+              />
+              <span className="mobile-slider-val">{paintHsl.s}%</span>
+            </div>
+          )}
         </div>
       )
 
       // ── TEXT ─────────────────────────────────────────────────
       case 'text': {
-        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const textHsl = textLayer ? hexToHsl(textLayer.colorHex) : null
         return (
         <div className="mobile-car-controls">
           {/* Font chips */}
@@ -364,6 +471,41 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
           {/* Text input + transform controls — shown when a text layer is selected */}
           {textLayer && (
             <>
+              <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
+                <span className="mobile-strip-label">Finish</span>
+                {FINISHES.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`mobile-chip${textLayer.finish === f.id ? ' active' : ''}`}
+                    onClick={() => updateLayer(textLayer.id, { finish: f.id } as Parameters<typeof updateLayer>[1])}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {textHsl && (
+                <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
+                  <span className="mobile-slider-label">Saturation</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={textHsl.s}
+                    onChange={(e) => {
+                      const nextSaturation = Number(e.target.value)
+                      const nextHex = hslToHex(textHsl.h, nextSaturation, textHsl.l)
+                      updateLayer(textLayer.id, { colorHex: nextHex } as Parameters<typeof updateLayer>[1])
+                    }}
+                    className="mobile-slider mobile-slider--transform mobile-slider--saturation"
+                    style={{
+                      background: `linear-gradient(to right, hsl(${textHsl.h}, 0%, ${textHsl.l}%), hsl(${textHsl.h}, 100%, ${textHsl.l}%))`,
+                    }}
+                  />
+                  <span className="mobile-slider-val">{textHsl.s}%</span>
+                </div>
+              )}
               {/* Inline text edit input */}
               <div className="mobile-layer-input-row">
                 <input
@@ -555,6 +697,10 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
       // ── STRIPES ──────────────────────────────────────────────
       case 'stripes': return (
         <div className="mobile-car-controls">
+          {(() => {
+            const stripeHsl = hexToHsl(carStripe.colorHex)
+            return (
+              <>
           {/* Preset chips */}
           <div className="mobile-chips-row">
             {/* ON/OFF toggle */}
@@ -623,12 +769,40 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               />
             ))}
           </div>
+          <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
+            <span className="mobile-slider-label">Saturation</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={stripeHsl.s}
+              onChange={(e) => {
+                const nextSaturation = Number(e.target.value)
+                const nextHex = hslToHex(stripeHsl.h, nextSaturation, stripeHsl.l)
+                setCarStripe({ colorHex: nextHex, enabled: true })
+              }}
+              className="mobile-slider mobile-slider--transform mobile-slider--saturation"
+              style={{
+                background: `linear-gradient(to right, hsl(${stripeHsl.h}, 0%, ${stripeHsl.l}%), hsl(${stripeHsl.h}, 100%, ${stripeHsl.l}%))`,
+              }}
+            />
+            <span className="mobile-slider-val">{stripeHsl.s}%</span>
+          </div>
+              </>
+            )
+          })()}
         </div>
       )
 
       // ── SPLIT ────────────────────────────────────────────────
       case 'split': return (
         <div className="mobile-car-controls">
+          {(() => {
+            const activeSplitHex = splitSide === 'A' ? carSplit.sideAHex : carSplit.sideBHex
+            const splitHsl = hexToHsl(activeSplitHex)
+            return (
+              <>
           {/* Preset chips */}
           <div className="mobile-chips-row">
             {/* ON/OFF toggle */}
@@ -705,6 +879,29 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               />
             ))}
           </div>
+          <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
+            <span className="mobile-slider-label">Saturation</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={splitHsl.s}
+              onChange={(e) => {
+                const nextSaturation = Number(e.target.value)
+                const nextHex = hslToHex(splitHsl.h, nextSaturation, splitHsl.l)
+                setCarSplit(splitSide === 'A' ? { sideAHex: nextHex, enabled: true } : { sideBHex: nextHex, enabled: true })
+              }}
+              className="mobile-slider mobile-slider--transform mobile-slider--saturation"
+              style={{
+                background: `linear-gradient(to right, hsl(${splitHsl.h}, 0%, ${splitHsl.l}%), hsl(${splitHsl.h}, 100%, ${splitHsl.l}%))`,
+              }}
+            />
+            <span className="mobile-slider-val">{splitHsl.s}%</span>
+          </div>
+              </>
+            )
+          })()}
         </div>
       )
 

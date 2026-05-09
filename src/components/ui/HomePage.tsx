@@ -133,6 +133,7 @@ const LEGAL_NOTICE_ITEMS = [
 const DEFAULT_DISCORD_URL = 'https://discord.gg/mygaragewrapstudio'
 const CASHAPP_TAG = '$sundaymoore9'
 const CASHAPP_SUPPORT_URL = 'https://cash.app/$sundaymoore9'
+const MOBILE_HOME_LOGO_IMAGE = '/mobile-home-logo.png'
 
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
@@ -185,6 +186,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const [fontCount, setFontCount] = useState(49)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.16)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 860px)').matches
+  })
   const discordCommunityUrl = (
     (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
     (import.meta.env.VITE_DISCORD_INVITE_URL as string | undefined)?.trim() ||
@@ -196,6 +201,25 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const primaryCtaRef = useRef<HTMLButtonElement | null>(null)
   const lowerCtaRef = useRef<HTMLButtonElement | null>(null)
   const touchStartYRef = useRef<number | null>(null)
+  const heroBackgroundImageUrl = isMobileViewport ? MOBILE_HOME_LOGO_IMAGE : heroPreviewImageUrl
+  const visibleFeatures = isMobileViewport
+    ? FEATURES.filter((feature) => feature.title !== 'Create a Logo')
+    : FEATURES
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mediaQuery = window.matchMedia('(max-width: 860px)')
+    const updateMobileViewport = () => setIsMobileViewport(mediaQuery.matches)
+    updateMobileViewport()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateMobileViewport)
+      return () => mediaQuery.removeEventListener('change', updateMobileViewport)
+    }
+
+    mediaQuery.addListener(updateMobileViewport)
+    return () => mediaQuery.removeListener(updateMobileViewport)
+  }, [])
 
   function openDrawer() {
     setDrawerOpen(true)
@@ -512,9 +536,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     <div className="home-page">
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="home-hero">
-        <div className="home-hero-bg" aria-hidden="true">
-          <HeroCarScene modelUrl={heroModelUrl} />
-          {heroPreviewImageUrl ? (
+        <div
+          className="home-hero-bg"
+          aria-hidden="true"
+          style={heroBackgroundImageUrl ? { '--home-hero-preview-url': `url("${heroBackgroundImageUrl}")` } as React.CSSProperties : undefined}
+        >
+          {!isMobileViewport && <HeroCarScene modelUrl={heroModelUrl} />}
+          {!isMobileViewport && heroPreviewImageUrl ? (
             <img className="home-hero-preview-image" src={heroPreviewImageUrl} alt="Latest saved project preview" />
           ) : null}
         </div>
@@ -634,7 +662,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
                 Upload your car builds, send feedback, report bugs, and help shape future features.
               </p>
             </div>
-            <div className="home-support-creator" role="group" aria-label="Support MyGarage">
+            <div className="home-support-creator home-support-creator--desktop" role="group" aria-label="Support MyGarage">
               <p className="home-support-creator-title">Support MyGarage</p>
               <p className="home-support-creator-copy">If this app helps you, you can tip the creator on Cash App.</p>
               <a
@@ -708,7 +736,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
             Built with React, Three.js and pure SVG — no external render services.
           </p>
           <div className="home-features-grid">
-            {FEATURES.map((f) => (
+            {visibleFeatures.map((f) => (
               <div key={f.title} className="home-feature-card">
                 <div className="home-feature-icon">{f.icon}</div>
                 <h3 className="home-feature-title">{f.title}</h3>

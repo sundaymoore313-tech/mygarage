@@ -103,22 +103,32 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
 
   const handleSaveToProfile = () => {
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
-    if (selectedCar) {
-      const previewImageUrl = onCaptureProfilePreview?.() ?? null
-      const snapshotProject: EditorProject = {
-        ...project,
-        meta: {
-          ...project.meta,
-          id: makeId('project'),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      }
-      const result = saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
-      if (!result.ok) {
-        alert(result.error ?? 'Project save completed with warnings.')
-      }
+    if (!selectedCar) {
+      alert('No car selected yet. Pick a car first, then save to profile.')
+      setOpen(false)
+      return
     }
+
+    const previewImageUrl = onCaptureProfilePreview?.() ?? null
+    const snapshotProject: EditorProject = {
+      ...project,
+      meta: {
+        ...project.meta,
+        id: makeId('project'),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    }
+    const result = saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
+
+    if (!result.ok) {
+      alert(result.error ?? 'Project save completed with warnings.')
+    } else if (result.error) {
+      alert(result.error)
+    } else {
+      alert('Saved to Profile successfully.')
+    }
+
     setOpen(false)
   }
 

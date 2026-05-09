@@ -4,7 +4,7 @@ import type { ExportQuality } from '../../types/exportQuality'
 import { EXPORT_QUALITY_LABELS, EXPORT_QUALITY_ORDER } from '../../types/exportQuality'
 
 type Props = {
-  getStream: (quality?: ExportQuality) => MediaStream
+  getStream: ((quality?: ExportQuality) => MediaStream) | null
   onClose: () => void
   /** called with true when recording starts so the scene can enable auto-rotate */
   onRecordingChange?: (recording: boolean) => void
@@ -35,6 +35,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
   const rafRef = useRef<number | null>(null)
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null)
   const offscreenRef = useRef<HTMLCanvasElement | null>(null)
+  const streamReady = Boolean(getStream)
 
   const VIDEO_BITRATE_BY_QUALITY: Record<ExportQuality, number> = {
     standard: 6_000_000,
@@ -78,6 +79,10 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
 
   function startRecording() {
     setError(null)
+    if (!getStream) {
+      setError('Video capture is still initializing. Please wait a second and try again.')
+      return
+    }
     if (blobUrl) {
       URL.revokeObjectURL(blobUrl)
       setBlobUrl(null)
@@ -255,6 +260,12 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
           Picks up the live 3D scene. Enable <strong>⟳ Spin</strong> before recording for a smooth turntable.
         </p>
 
+        {!streamReady && (
+          <div className="selector-hint" role="status" style={{ marginTop: -4 }}>
+            Preparing video engine... keep this popup open for a moment.
+          </div>
+        )}
+
         <div className="video-duration-row">
           <span className="video-duration-label">Quality</span>
           {EXPORT_QUALITY_ORDER.map((q) => (
@@ -332,9 +343,9 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
 
         <div className="social-modal-actions">
           {!recording && !blobUrl && (
-            <button type="button" className="social-download-btn" onClick={startRecording}>
+            <button type="button" className="social-download-btn" onClick={startRecording} disabled={!streamReady}>
               <Video size={16} />
-              Start Recording
+              {streamReady ? 'Start Recording' : 'Preparing...'}
             </button>
           )}
           {recording && (
