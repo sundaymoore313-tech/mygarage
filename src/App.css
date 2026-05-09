@@ -275,6 +275,37 @@
 .mobile-gradient-row::-webkit-scrollbar { display: none; }
 
 .mobile-grad-label {
+
+  /* ── Gradient slot buttons ────────────────────────────────── */
+  .mobile-grad-slot-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    border: 2px solid rgba(62, 201, 255, 0.18);
+    background: rgba(255, 255, 255, 0.05);
+    color: #c8dae8;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s, background 0.15s;
+    touch-action: manipulation;
+  }
+  .mobile-grad-slot-btn.active {
+    border-color: #3ec9ff;
+    background: rgba(62, 201, 255, 0.18);
+    color: #fff;
+  }
+  .mobile-grad-slot-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.35);
+    flex-shrink: 0;
+    display: inline-block;
+  }
   font-size: 0.72rem;
   color: #6a8098;
   flex-shrink: 0;

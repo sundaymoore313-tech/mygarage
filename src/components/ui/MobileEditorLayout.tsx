@@ -112,6 +112,9 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const [decals, setDecals] = useState<DecalItem[]>([])
   const [decalsLoading, setDecalsLoading] = useState(false)
 
+  // Gradient color slot
+  const [gradColorSlot, setGradColorSlot] = useState<1 | 2>(1)
+
   // Stripes
   const carStripe    = useEditorStore(s => s.project.carStripe)
   const setCarStripe = useEditorStore(s => s.setCarStripe)
@@ -128,10 +131,15 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const setWindowTint = useEditorStore(s => s.setWindowTint)
 
   // Layers
-  const layers          = useEditorStore(s => s.project.layers)
-  const selectedLayerId = useEditorStore(s => s.selectedLayerId)
-  const setSelectedLayer = useEditorStore(s => s.setSelectedLayer)
-  const removeLayer     = useEditorStore(s => s.removeLayer)
+  const layers               = useEditorStore(s => s.project.layers)
+  const selectedLayerId      = useEditorStore(s => s.selectedLayerId)
+  const setSelectedLayer     = useEditorStore(s => s.setSelectedLayer)
+  const removeLayer          = useEditorStore(s => s.removeLayer)
+  const updateLayer          = useEditorStore(s => s.updateLayer)
+  const updateLayerTransient = useEditorStore(s => s.updateLayerTransient)
+
+  // Selected layer (derived)
+  const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null
 
   // Load fonts
   useEffect(() => {
@@ -228,30 +236,61 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               ))}
             </div>
           ) : (
-            <div className="mobile-gradient-row">
-              <span className="mobile-grad-label">From</span>
-              <input type="color" value={carGradient.fromHex} onChange={e => setCarGradient({ enabled: true, fromHex: e.target.value })} className="mobile-color-input" />
-              <span className="mobile-grad-label">To</span>
-              <input type="color" value={carGradient.toHex} onChange={e => setCarGradient({ enabled: true, toHex: e.target.value })} className="mobile-color-input" />
-              <span className="mobile-chips-sep" />
-              {(['x', 'y'] as const).map(axis => (
-                <button key={axis} type="button"
-                  className={`mobile-chip${carGradient.axis === axis ? ' active' : ''}`}
-                  onClick={() => setCarGradient({ enabled: true, axis })}
-                >{axis === 'x' ? 'Horiz' : 'Vert'}</button>
-              ))}
-              <span className="mobile-grad-label" style={{ marginLeft: 6 }}>Balance</span>
-              <input type="range" min={-1} max={1} step={0.01} value={carGradient.balance ?? 0}
-                onChange={e => setCarGradient({ enabled: true, balance: Number(e.target.value) })}
-                className="mobile-slider" style={{ width: 80 }}
-              />
-            </div>
+            <>
+              {/* Gradient controls row: slot selectors + axis + balance */}
+              <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
+                <button type="button"
+                  className={`mobile-grad-slot-btn${gradColorSlot === 1 ? ' active' : ''}`}
+                  style={{ '--slot-color': carGradient.fromHex } as React.CSSProperties}
+                  onClick={() => setGradColorSlot(1)}
+                  title="Color 1 (from)"
+                >
+                  <span className="mobile-grad-slot-dot" style={{ backgroundColor: carGradient.fromHex }} />①
+                </button>
+                <button type="button"
+                  className={`mobile-grad-slot-btn${gradColorSlot === 2 ? ' active' : ''}`}
+                  style={{ '--slot-color': carGradient.toHex } as React.CSSProperties}
+                  onClick={() => setGradColorSlot(2)}
+                  title="Color 2 (to)"
+                >
+                  <span className="mobile-grad-slot-dot" style={{ backgroundColor: carGradient.toHex }} />②
+                </button>
+                <span className="mobile-chips-sep" />
+                {(['x', 'y'] as const).map(axis => (
+                  <button key={axis} type="button"
+                    className={`mobile-chip${carGradient.axis === axis ? ' active' : ''}`}
+                    onClick={() => setCarGradient({ enabled: true, axis })}
+                  >{axis === 'x' ? 'Horiz' : 'Vert'}</button>
+                ))}
+                <span className="mobile-chips-sep" />
+                <span className="mobile-grad-label">Balance</span>
+                <input type="range" min={-1} max={1} step={0.01} value={carGradient.balance ?? 0}
+                  onChange={e => setCarGradient({ enabled: true, balance: Number(e.target.value) })}
+                  className="mobile-slider" style={{ width: 90 }}
+                />
+              </div>
+              {/* Color swatches for the selected gradient slot */}
+              <div className="mobile-swatches-row">
+                {CAR_COLORS.map(c => (
+                  <button key={c.name} type="button" className="mobile-color-swatch"
+                    style={{ backgroundColor: c.hex }}
+                    onClick={() => {
+                      if (gradColorSlot === 1) setCarGradient({ enabled: true, fromHex: c.hex })
+                      else setCarGradient({ enabled: true, toHex: c.hex })
+                    }}
+                    aria-label={c.name} title={c.name}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       )
 
       // ── TEXT ─────────────────────────────────────────────────
-      case 'text': return (
+      case 'text': {
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; transform: { scale: { x: number; y: number; z: number } } } : null
+        return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
             <span className="mobile-strip-label">Font</span>
@@ -275,23 +314,50 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               }}
             >+ Add Text</button>
             <span className="mobile-chips-sep" />
+            {/* Color swatches — apply to selected text layer if one is selected */}
             {CAR_COLORS.map(c => (
               <button key={c.hex} type="button" className="mobile-color-swatch"
-                style={{ backgroundColor: c.hex }}
+                style={{ backgroundColor: c.hex, boxShadow: textLayer?.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
                 onClick={() => {
                   if (isGuest) { onGuestSignIn(); return }
-                  addTextLayer({ fontFamily: selectedFont })
-                  setTool('text')
+                  if (textLayer) {
+                    updateLayer(textLayer.id, { colorHex: c.hex } as Parameters<typeof updateLayer>[1])
+                  } else {
+                    addTextLayer({ fontFamily: selectedFont })
+                    setTool('text')
+                  }
                 }}
                 aria-label={c.name}
               />
             ))}
           </div>
+          {/* Scale slider for selected text layer */}
+          {textLayer && (
+            <div className="mobile-chips-row" style={{ paddingTop: 4, paddingBottom: 6 }}>
+              <span className="mobile-strip-label">Scale</span>
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={textLayer.transform.scale.x}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider" style={{ flex: 1, maxWidth: 160 }}
+              />
+              <span className="mobile-grad-label">{textLayer.transform.scale.x.toFixed(2)}×</span>
+            </div>
+          )}
         </div>
-      )
+        )
+      }
 
       // ── ELEMENTS ─────────────────────────────────────────────
-      case 'elements': return (
+      case 'elements': {
+        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { scale: { x: number; y: number; z: number } } } : null
+        return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
             <span className="mobile-strip-label">Decals</span>
@@ -299,6 +365,38 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               <button type="button" className="mobile-chip" onClick={onGuestSignIn}>Sign in to import</button>
             )}
           </div>
+          {/* Color + scale row for selected decal */}
+          {decalLayer && (
+            <div className="mobile-swatches-row" style={{ paddingTop: 4 }}>
+              <span className="mobile-strip-label">Color</span>
+              {CAR_COLORS.map(c => (
+                <button key={c.hex} type="button" className="mobile-color-swatch"
+                  style={{ backgroundColor: c.hex, width: 34, height: 34, minWidth: 34,
+                    boxShadow: decalLayer.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
+                  onClick={() => updateLayer(decalLayer.id, { colorHex: c.hex } as Parameters<typeof updateLayer>[1])}
+                  aria-label={c.name}
+                />
+              ))}
+            </div>
+          )}
+          {decalLayer && (
+            <div className="mobile-chips-row" style={{ paddingTop: 4, paddingBottom: 4 }}>
+              <span className="mobile-strip-label">Scale</span>
+              <input type="range" min={0.1} max={4} step={0.05}
+                value={decalLayer.transform.scale.x}
+                onChange={e => {
+                  const v = Number(e.target.value)
+                  updateLayerTransient(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayerTransient>[1])
+                }}
+                onPointerUp={e => {
+                  const v = Number((e.target as HTMLInputElement).value)
+                  updateLayer(decalLayer.id, { transform: { ...decalLayer.transform, scale: { x: v, y: v, z: 1 } } } as Parameters<typeof updateLayer>[1])
+                }}
+                className="mobile-slider" style={{ flex: 1, maxWidth: 160 }}
+              />
+              <span className="mobile-grad-label">{decalLayer.transform.scale.x.toFixed(2)}×</span>
+            </div>
+          )}
           <div className="mobile-decals-row">
             {decalsLoading && <span className="mobile-strip-label">Loading…</span>}
             {!decalsLoading && decals.length === 0 && <span className="mobile-strip-label">No decals yet</span>}
@@ -312,13 +410,21 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             ))}
           </div>
         </div>
-      )
+        )
+      }
 
       // ── STRIPES ──────────────────────────────────────────────
       case 'stripes': return (
         <div className="mobile-car-controls">
           {/* Preset chips */}
           <div className="mobile-chips-row">
+            {/* ON/OFF toggle */}
+            <button type="button"
+              className={`mobile-chip${carStripe.enabled ? ' active' : ''}`}
+              style={{ minWidth: 56, fontWeight: 700 }}
+              onClick={() => setCarStripe({ enabled: !carStripe.enabled })}
+            >{carStripe.enabled ? 'ON' : 'OFF'}</button>
+            <span className="mobile-chips-sep" />
             <span className="mobile-strip-label">Style</span>
             {STRIPE_PRESETS.map(p => (
               <button key={p.id} type="button"
@@ -379,6 +485,13 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
         <div className="mobile-car-controls">
           {/* Preset chips */}
           <div className="mobile-chips-row">
+            {/* ON/OFF toggle */}
+            <button type="button"
+              className={`mobile-chip${carSplit.enabled ? ' active' : ''}`}
+              style={{ minWidth: 56, fontWeight: 700 }}
+              onClick={() => setCarSplit({ enabled: !carSplit.enabled })}
+            >{carSplit.enabled ? 'ON' : 'OFF'}</button>
+            <span className="mobile-chips-sep" />
             <span className="mobile-strip-label">Style</span>
             {SPLIT_PRESETS.map(p => (
               <button key={p.id} type="button"
