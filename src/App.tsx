@@ -289,6 +289,7 @@ function App() {
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false)
   const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
   const [tabSyncNotification, setTabSyncNotification] = useState<string | null>(null)
+  const [editorProjectHydrated, setEditorProjectHydrated] = useState(false)
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
@@ -379,10 +380,15 @@ function App() {
   }, [screen, projectId])
 
   useEffect(() => {
-    if (screen === 'editor' && !selectedCar) {
+    if (screen !== 'editor' || !projectId) {
+      setEditorProjectHydrated(false)
+      return
+    }
+
+    if (!selectedCar && editorProjectHydrated) {
       setScreen('selector')
     }
-  }, [screen, selectedCar])
+  }, [screen, selectedCar, projectId, editorProjectHydrated])
 
   // Recovery prompt on first load
   useEffect(() => {
@@ -527,6 +533,8 @@ function App() {
         }
       } catch (err) {
         console.error('Failed to load project:', err)
+      } finally {
+        setEditorProjectHydrated(true)
       }
     }
 
