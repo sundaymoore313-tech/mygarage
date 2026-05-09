@@ -57,6 +57,7 @@ type TopBarProps = {
   lightPreset?: LightPresetId
   onLightPreset?: (p: LightPresetId) => void
   onResetCamera?: () => void
+  onChangeCar?: () => void
   onGoHome?: () => void
   onOpenProfile?: () => void
   onGuestSignIn?: () => void
@@ -73,6 +74,7 @@ type TopBarProps = {
   onSvgExport?: () => void
   exportQuality?: ExportQuality
   onExportQualityChange?: (quality: ExportQuality) => void
+  mobileCompact?: boolean
 }
 
 const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
@@ -82,7 +84,7 @@ const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
   { id: 'showroom', label: 'Showroom' },
 ]
 
-function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void }) {
+function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange, mobileCompact = false }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void; mobileCompact?: boolean }) {
   const [open, setOpen] = useState(false)
   const [glbBakeOverlays, setGlbBakeOverlays] = useState(true)
   const [glbIncludeLightsCamera, setGlbIncludeLightsCamera] = useState(false)
@@ -235,64 +237,81 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         <>
           <div className="file-menu-backdrop" onClick={() => setOpen(false)} />
           <div className="file-menu-dropdown">
-            <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
-              <span className="file-menu-icon">⭐</span> Add to Profile
-            </button>
-            <button type="button" className="file-menu-item" onClick={handleDownloadProject}>
-              <span className="file-menu-icon">💾</span> Download Project
-            </button>
-            <button type="button" className="file-menu-item" onClick={handleLoad}>
-              <span className="file-menu-icon">📂</span> Load Project
-            </button>
-            <div className="file-menu-divider" />
-            <div style={{ padding: '8px 10px 6px', fontSize: '0.75rem', color: '#8ea0b4', fontWeight: 700 }}>
-              Export Quality
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '0 10px 10px' }}>
-              {EXPORT_QUALITY_ORDER.map((quality) => (
-                <button
-                  key={quality}
-                  type="button"
-                  className={exportQuality === quality ? 'top-card-btn active' : 'top-card-btn'}
-                  style={{ padding: '6px 0', fontSize: '0.72rem' }}
-                  onClick={() => onExportQualityChange?.(quality)}
-                  title={`${EXPORT_QUALITY_LABELS[quality]} export quality`}
-                >
-                  {EXPORT_QUALITY_LABELS[quality]}
+            {mobileCompact ? (
+              <>
+                <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
+                  <span className="file-menu-icon">⭐</span> Add to Profile
                 </button>
-              ))}
-            </div>
-            <div className="file-menu-divider" />
-            <button type="button" className="file-menu-item" onClick={handleExportPng}>
-              <span className="file-menu-icon">🖼</span> Export PNG (Screenshot)
-            </button>
-            <button type="button" className="file-menu-item" onClick={() => { void handleExportGlb() }} disabled={glbExporting}>
-              <span className="file-menu-icon">🧊</span> Export GLB (Baked Layers)
-            </button>
-            <div style={{ padding: '8px 10px 4px', display: 'grid', gap: 6 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
-                <input type="checkbox" checked={glbBakeOverlays} onChange={(e) => setGlbBakeOverlays(e.target.checked)} />
-                Bake split/gradient/stripe into export
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
-                <input type="checkbox" checked={glbIncludeLightsCamera} onChange={(e) => setGlbIncludeLightsCamera(e.target.checked)} />
-                Include lights + camera rig
-              </label>
-              {glbStatus ? (
-                <span style={{ fontSize: '0.72rem', color: glbStatus.includes('failed') ? '#f87171' : '#8ea0b4' }}>
-                  {glbStatus}
-                </span>
-              ) : null}
-            </div>
-            <button type="button" className="file-menu-item" onClick={handleSocialExport}>
-              <span className="file-menu-icon">📸</span> Share / Socials…
-            </button>
-            <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
-              <span className="file-menu-icon">🎥</span> Record Video…
-            </button>
-            <button type="button" className="file-menu-item" onClick={handlePrintExport}>
-              <span className="file-menu-icon">🖨️</span> {isSvgMode ? 'SVG Export…' : 'Print / Wrap Export…'}
-            </button>
+                <div className="file-menu-divider" />
+                <button type="button" className="file-menu-item" onClick={handleExportPng}>
+                  <span className="file-menu-icon">🖼</span> Save Picture
+                </button>
+                <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
+                  <span className="file-menu-icon">🎥</span> Record Video
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
+                  <span className="file-menu-icon">⭐</span> Add to Profile
+                </button>
+                <button type="button" className="file-menu-item" onClick={handleDownloadProject}>
+                  <span className="file-menu-icon">💾</span> Download Project
+                </button>
+                <button type="button" className="file-menu-item" onClick={handleLoad}>
+                  <span className="file-menu-icon">📂</span> Load Project
+                </button>
+                <div className="file-menu-divider" />
+                <div style={{ padding: '8px 10px 6px', fontSize: '0.75rem', color: '#8ea0b4', fontWeight: 700 }}>
+                  Export Quality
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '0 10px 10px' }}>
+                  {EXPORT_QUALITY_ORDER.map((quality) => (
+                    <button
+                      key={quality}
+                      type="button"
+                      className={exportQuality === quality ? 'top-card-btn active' : 'top-card-btn'}
+                      style={{ padding: '6px 0', fontSize: '0.72rem' }}
+                      onClick={() => onExportQualityChange?.(quality)}
+                      title={`${EXPORT_QUALITY_LABELS[quality]} export quality`}
+                    >
+                      {EXPORT_QUALITY_LABELS[quality]}
+                    </button>
+                  ))}
+                </div>
+                <div className="file-menu-divider" />
+                <button type="button" className="file-menu-item" onClick={handleExportPng}>
+                  <span className="file-menu-icon">🖼</span> Export PNG (Screenshot)
+                </button>
+                <button type="button" className="file-menu-item" onClick={() => { void handleExportGlb() }} disabled={glbExporting}>
+                  <span className="file-menu-icon">🧊</span> Export GLB (Baked Layers)
+                </button>
+                <div style={{ padding: '8px 10px 4px', display: 'grid', gap: 6 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
+                    <input type="checkbox" checked={glbBakeOverlays} onChange={(e) => setGlbBakeOverlays(e.target.checked)} />
+                    Bake split/gradient/stripe into export
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
+                    <input type="checkbox" checked={glbIncludeLightsCamera} onChange={(e) => setGlbIncludeLightsCamera(e.target.checked)} />
+                    Include lights + camera rig
+                  </label>
+                  {glbStatus ? (
+                    <span style={{ fontSize: '0.72rem', color: glbStatus.includes('failed') ? '#f87171' : '#8ea0b4' }}>
+                      {glbStatus}
+                    </span>
+                  ) : null}
+                </div>
+                <button type="button" className="file-menu-item" onClick={handleSocialExport}>
+                  <span className="file-menu-icon">📸</span> Share / Socials…
+                </button>
+                <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
+                  <span className="file-menu-icon">🎥</span> Record Video…
+                </button>
+                <button type="button" className="file-menu-item" onClick={handlePrintExport}>
+                  <span className="file-menu-icon">🖨️</span> {isSvgMode ? 'SVG Export…' : 'Print / Wrap Export…'}
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -411,6 +430,7 @@ export function TopBar({
   lightPreset = 'studio',
   onLightPreset,
   onResetCamera,
+  onChangeCar,
   onGoHome,
   onOpenProfile,
   onGuestSignIn,
@@ -427,6 +447,7 @@ export function TopBar({
   onSvgExport,
   exportQuality = 'high',
   onExportQualityChange,
+  mobileCompact = false,
 }: TopBarProps) {
   const cameraView = useEditorStore((state) => state.cameraView)
   const setCameraView = useEditorStore((state) => state.setCameraView)
@@ -495,6 +516,10 @@ export function TopBar({
       showGuestPrompt('Change Car')
       return
     }
+    if (onChangeCar) {
+      onChangeCar()
+      return
+    }
     clearSelectedCar()
   }
 
@@ -533,7 +558,7 @@ export function TopBar({
 
         <div className="top-bar-divider" />
 
-        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} />
+        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} />
 
         <div className="top-bar-divider" />
 
@@ -543,20 +568,101 @@ export function TopBar({
         <button type="button" className="top-icon-btn" onClick={isSvgMode ? onSvgRedo : redo} title="Redo (Ctrl+Y)" aria-label="Redo">
           <Redo2 size={14} />
         </button>
-        {!isSvgMode && <HistoryMenu />}
-      </div>
-
-      <div className="top-bar-center">
-        {!isSvgMode && (
-          <div className="tool-strip" role="toolbar" aria-label="Camera views">
+        {mobileCompact && !isSvgMode && (
+          <>
+            <div className="top-bar-divider" />
             <button
               type="button"
-              className="top-plain-btn change-car-bridge-btn"
+              className="top-plain-btn"
               onClick={handleChangeCar}
               title={isGuest ? 'Sign in to change car model' : 'Change car'}
             >
               Change Car
             </button>
+            <div className="top-bar-divider" />
+            {isGuest ? (
+              <button
+                type="button"
+                className="top-guest-signin"
+                onClick={onGuestSignIn}
+                title="Sign in to create an account"
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="top-profile-bubble"
+                onClick={onOpenProfile}
+                title="Open profile"
+                aria-label="Open profile"
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Profile"
+                    className="top-profile-bubble-img"
+                    onError={() => {
+                      localStorage.removeItem(PROFILE_AVATAR_KEY)
+                      setAvatarUrl(null)
+                    }}
+                  />
+                ) : (
+                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
+                )}
+              </button>
+            )}
+          </>
+        )}
+        {!isSvgMode && !mobileCompact && <HistoryMenu />}
+      </div>
+
+      <div className="top-bar-center">
+        {!isSvgMode && !mobileCompact && (
+          <div className="tool-strip" role="toolbar" aria-label="Camera views">
+            <button
+              type="button"
+              className="top-plain-btn"
+              onClick={handleChangeCar}
+              title={isGuest ? 'Sign in to change car model' : 'Change car'}
+            >
+              Change Car
+            </button>
+            <div className="top-bar-divider" />
+            {isGuest ? (
+              <button
+                type="button"
+                className="top-guest-signin"
+                onClick={onGuestSignIn}
+                title="Sign in to create an account"
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="top-profile-bubble"
+                onClick={onOpenProfile}
+                title="Open profile"
+                aria-label="Open profile"
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Profile"
+                    className="top-profile-bubble-img"
+                    onError={() => {
+                      localStorage.removeItem(PROFILE_AVATAR_KEY)
+                      setAvatarUrl(null)
+                    }}
+                  />
+                ) : (
+                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
+                )}
+              </button>
+            )}
             <div className="top-bar-divider" />
             {cameraViews.map((view) => (
               <button
@@ -588,19 +694,51 @@ export function TopBar({
             </button>
           </div>
         )}
+        {!isSvgMode && mobileCompact && (
+          <div className="tool-strip mobile-camera-strip" role="toolbar" aria-label="Camera views">
+            {cameraViews.map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setCameraView(view)}
+                className={view === cameraView ? 'top-card-btn active' : 'top-card-btn'}
+              >
+                {view}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="top-card-btn"
+              onClick={onResetCamera}
+              title="Reset camera to default position"
+            >
+              ↺ Reset
+            </button>
+            <button
+              type="button"
+              className={autoRotate ? 'top-card-btn active' : 'top-card-btn'}
+              onClick={() => setAutoRotate(!autoRotate)}
+              title="Toggle turntable auto-rotate"
+            >
+              ⟳ Spin
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="top-bar-right">
-        <button
-          type="button"
-          className={isSvgMakerOpen ? 'top-card-btn top-svgmaker-btn active' : 'top-card-btn top-svgmaker-btn'}
-          onClick={handleSvgMakerToggle}
-          title={isSvgMode ? 'Back to 3D editor' : isFeatureAllowed(planTier, 'svg-maker') ? 'Open Create a Logo — create custom vector decals' : 'Upgrade to Paid to open Create a Logo'}
-        >
-          {isSvgMode ? '↩ Back to 3D' : '✏ Create a Logo'}
-        </button>
+        {!mobileCompact && (
+          <button
+            type="button"
+            className={isSvgMakerOpen ? 'top-card-btn top-svgmaker-btn active' : 'top-card-btn top-svgmaker-btn'}
+            onClick={handleSvgMakerToggle}
+            title={isSvgMode ? 'Back to 3D editor' : isFeatureAllowed(planTier, 'svg-maker') ? 'Open Create a Logo — create custom vector decals' : 'Upgrade to Paid to open Create a Logo'}
+          >
+            {isSvgMode ? '↩ Back to 3D' : '✏ Create a Logo'}
+          </button>
+        )}
 
-        {!isSvgMode && (
+        {!isSvgMode && !mobileCompact && (
           <>
             <div className="top-bar-divider" />
 
@@ -663,45 +801,10 @@ export function TopBar({
                 </span>
               </>
             )}
-
-            <div className="top-bar-divider" />
-            {isGuest ? (
-              <button
-                type="button"
-                className="top-guest-signin"
-                onClick={onGuestSignIn}
-                title="Sign in to create an account"
-                aria-label="Sign in"
-              >
-                Sign In
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="top-profile-bubble"
-                onClick={onOpenProfile}
-                title="Open profile"
-                aria-label="Open profile"
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt="Profile"
-                    className="top-profile-bubble-img"
-                    onError={() => {
-                      localStorage.removeItem(PROFILE_AVATAR_KEY)
-                      setAvatarUrl(null)
-                    }}
-                  />
-                ) : (
-                  <span className="top-profile-bubble-fallback">{avatarInitials}</span>
-                )}
-              </button>
-            )}
           </>
         )}
 
-        {isSvgMode && isGuest && (
+        {isSvgMode && isGuest && !mobileCompact && (
           <>
             <div className="top-bar-divider" />
             <button
@@ -716,7 +819,24 @@ export function TopBar({
           </>
         )}
 
-        {isSvgMode && (
+        {isSvgMode && !mobileCompact && (
+          <>
+            <div className="top-bar-divider" />
+            <button type="button" className="top-plain-btn" onClick={onSvgCancel}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="top-card-btn active"
+              onClick={onSvgSave}
+              style={{ fontWeight: 700 }}
+            >
+              Save + Add Decal
+            </button>
+          </>
+        )}
+
+        {mobileCompact && isSvgMode && (
           <>
             <div className="top-bar-divider" />
             <button type="button" className="top-plain-btn" onClick={onSvgCancel}>

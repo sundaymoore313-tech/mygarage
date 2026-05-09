@@ -3246,29 +3246,81 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
   const autoRotate = useEditorStore((state) => state.autoRotate)
   const controlsRef = useRef<OrbitControllerHandle | null>(null)
   const [isLayerDragging, setIsLayerDragging] = useState(false)
-  const isLikelyMobile = useMemo(() => {
+  const renderProfile = useMemo(() => {
     if (typeof navigator === 'undefined') {
-      return false
+      return {
+        isMobile: false,
+        idleDpr: [1, 2] as [number, number],
+        shadowMode: 'percentage' as const,
+        shadowMapSize: 2048,
+        antialias: true,
+        powerPreference: 'high-performance' as const,
+      }
     }
+
     const ua = navigator.userAgent
-    return /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+    const isIOS = /iPhone|iPad|iPod/i.test(ua)
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+    const lowMemory = typeof memory === 'number' && memory <= 4
+    const highMemory = typeof memory === 'number' && memory >= 8
+
+    if (!isMobile) {
+      return {
+        isMobile: false,
+        idleDpr: [1, 2] as [number, number],
+        shadowMode: 'percentage' as const,
+        shadowMapSize: 2048,
+        antialias: true,
+        powerPreference: 'high-performance' as const,
+      }
+    }
+
+    if (lowMemory) {
+      return {
+        isMobile: true,
+        idleDpr: [1, 1.25] as [number, number],
+        shadowMode: false as const,
+        shadowMapSize: 1024,
+        antialias: false,
+        powerPreference: 'low-power' as const,
+      }
+    }
+
+    if (isIOS && !highMemory) {
+      return {
+        isMobile: true,
+        idleDpr: [1, 1.55] as [number, number],
+        shadowMode: false as const,
+        shadowMapSize: 1024,
+        antialias: false,
+        powerPreference: 'low-power' as const,
+      }
+    }
+
+    return {
+      isMobile: true,
+      idleDpr: [1, 1.9] as [number, number],
+      shadowMode: 'percentage' as const,
+      shadowMapSize: 2048,
+      antialias: true,
+      powerPreference: 'high-performance' as const,
+    }
   }, [])
 
   // Keep recording DPR conservative to avoid GPU stalls/freeze on start.
   const recordingDpr: number = recordingQuality === 'ultra' ? 2.5 : recordingQuality === 'standard' ? 1.5 : 2
-  const idleDpr: number | [number, number] = isLikelyMobile ? [1, 1.25] : [1, 2]
-  const shadowMode: false | 'percentage' = isLikelyMobile ? false : 'percentage'
 
   return (
     <Canvas
-      shadows={shadowMode}
+      shadows={renderProfile.shadowMode}
       camera={{ position: CAMERA_START_POSITION, fov: 35 }}
-      dpr={isRecording ? recordingDpr : idleDpr}
+      dpr={isRecording ? recordingDpr : renderProfile.idleDpr}
       gl={{
-        antialias: !isLikelyMobile,
+        antialias: renderProfile.antialias,
         alpha: false,
         preserveDrawingBuffer: isRecording,
-        powerPreference: isLikelyMobile ? 'low-power' : 'high-performance',
+        powerPreference: renderProfile.powerPreference,
       }}
       onPointerMissed={() => {
         setSelectedLayer(null)
@@ -3290,8 +3342,8 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         intensity={preset.dirIntensity}
         position={preset.dirPosition}
         castShadow
-        shadow-mapSize-width={isLikelyMobile ? 1024 : 2048}
-        shadow-mapSize-height={isLikelyMobile ? 1024 : 2048}
+        shadow-mapSize-width={renderProfile.shadowMapSize}
+        shadow-mapSize-height={renderProfile.shadowMapSize}
       />
       <directionalLight
         intensity={0.65}

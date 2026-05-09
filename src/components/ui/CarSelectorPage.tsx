@@ -4,7 +4,6 @@ import type { ChangeEvent } from 'react'
 import * as THREE from 'three'
 import { NativeOrbitControls } from '../scene/NativeOrbitControls'
 import { useModelScene } from '../scene/useModelScene'
-import { clearResumeSnapshot, readResumeSnapshot } from '../../lib/resumeSnapshot'
 import { useEditorStore } from '../../store/editorStore'
 
 type CarManifestItem = {
@@ -41,7 +40,6 @@ type SelectorNotice = {
 const MANIFEST_URL = '/models/manifest.json'
 const HIDDEN_SELECTOR_MODELS = new Set(['car.glb', 'dodge_charger_srt8.glb', 'unmarked_police_jeep_track_hawk.glb'])
 const IMPORTED_CARS_STORAGE_KEY = 'mygarage-imported-cars-v1'
-const LAST_CAR_KEY = 'mygarage-last-car'
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
@@ -85,26 +83,6 @@ function saveImportedCarsToStorage(importedCars: ImportedCarRecord[]): SaveImpor
   } catch {
     // If storage quota is exceeded, keep the session state in memory.
     return { ok: false, error: 'Storage is full. Imported cars are available only for this session.' }
-  }
-}
-
-function loadLastCarFileName(): string | null {
-  try {
-    const raw = localStorage.getItem(LAST_CAR_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { fileName?: string }
-    return parsed.fileName ?? null
-  } catch {
-    return null
-  }
-}
-
-function saveLastCar(car: CarManifestItem): void {
-  // Store only the fileName reference — imported car data URLs already live in IMPORTED_CARS_STORAGE_KEY
-  try {
-    localStorage.setItem(LAST_CAR_KEY, JSON.stringify({ fileName: car.fileName }))
-  } catch {
-    // Ignore quota errors
   }
 }
 
@@ -396,7 +374,6 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
   const [searchQuery, setSearchQuery] = useState('')
   const [renamingFileName, setRenamingFileName] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [lastUsedCar, setLastUsedCar] = useState<CarManifestItem | null>(null)
   const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const guestPromptTimerRef = useRef<number | null>(null)
@@ -444,17 +421,6 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
         }))
         setImportedItems(importedMapped)
 
-        // Resolve last-used car from explicit selector choice.
-        // Unsaved resume snapshots are intentionally ignored here so switching
-        // cars without saving promotes the newly selected car to Continue Editing.
-        const lastFileName = loadLastCarFileName()
-        if (lastFileName) {
-          const found =
-            visibleItems.find((item) => item.fileName === lastFileName) ??
-            importedMapped.find((item) => item.fileName === lastFileName) ??
-            null
-          if (mounted) setLastUsedCar(found)
-        }
       } catch {
         if (mounted) {
           setPreloadedItems([])
@@ -636,16 +602,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
     setRenamingFileName(null)
   }
 
-  const handleSelectCar = (car: CarManifestItem, restoreResume = false) => {
-    if (!restoreResume) {
-      const existingResume = readResumeSnapshot()
-      if (existingResume && existingResume.fileName !== car.fileName) {
-        clearResumeSnapshot()
-      }
-    }
-
-    saveLastCar(car)
-    setLastUsedCar(car)
+  const handleSelectCar = (car: CarManifestItem) => {
     selectCar({
       name: car.name,
       modelUrl: car.modelUrl,
@@ -654,12 +611,6 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
       realWorldWidthM: car.realWorldWidthM,
       realWorldHeightM: car.realWorldHeightM,
     })
-    if (restoreResume) {
-      const resume = readResumeSnapshot(car.fileName)
-      if (resume) {
-        useEditorStore.getState().loadProject(resume.project)
-      }
-    }
     onEnterEditor?.()
   }
 
@@ -760,19 +711,6 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
           <span>{guestPrompt}</span>
           <button type="button" className="top-guest-prompt-link" onClick={onGuestSignIn}>
             Sign In
-          </button>
-        </div>
-      )}
-
-      {lastUsedCar && (
-        <div className="car-resume-banner">
-          <span className="car-resume-label">Last edited: <strong>{getDisplayCarName(lastUsedCar.name)}</strong></span>
-          <button
-            type="button"
-            className="chip active"
-            onClick={() => handleSelectCar(lastUsedCar, true)}
-          >
-            Continue Editing
           </button>
         </div>
       )}

@@ -4,25 +4,25 @@ import { useEditorStore } from './store/editorStore'
 import { CarSelectorPage } from './components/ui/CarSelectorPage'
 import { HomePage } from './components/ui/HomePage'
 import { ProfilePage } from './components/ui/ProfilePage'
+import { MobileEditorLayout } from './components/ui/MobileEditorLayout'
 import type { GlbExportOptions, GlbExportResult, LightPresetId } from './components/scene/EditorCanvas'
-import { preloadModelScene } from './components/scene/useModelScene'
+import { clearModelSceneCache, preloadModelScene } from './components/scene/useModelScene'
 import { InspectorPanel } from './components/ui/InspectorPanel'
 import { LayerPanel } from './components/ui/LayerPanel'
 import { TopBar } from './components/ui/TopBar'
 import { readCachedPlanTier, writeCachedPlanTier } from './lib/billing'
-import { endPerfSpan, markPerfOnce, resetPerfSpan, startPerfSpan } from './lib/perfDebug'
+import { endPerfSpan, markPerfOnce, startPerfSpan } from './lib/perfDebug'
 import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
-import { readResumeSnapshot, saveResumeSnapshot } from './lib/resumeSnapshot'
-import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, readSavedProjects, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import type { ExportQuality } from './types/exportQuality'
 import './App.css'
 
 const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
-const LAST_CAR_KEY = 'mygarage-last-car'
 const SCREEN_QUERY_KEY = 'screen'
+const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
 
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
 
@@ -231,6 +231,7 @@ function ClassifyLegend({
 
 function App() {
   const selectCar = useEditorStore((state) => state.selectCar)
+  const clearSelectedCar = useEditorStore((state) => state.clearSelectedCar)
   const selectedCar = useEditorStore((state) => state.selectedCar)
   const [screen, setScreen] = useState<AppScreen>(() => readScreenFromUrl() ?? 'home')
   const [isGuest, setIsGuest] = useState(false)
@@ -242,6 +243,11 @@ function App() {
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
   const [floatingPanel, setFloatingPanel] = useState<'elements' | 'text' | 'car' | 'split' | 'stripes' | 'tint' | 'prints' | null>(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
+  })
+  const [mobilePanelExpanded, setMobilePanelExpanded] = useState(false)
   const carSplit = useEditorStore((state) => state.project.carSplit)
   const carStripe = useEditorStore((state) => state.project.carStripe)
   const [sceneHovered, setSceneHovered] = useState(false)
@@ -266,6 +272,7 @@ function App() {
   const [guestAuthOpen, setGuestAuthOpen] = useState(false)
   const [cloudStatusLabel, setCloudStatusLabel] = useState('Cloud: checking...')
   const [cloudStatusTone, setCloudStatusTone] = useState<'neutral' | 'ok' | 'warn' | 'error'>('neutral')
+  const [isCarSwitching, setIsCarSwitching] = useState(false)
   const is2DOpen = printExportOpen
   const editorWarmRef = useRef(false)
   const skipHistoryPushRef = useRef(false)
@@ -313,6 +320,26 @@ function App() {
       setScreen('selector')
     }
   }, [screen, selectedCar])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mediaQuery = window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY)
+    const handleMediaQueryChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches)
+    }
+    setIsMobileViewport(mediaQuery.matches)
+    mediaQuery.addEventListener('change', handleMediaQueryChange)
+    return () => mediaQuery.removeEventListener('change', handleMediaQueryChange)
+  }, [])
+
+  useEffect(() => {
+    if (!floatingPanel || !isMobileViewport) {
+      setMobilePanelExpanded(false)
+      return
+    }
+    // Mobile opens compact by default; tap the panel or toggle button to expand.
+    setMobilePanelExpanded(false)
+  }, [floatingPanel, isMobileViewport])
 
   const refreshPlanFromCloud = useCallback(async () => {
     // Owner always gets paid — read from the authenticated session so it can't be spoofed.
@@ -412,24 +439,6 @@ function App() {
       const migratedPart = migrated.migrated > 0 ? `migrated ${migrated.migrated}` : 'up to date'
       setCloudStatusLabel(`Cloud: synced (${migratedPart}, ${synced.count} cached)`)
       setCloudStatusTone('ok')
-
-      // Rebuild local resume pointer from the latest cloud-synced project so
-      // Continue Editing follows the same account across devices.
-      const latest = readSavedProjects().sort((a, b) => b.updatedAt - a.updatedAt)[0]
-      if (latest) {
-        const full = await loadFullProjectByIdWithCloud(latest.id)
-        if (full) {
-          const fileName = full.modelUrl.split('/').pop() ?? ''
-          if (fileName) {
-            saveResumeSnapshot(fileName, full.project)
-            try {
-              localStorage.setItem(LAST_CAR_KEY, JSON.stringify({ fileName, name: full.carName }))
-            } catch {
-              // ignore storage failures
-            }
-          }
-        }
-      }
     } else {
       setCloudStatusLabel('Cloud: fallback local')
       setCloudStatusTone('error')
@@ -488,81 +497,10 @@ function App() {
     setScreen('editor')
   }
 
-  const handleContinueEditing = async () => {
-    try {
-      beginEditorOpen('continue_editing')
-      const resume = readResumeSnapshot()
-      const raw = localStorage.getItem('mygarage-last-car')
-      const { fileName: lastCarFileName } = raw ? (JSON.parse(raw) as { fileName?: string }) : {}
-      const fileName = resume?.fileName ?? lastCarFileName
-      if (!fileName) {
-        resetPerfSpan('editor_open')
-        resetPerfSpan('editor_first_interaction')
-        resetPerfSpan('editor_canvas_ready')
-        resetPerfSpan('editor_model_loaded')
-        resetPerfSpan('editor_scene_prepared')
-        setScreen('selector')
-        return
-      }
-
-      // Check imported cars first (data URL models stored in localStorage)
-      const importedRaw = localStorage.getItem('mygarage-imported-cars-v1')
-      if (importedRaw) {
-        const imported = JSON.parse(importedRaw) as Array<{ name: string; fileName: string; modelUrl: string }>
-        const match = imported.find((c) => c.fileName === fileName)
-        if (match) {
-          selectCar({ name: match.name, modelUrl: match.modelUrl })
-          if (resume && resume.fileName === fileName) {
-            useEditorStore.getState().loadProject(resume.project)
-          }
-          setScreen('editor')
-          return
-        }
-      }
-
-      // Fall back to manifest
-      const res = await fetch('/models/manifest.json')
-      const manifest = await res.json() as { items: Array<{ name: string; fileName: string; modelUrl: string; groundOffsetY?: number; realWorldLengthM?: number; realWorldWidthM?: number; realWorldHeightM?: number }> }
-      const car = manifest.items.find((c) => c.fileName === fileName)
-      if (car) {
-        selectCar({
-          name: car.name,
-          modelUrl: car.modelUrl,
-          groundOffsetY: car.groundOffsetY,
-          realWorldLengthM: car.realWorldLengthM,
-          realWorldWidthM: car.realWorldWidthM,
-          realWorldHeightM: car.realWorldHeightM,
-        })
-        if (resume && resume.fileName === fileName) {
-          useEditorStore.getState().loadProject(resume.project)
-        }
-        setScreen('editor')
-      } else {
-        resetPerfSpan('editor_open')
-        resetPerfSpan('editor_first_interaction')
-        resetPerfSpan('editor_canvas_ready')
-        resetPerfSpan('editor_model_loaded')
-        resetPerfSpan('editor_scene_prepared')
-        setScreen('selector')
-      }
-    } catch {
-      resetPerfSpan('editor_open')
-      resetPerfSpan('editor_first_interaction')
-      resetPerfSpan('editor_canvas_ready')
-      resetPerfSpan('editor_model_loaded')
-      resetPerfSpan('editor_scene_prepared')
-      setScreen('selector')
-    }
-  }
-
-  const handleStartNewProject = () => {
-    setScreen('selector')
-  }
-
   const handleOpenProject = async (id: string) => {
-    beginEditorOpen('open_project')
     const full = await loadFullProjectByIdWithCloud(id)
     if (!full || !full.modelUrl) return
+    beginEditorOpen('profile_project')
     selectCar({
       name: full.carName,
       modelUrl: full.modelUrl,
@@ -590,13 +528,28 @@ function App() {
     setUserPlan(plan)
   }
 
+  const handleChangeCar = useCallback(() => {
+    // Ensure no heavy editor overlays survive into the selector route on mobile.
+    if (isMobileViewport) {
+      setIsCarSwitching(true)
+    }
+    setFloatingPanel(null)
+    setPrintExportOpen(false)
+    setSvgMakerOpen(false)
+    setSocialPreviewUrl(null)
+    setVideoRecordOpen(false)
+    setIsRecording(false)
+    setMobilePanelExpanded(false)
+    clearModelSceneCache()
+    clearSelectedCar()
+    setScreen('selector')
+  }, [isMobileViewport, clearSelectedCar])
+
   if (screen === 'home') {
     return <HomePage
       onEnter={() => { beginEditorOpen('home_enter'); setScreen('editor') }}
       onOpenProfile={() => setScreen('profile')}
       onContinueAsGuest={handleContinueAsGuest}
-      onContinueEditing={handleContinueEditing}
-      onStartNewProject={handleStartNewProject}
       onLikelyEditorPathVisible={() => warmLikelyEditorPath('home_cta_visible')}
       onLikelyEditorPathIntent={() => warmLikelyEditorPath('home_pointer_intent')}
     />
@@ -610,6 +563,157 @@ function App() {
     return <CarSelectorPage onGoHome={() => setScreen('home')} onOpenProfile={() => setScreen('profile')} onEnterEditor={() => { beginEditorOpen('selector_enter'); setScreen('editor') }} isGuest={isGuest} onGuestSignIn={handleGuestSignIn} />
   }
 
+  // EditorCanvas component for both layouts
+  const editorCanvasElement = (
+    <Suspense fallback={<div style={{ padding: 16 }}>Loading 3D scene...</div>}>
+      <EditorCanvas
+        modelUrl={selectedCar.modelUrl}
+        groundOffsetY={selectedCar.groundOffsetY}
+        classifyWindowClickThrough={classifyWindowClickThrough}
+        classifyBodyClickThrough={classifyBodyClickThrough}
+        classifyShowMeshNames={classifyShowMeshNames}
+        orbitEnabled={orbitEnabled}
+        lightPreset={lightPreset}
+        isRecording={isRecording}
+        recordingQuality={exportQuality}
+        onRendererReady={(fn) => {
+          screenshotRef.current = fn
+          setIsCarSwitching(false)
+          endPerfSpan('editor_canvas_ready', { carModel: selectedCar.modelUrl })
+          endPerfSpan('editor_open', { carModel: selectedCar.modelUrl })
+        }}
+        onGlbExportReady={(fn) => { exportGlbRef.current = fn }}
+        onPrintCaptureReady={(fn) => { printCaptureRef.current = fn }}
+        onResetCameraReady={(fn) => { resetCameraRef.current = fn }}
+        onVideoRecorderReady={(fn) => setVideoStreamGetter(() => fn)}
+        onFirstInteraction={() => endPerfSpan('editor_first_interaction', { carModel: selectedCar.modelUrl })}
+      />
+    </Suspense>
+  )
+
+  // Mobile layout
+  if (isMobileViewport) {
+    return (
+      <div className="app-root">
+        <TopBar
+          mobileCompact
+          onScreenshot={handleScreenshot}
+          onExportGlb={(options) => exportGlbRef.current?.(options)}
+          onSocialExport={() => {
+            const url = screenshotRef.current?.()
+            if (url) setSocialPreviewUrl(url)
+          }}
+          onVideoRecord={() => setVideoRecordOpen(true)}
+          onPrintExport={() => setPrintExportOpen(true)}
+          onOpen2DEditor={() => setPrintExportOpen(true)}
+          onOpen3DEditor={() => setPrintExportOpen(false)}
+          is2DOpen={is2DOpen}
+          isSvgMakerOpen={svgMakerOpen}
+          onOpenSvgMaker={() => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
+          onSvgCancel={() => setSvgMakerOpen(false)}
+          onSvgSave={() => svgSaveRef.current?.()}
+          onSvgUndo={() => svgUndoRef.current?.()}
+          onSvgRedo={() => svgRedoRef.current?.()}
+          onSvgExport={() => svgExportRef.current?.()}
+          lightPreset={lightPreset}
+          onLightPreset={setLightPreset}
+          onResetCamera={() => resetCameraRef.current?.()}
+          onChangeCar={handleChangeCar}
+          onGoHome={() => setScreen('home')}
+          onOpenProfile={() => setScreen('profile')}
+          onGuestSignIn={handleGuestSignIn}
+          isGuest={isGuest}
+          planTier={accountPlan}
+          onUpgradeClick={() => setScreen('profile')}
+          onCaptureProfilePreview={() => screenshotRef.current?.() ?? null}
+          cloudStatusLabel={cloudStatusLabel}
+          cloudStatusTone={cloudStatusTone}
+          exportQuality={exportQuality}
+          onExportQualityChange={setExportQuality}
+        />
+
+        <MobileEditorLayout
+          editorCanvas={editorCanvasElement}
+          isGuest={isGuest}
+          onGuestSignIn={handleGuestSignIn}
+          simplified
+        />
+
+        {/* Modals and overlays - same for desktop and mobile */}
+        {printExportOpen && (
+          <Suspense fallback={null}>
+            <PrintExportModal
+              captureRef={printCaptureRef}
+              onClose={() => setPrintExportOpen(false)}
+              isGuest={isGuest}
+              onGuestSignIn={handleGuestSignIn}
+              planTier={accountPlan}
+              onUpgradeClick={() => setScreen('profile')}
+            />
+          </Suspense>
+        )}
+
+        {svgMakerOpen && (
+          <Suspense fallback={<div style={{ padding: 16 }}>Loading Create a Logo...</div>}>
+            <SvgMakerPage
+              onClose={() => setSvgMakerOpen(false)}
+              saveRef={svgSaveRef}
+              undoRef={svgUndoRef}
+              redoRef={svgRedoRef}
+              exportRef={svgExportRef}
+              onSave={({ name, imageUrl, svgMarkup }) => {
+                const store = useEditorStore.getState()
+                store.addCustomDecalPreset(name, imageUrl, svgMarkup)
+                store.addDecalLayer(imageUrl)
+                store.setTool('decal')
+                setSvgMakerOpen(false)
+              }}
+            />
+          </Suspense>
+        )}
+
+        {socialPreviewUrl && (
+          <Suspense fallback={null}>
+            <SocialExportModal
+              dataUrl={socialPreviewUrl}
+              onClose={() => setSocialPreviewUrl(null)}
+            />
+          </Suspense>
+        )}
+
+        {videoRecordOpen && videoStreamGetter && (
+          <Suspense fallback={null}>
+            <VideoRecordModal
+              getStream={videoStreamGetter}
+              initialQuality={exportQuality}
+              onQualityChange={setExportQuality}
+              onClose={() => { setVideoRecordOpen(false); setIsRecording(false) }}
+              onRecordingChange={setIsRecording}
+            />
+          </Suspense>
+        )}
+
+        <Suspense fallback={null}>
+          <GuestAuthModal
+            isOpen={guestAuthOpen}
+            onClose={() => setGuestAuthOpen(false)}
+            onSuccess={handleGuestAuthSuccess}
+          />
+        </Suspense>
+
+        {isCarSwitching && (
+          <div className="car-loading-shield" aria-label="Loading car...">
+            <div className="car-loading-spinner">
+              <div className="spinner" />
+              <p>Loading car...</p>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Desktop layout
   return (
     <div className="app-root">
       <TopBar
@@ -634,6 +738,7 @@ function App() {
         lightPreset={lightPreset}
         onLightPreset={setLightPreset}
         onResetCamera={() => resetCameraRef.current?.()}
+        onChangeCar={handleChangeCar}
         onGoHome={() => setScreen('home')}
         onOpenProfile={() => setScreen('profile')}
         onGuestSignIn={handleGuestSignIn}
@@ -729,6 +834,7 @@ function App() {
                 recordingQuality={exportQuality}
                 onRendererReady={(fn) => {
                   screenshotRef.current = fn
+                  setIsCarSwitching(false)
                   endPerfSpan('editor_canvas_ready', { carModel: selectedCar.modelUrl })
                   endPerfSpan('editor_open', { carModel: selectedCar.modelUrl })
                 }}
@@ -841,7 +947,26 @@ function App() {
                   onClick={() => setFloatingPanel(null)}
                   aria-label="Close panel"
                 />
-                <div className="floating-decal-panel">
+                <div
+                  className={`floating-decal-panel${isMobileViewport ? (mobilePanelExpanded ? ' mobile-expanded' : ' mobile-collapsed') : ''}`}
+                  onClickCapture={(event) => {
+                    if (!isMobileViewport || mobilePanelExpanded) return
+                    const target = event.target as HTMLElement
+                    if (target.closest('.floating-panel-size-toggle')) return
+                    setMobilePanelExpanded(true)
+                  }}
+                >
+                  {isMobileViewport && (
+                    <button
+                      type="button"
+                      className="floating-panel-size-toggle"
+                      onClick={() => setMobilePanelExpanded((value) => !value)}
+                      aria-label={mobilePanelExpanded ? 'Collapse panel' : 'Expand panel'}
+                      title={mobilePanelExpanded ? 'Collapse panel' : 'Expand panel'}
+                    >
+                      {mobilePanelExpanded ? 'Collapse' : 'Expand'}
+                    </button>
+                  )}
                   <Suspense fallback={<div style={{ padding: 12 }}>Loading panel...</div>}>
                     {floatingPanel === 'elements' ? (
                       <DecalLibraryPanel onDecalPicked={() => setFloatingPanel(null)} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
@@ -900,6 +1025,15 @@ function App() {
           <InspectorPanel />
         </section>
       </main>
+
+      {isCarSwitching && isMobileViewport && (
+        <div className="car-loading-shield" aria-label="Loading car...">
+          <div className="car-loading-spinner">
+            <div className="spinner" />
+            <p>Loading car...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

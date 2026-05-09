@@ -8,8 +8,6 @@ type HomePageProps = {
   onEnter: () => void
   onOpenProfile: () => void
   onContinueAsGuest?: () => void
-  onContinueEditing?: () => void
-  onStartNewProject?: () => void
   onLikelyEditorPathVisible?: () => void
   onLikelyEditorPathIntent?: () => void
   heroModelUrl?: string
@@ -29,7 +27,6 @@ type AuthUser = {
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const AUTH_REMEMBER_KEY = 'mygarage-auth-remember'
-const LAST_CAR_KEY = 'mygarage-last-car'
 const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
 
@@ -51,25 +48,6 @@ function readRememberPreference(defaultValue = true): boolean {
   if (saved === '0') return false
   if (saved === '1') return true
   return defaultValue
-}
-
-function readLastCarName(): string | null {
-  try {
-    const raw = localStorage.getItem(LAST_CAR_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { fileName?: string; name?: string }
-    if (parsed.name) return parsed.name
-    if (parsed.fileName) {
-      return parsed.fileName
-        .replace(/\.glb$/i, '')
-        .replace(/[-_]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    }
-    return null
-  } catch {
-    return null
-  }
 }
 
 const FEATURES = [
@@ -186,7 +164,7 @@ function clearCachedAuth() {
   localStorage.removeItem(AUTH_REMEMBER_KEY)
 }
 
-export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinueEditing, onStartNewProject, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroModelUrl, heroPreviewImageUrl }: HomePageProps) {
+export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroModelUrl, heroPreviewImageUrl }: HomePageProps) {
   const [taglineIdx, setTaglineIdx] = useState(0)
   const [fading, setFading] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
@@ -624,13 +602,11 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onContinue
           >
             {currentUser && isRememberedUser() ? (
               <>
-                <button ref={primaryCtaRef} type="button" className="home-cta-primary home-cta-returning" onClick={onContinueEditing ?? onEnter}>
-                  <span className="home-cta-label home-cta-label--warm">Continue Editing →</span>
-                  {readLastCarName() && (
-                    <span className="home-cta-sub">{readLastCarName()}</span>
-                  )}
+                <button ref={primaryCtaRef} type="button" className="home-cta-primary home-cta-returning" onClick={onOpenProfile}>
+                  <span className="home-cta-label home-cta-label--warm">Recent Projects →</span>
+                  <span className="home-cta-sub">Open saved cars in your profile</span>
                 </button>
-                <button type="button" className="home-cta-secondary" onClick={onStartNewProject ?? onEnter}>
+                <button type="button" className="home-cta-secondary" onClick={onEnter}>
                   Start New Project
                 </button>
               </>

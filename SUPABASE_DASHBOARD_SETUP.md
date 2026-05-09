@@ -37,6 +37,16 @@ Expected columns include:
 - `billing_email`
 - `current_period_end`
 
+## 3.5. Harden Auth Session Lifetime
+
+If users report getting logged out too often, update Auth token lifetime in Supabase:
+
+1. Go to Authentication -> Settings.
+2. Set JWT expiry to `86400` seconds (24 hours).
+3. Save settings.
+
+This repo now matches that value in `supabase/config.toml` for local development.
+
 ## 4. Set Edge Function Secrets
 
 In Dashboard go to Edge Functions -> Secrets, then add:

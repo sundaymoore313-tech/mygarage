@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { makeId } from '../lib/id'
 import { DEFAULT_TARGET_PAINT, resolvePaintFinishPreset, getLockedClassifications, saveLockedClassifications, clearLockedClassifications, loadPersonalClassifications, savePersonalClassifications, clearPersonalClassifications, getMergedClassifications, isSystemLockedMesh, saveGeneratedClassifyPreset } from '../lib/paintTargets'
-import { saveResumeSnapshot, shouldPersistResumeSnapshot } from '../lib/resumeSnapshot'
 import type {
   CarStripeConfig,
   DecalLayer,
@@ -491,8 +490,9 @@ export const useEditorStore = create<EditorStore>((set) => ({
     }),
 
   clearSelectedCar: () =>
-    set({
+    set(() => ({
       selectedCar: null,
+      selectedLayerId: null,
       cameraView: 'side',
       availableParts: [],
       selectedObjectId: null,
@@ -500,7 +500,13 @@ export const useEditorStore = create<EditorStore>((set) => ({
       selectedPaintTarget: null,
       targetPaints: {},
       targetPrints: {},
-    }),
+      activeTool: 'orbit',
+      activeCarTool: null,
+      classifyLocked: false,
+      historyPast: [],
+      historyFuture: [],
+      project: createProject(),
+    })),
 
   setSelectedPaintTarget: (target) =>
     set((state) => ({
@@ -1383,36 +1389,3 @@ export const useEditorStore = create<EditorStore>((set) => ({
     }),
 }))
 
-let resumeAutosaveTimer: ReturnType<typeof setTimeout> | null = null
-let lastResumeSignature = ''
-
-useEditorStore.subscribe((state) => {
-  if (!shouldPersistResumeSnapshot()) {
-    return
-  }
-
-  const fileName = state.selectedCar?.modelUrl.split('/').pop() ?? ''
-  if (!fileName) {
-    return
-  }
-
-  // Keep one rolling resume snapshot only after layer content exists.
-  if (state.project.layers.length === 0) {
-    return
-  }
-
-  const signature = `${fileName}:${state.project.meta.updatedAt}:${state.project.layers.length}`
-  if (signature === lastResumeSignature) {
-    return
-  }
-  lastResumeSignature = signature
-
-  if (resumeAutosaveTimer) {
-    clearTimeout(resumeAutosaveTimer)
-  }
-
-  const projectSnapshot = state.project
-  resumeAutosaveTimer = setTimeout(() => {
-    saveResumeSnapshot(fileName, projectSnapshot)
-  }, 450)
-})

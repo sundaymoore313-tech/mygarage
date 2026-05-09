@@ -12,6 +12,12 @@ export function preloadModelScene(modelUrl: string): void {
   useGLTF.preload(modelUrl)
 }
 
+export function clearModelSceneCache(): void {
+  if (!lastModelUrl) return
+  useGLTF.clear(lastModelUrl)
+  lastModelUrl = null
+}
+
 export function useModelScene(modelUrl: string): ModelSceneResult {
   const gltf = useGLTF(modelUrl) as GLTF
 

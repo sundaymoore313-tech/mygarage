@@ -12,10 +12,12 @@ type AuthUser = {
 
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
+const AUTH_REMEMBER_KEY = 'mygarage-auth-remember'
 const LEGAL_ACCEPTANCE_KEY = 'mygarage-legal-accepted-v1'
 
 function saveAuth(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
+  localStorage.setItem(AUTH_REMEMBER_KEY, remember ? '1' : '0')
   if (remember) {
     localStorage.setItem(AUTH_LOCAL_KEY, value)
     sessionStorage.removeItem(AUTH_SESSION_KEY)
@@ -36,7 +38,7 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(true)
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem(AUTH_REMEMBER_KEY) !== '0')
   const [authError, setAuthError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   const [authConfirmPending, setAuthConfirmPending] = useState(false)
@@ -48,7 +50,7 @@ export function GuestAuthModal({ isOpen, onClose, onSuccess }: GuestAuthModalPro
     setName('')
     setEmail('')
     setPassword('')
-    setRememberMe(true)
+    setRememberMe(localStorage.getItem(AUTH_REMEMBER_KEY) !== '0')
     setAuthError(null)
     setAuthConfirmPending(false)
   }
