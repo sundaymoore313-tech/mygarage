@@ -1049,7 +1049,10 @@ function App() {
             const url = screenshotRef.current?.()
             if (url) setSocialPreviewUrl(url)
           }}
-          onVideoRecord={() => setVideoRecordOpen(true)}
+          onVideoRecord={() => {
+            setExportQuality((prev) => (prev === 'standard' ? 'high' : prev))
+            setVideoRecordOpen(true)
+          }}
           onPrintExport={() => setPrintExportOpen(true)}
           onOpen2DEditor={() => setPrintExportOpen(true)}
           onOpen3DEditor={() => setPrintExportOpen(false)}
@@ -1171,7 +1174,10 @@ function App() {
           const url = screenshotRef.current?.()
           if (url) setSocialPreviewUrl(url)
         }}
-        onVideoRecord={() => setVideoRecordOpen(true)}
+        onVideoRecord={() => {
+          setExportQuality((prev) => (prev === 'standard' ? 'high' : prev))
+          setVideoRecordOpen(true)
+        }}
         onPrintExport={() => setPrintExportOpen(true)}
         onOpen2DEditor={() => setPrintExportOpen(true)}
         onOpen3DEditor={() => setPrintExportOpen(false)}

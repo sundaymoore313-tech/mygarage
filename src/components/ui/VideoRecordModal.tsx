@@ -26,6 +26,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
   const [recording, setRecording] = useState(false)
   const [progress, setProgress] = useState(0) // 0–100
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -81,6 +82,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
       URL.revokeObjectURL(blobUrl)
       setBlobUrl(null)
     }
+    setRecordedBlob(null)
     chunksRef.current = []
     setProgress(0)
     setRecording(true)
@@ -174,6 +176,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
         }
 
         const blob = new Blob(chunksRef.current, { type: effectiveMimeType })
+        setRecordedBlob(blob)
         setBlobUrl(URL.createObjectURL(blob))
         setRecording(false)
         setProgress(100)
@@ -204,8 +207,29 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
     recorderRef.current?.stop()
   }
 
-  function handleDownload() {
-    if (!blobUrl) return
+  async function handleDownload() {
+    if (!blobUrl || !recordedBlob) return
+
+    // On mobile Safari/Chrome this opens the share sheet so users can Save Video to Photos.
+    if (typeof navigator !== 'undefined' && 'share' in navigator && typeof File !== 'undefined') {
+      try {
+        const file = new File([recordedBlob], `mygarage-${duration}s-${Date.now()}.mp4`, { type: recordedBlob.type || 'video/mp4' })
+        const canShare = 'canShare' in navigator
+          ? (navigator as Navigator & { canShare?: (data?: ShareData) => boolean }).canShare?.({ files: [file] })
+          : true
+        if (canShare) {
+          await navigator.share({
+            files: [file],
+            title: 'mygarage video',
+            text: 'Save this video to Photos',
+          })
+          return
+        }
+      } catch {
+        // Fall back to download when share is unavailable/cancelled.
+      }
+    }
+
     const a = document.createElement('a')
     a.href = blobUrl
     a.download = `mygarage-${duration}s-${Date.now()}.mp4`
@@ -322,7 +346,7 @@ export function VideoRecordModal({ getStream, onClose, onRecordingChange, initia
           {blobUrl && (
             <>
               <button type="button" className="social-download-btn" onClick={handleDownload}>
-                Download MP4 🎬
+                Save Video 🎬
               </button>
               <button type="button" className="social-cancel-btn" onClick={() => { setBlobUrl(null); setProgress(0) }}>
                 Re-record

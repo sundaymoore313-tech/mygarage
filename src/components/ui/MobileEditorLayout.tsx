@@ -574,6 +574,13 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 {p.label}
               </button>
             ))}
+            <span className="mobile-chips-sep" />
+            {FINISHES.map(f => (
+              <button key={f.id} type="button"
+                className={`mobile-chip${carStripe.finish === f.id ? ' active' : ''}`}
+                onClick={() => setCarStripe({ finish: f.id, enabled: true })}
+              >{f.label}</button>
+            ))}
           </div>
           {/* Slider row */}
           <div className="mobile-swatches-row" style={{ gap: 8 }}>
@@ -640,6 +647,13 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 <span className="mobile-preset-preview" style={{ background: p.preview }} />
                 {p.label}
               </button>
+            ))}
+            <span className="mobile-chips-sep" />
+            {FINISHES.map(f => (
+              <button key={f.id} type="button"
+                className={`mobile-chip${carSplit.finish === f.id ? ' active' : ''}`}
+                onClick={() => setCarSplit({ finish: f.id, enabled: true })}
+              >{f.label}</button>
             ))}
           </div>
           {/* Controls row */}
