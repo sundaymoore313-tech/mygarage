@@ -238,21 +238,24 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
       {open && (
         <>
           <div className="file-menu-backdrop" onClick={() => setOpen(false)} />
-          <div className={mobileCompact ? 'file-menu-dropdown file-menu-dropdown-mobile' : 'file-menu-dropdown'}>
-            {mobileCompact ? (
-              <>
-                <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
-                  <span className="file-menu-icon">⭐</span> Add to Profile
-                </button>
-                <div className="file-menu-divider" />
-                <button type="button" className="file-menu-item" onClick={handleExportPng}>
-                  <span className="file-menu-icon">🖼</span> Save Picture
-                </button>
-                <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
-                  <span className="file-menu-icon">🎥</span> Record Video
-                </button>
-              </>
-            ) : (
+          {mobileCompact ? (
+            <div className="file-menu-mobile-modal" role="dialog" aria-modal="true" aria-label="File actions">
+              <div className="file-menu-mobile-title">Quick Actions</div>
+              <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
+                <span className="file-menu-icon">⭐</span> Save to Profile
+              </button>
+              <button type="button" className="file-menu-item" onClick={handleExportPng}>
+                <span className="file-menu-icon">🖼</span> Take Screenshot
+              </button>
+              <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
+                <span className="file-menu-icon">🎥</span> Record Video
+              </button>
+              <button type="button" className="file-menu-mobile-close" onClick={() => setOpen(false)}>
+                Close
+              </button>
+            </div>
+          ) : (
+            <div className="file-menu-dropdown">
               <>
                 <button type="button" className="file-menu-item" onClick={handleSaveToProfile}>
                   <span className="file-menu-icon">⭐</span> Add to Profile
@@ -313,8 +316,8 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
                   <span className="file-menu-icon">🖨️</span> {isSvgMode ? 'SVG Export…' : 'Print / Wrap Export…'}
                 </button>
               </>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
 
