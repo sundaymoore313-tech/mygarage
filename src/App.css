@@ -101,6 +101,7 @@
 /* ── Mobile Editor Bottom-Sheet Layout ─────────────────────────── */
 .mobile-editor-layout {
   --mobile-tab-bar-height: calc(76px + env(safe-area-inset-bottom, 0px));
+  --mobile-panel-reserved-height: 200px;
   width: 100%;
   height: 100%;
   display: flex;
@@ -111,10 +112,16 @@
 }
 
 .mobile-viewport-container {
-  flex: 1;
+  flex: 0 0 auto;
   width: 100%;
-  min-height: 0;
+  height: calc(100dvh - var(--mobile-tab-bar-height) - 170px);
+  min-height: 260px;
   overflow: hidden;
+  transition: height 0.28s ease;
+}
+
+.mobile-editor-layout.panel-open .mobile-viewport-container {
+  height: calc(100dvh - var(--mobile-tab-bar-height) - var(--mobile-panel-reserved-height) - 170px);
 }
 
 /* Bottom sheet: ONLY the tab bar now */

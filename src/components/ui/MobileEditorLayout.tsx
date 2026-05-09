@@ -110,7 +110,7 @@ export function MobileEditorLayout({
   }
 
   return (
-    <div className="mobile-editor-layout">
+    <div className={`mobile-editor-layout${activePanel ? ' panel-open' : ''}`}>
       {/* Full-width 3D viewport */}
       <div className="mobile-viewport-container">{editorCanvas}</div>
 
