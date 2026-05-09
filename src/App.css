@@ -8691,10 +8691,13 @@ hr {
 
 /* Profile page */
 .profile-page {
-  min-height: 100vh;
+  height: 100dvh;
   background: linear-gradient(160deg, #2a2a2a 0%, #141414 40%, #080808 100%);
   color: #e8edf2;
-  padding: 16px 24px 36px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .profile-topbar {
@@ -8702,7 +8705,13 @@ hr {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .profile-topbar-left,
@@ -8823,12 +8832,14 @@ hr {
 }
 
 .profile-hero {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow: hidden;
   background: rgba(10, 10, 10, 0.96);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  position: sticky;
+  top: 66px;
+  z-index: 99;
 }
 
 .profile-user-name {
@@ -8940,7 +8951,10 @@ hr {
 }
 
 .profile-about-section {
-  margin-top: 18px;
+  margin-top: 0;
+  margin-bottom: 22px;
+  margin-left: 24px;
+  margin-right: 24px;
   background: rgba(10, 10, 10, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -9261,7 +9275,10 @@ hr {
 }
 
 .profile-projects-section {
-  margin-top: 22px;
+  margin-top: 0;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 24px;
 }
 
 .profile-projects-head {
@@ -9467,7 +9484,8 @@ hr {
 }
 
 .profile-storage-section {
-  margin-top: 28px;
+  margin-top: 0;
+  margin-bottom: 36px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   background: rgba(10, 10, 10, 0.72);
