@@ -95,6 +95,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const [glbStatus, setGlbStatus] = useState<string | null>(null)
   const [profileSaving, setProfileSaving] = useState(false)
   const menuRootRef = useRef<HTMLDivElement | null>(null)
+  const mobileModalRef = useRef<HTMLDivElement | null>(null)
   const project = useEditorStore((state) => state.project)
   const loadProject = useEditorStore((state) => state.loadProject)
   const selectedCar = useEditorStore((state) => state.selectedCar)
@@ -237,6 +238,8 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
       const target = ev.target as Node | null
       if (!target) return
       if (menuRootRef.current?.contains(target)) return
+      // Portal renders into document.body — exempt the mobile modal from outside-click detection
+      if (mobileModalRef.current?.contains(target)) return
       setOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown, true)
@@ -257,7 +260,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
         ? createPortal(
           <>
             <div className="file-menu-backdrop file-menu-backdrop-mobile" onClick={() => setOpen(false)} />
-            <div className="file-menu-mobile-modal" role="dialog" aria-modal="true" aria-label="File actions">
+            <div ref={mobileModalRef} className="file-menu-mobile-modal" role="dialog" aria-modal="true" aria-label="File actions">
               <div className="file-menu-mobile-title">Quick Actions</div>
               <button type="button" className="file-menu-item" onClick={() => { void handleSaveToProfile() }} disabled={profileSaving}>
                 <span className="file-menu-icon">⭐</span> {profileSaving ? 'Saving to Profile...' : 'Save to Profile'}
