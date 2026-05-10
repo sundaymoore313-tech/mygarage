@@ -1281,6 +1281,7 @@ function App() {
           cloudStatusTone={cloudStatusTone}
           exportQuality={exportQuality}
           onExportQualityChange={setExportQuality}
+          blockGuestSaveToProfile={isGuest}
           isSaving={isSaving}
           lastSaveMs={lastSaveMs}
         />

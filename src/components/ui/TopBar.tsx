@@ -75,6 +75,7 @@ type TopBarProps = {
   exportQuality?: ExportQuality
   onExportQualityChange?: (quality: ExportQuality) => void
   mobileCompact?: boolean
+  blockGuestSaveToProfile?: boolean
   isSaving?: boolean
   lastSaveMs?: number
 }
@@ -86,7 +87,7 @@ const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
   { id: 'showroom', label: 'Showroom' },
 ]
 
-function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange, mobileCompact = false }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void; mobileCompact?: boolean }) {
+function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange, mobileCompact = false, blockGuestSaveToProfile = false }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void; mobileCompact?: boolean; blockGuestSaveToProfile?: boolean }) {
   const [open, setOpen] = useState(false)
   const [glbBakeOverlays, setGlbBakeOverlays] = useState(true)
   const [glbIncludeLightsCamera, setGlbIncludeLightsCamera] = useState(false)
@@ -109,6 +110,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   }
 
   const handleSaveToProfile = async () => {
+    if (blockGuestSaveToProfile) { onGuestNudge?.('Add to Profile'); return }
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
     if (profileSaving) return
     const liveState = useEditorStore.getState()
@@ -526,6 +528,7 @@ export function TopBar({
   exportQuality = 'high',
   onExportQualityChange,
   mobileCompact = false,
+  blockGuestSaveToProfile = false,
   isSaving = false,
   lastSaveMs,
 }: TopBarProps) {
@@ -656,7 +659,7 @@ export function TopBar({
 
         <div className="top-bar-divider" />
 
-        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} mobileCompact={mobileCompact} />
+        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} mobileCompact={mobileCompact} blockGuestSaveToProfile={blockGuestSaveToProfile} />
 
         <div className="top-bar-divider" />
 
