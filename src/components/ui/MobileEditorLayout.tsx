@@ -974,6 +974,34 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     : layer.type === 'decal' ? 'Decal'
                     : layer.type}
                 </span>
+                {(layer.type === 'text' || layer.type === 'decal') && (
+                  <div className="mobile-layer-mirror-controls">
+                    <button
+                      type="button"
+                      className={`mobile-layer-mirror${layer.mirrorToOtherSide ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        updateLayer(layer.id, { mirrorToOtherSide: !layer.mirrorToOtherSide })
+                      }}
+                      aria-label={layer.mirrorToOtherSide ? 'Mirrored to both sides' : 'Mirror to other side'}
+                      title="Mirror to other side of car"
+                    >
+                      ⟷
+                    </button>
+                    <button
+                      type="button"
+                      className={`mobile-layer-mirror${layer.mirrorX ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        updateLayer(layer.id, { mirrorX: !layer.mirrorX })
+                      }}
+                      aria-label={layer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
+                      title="Mirror horizontally"
+                    >
+                      ↔
+                    </button>
+                  </div>
+                )}
                 <div className="mobile-layer-order-controls">
                   <button
                     type="button"

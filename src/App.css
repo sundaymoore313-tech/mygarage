@@ -576,6 +576,36 @@
 }
 .mobile-layer-icon { font-size: 0.85rem; opacity: 0.7; }
 .mobile-layer-name { max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+.mobile-layer-mirror-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mobile-layer-mirror {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(62, 201, 255, 0.12);
+  border: 1px solid rgba(62, 201, 255, 0.24);
+  border-radius: 6px;
+  color: #9fd4ff;
+  font-size: 0.7rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.mobile-layer-mirror:hover {
+  background: rgba(62, 201, 255, 0.18);
+  border-color: rgba(62, 201, 255, 0.36);
+}
+.mobile-layer-mirror.active {
+  background: rgba(70, 160, 200, 0.35);
+  border-color: #3ec9ff;
+  color: #e8edf2;
+}
 .mobile-layer-order-controls {
   display: inline-flex;
   align-items: center;
