@@ -15,7 +15,7 @@ import { endPerfSpan, markPerfOnce, startPerfSpan } from './lib/perfDebug'
 import { isOwnerEmail } from './lib/access'
 import type { NonGuestPlanTier } from './lib/access'
 import { saveGeneratedClassifyPreset } from './lib/paintTargets'
-import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, syncCloudProjectsToLocal } from './lib/savedProjects'
+import { loadFullProjectByIdWithCloud, migrateLocalProjectsToCloud, saveFullProjectToProfile, syncCloudProjectsToLocal } from './lib/savedProjects'
 import { getCurrentUser, getCurrentUserPlanTier, isSupabaseConfigured, supabase } from './lib/supabase'
 import { writeSession, saveDraftProject, readDraftProject, clearDraftProject, getRecoverableSession, confirmSession, clearSession } from './lib/sessionPersistence'
 import type { RealtimeChannel } from '@supabase/supabase-js'
@@ -54,6 +54,7 @@ function detectMobileEditorViewport(): boolean {
 }
 
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
+type LeaveAction = 'home' | 'change-car'
 
 type GarageProjectRealtimeRow = {
   user_id?: string | null
@@ -327,6 +328,9 @@ function App() {
   const [cloudStatusLabel, setCloudStatusLabel] = useState('Cloud: checking...')
   const [cloudStatusTone, setCloudStatusTone] = useState<'neutral' | 'ok' | 'warn' | 'error'>('neutral')
   const [isCarSwitching, setIsCarSwitching] = useState(false)
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<LeaveAction | null>(null)
+  const [leavePromptSaving, setLeavePromptSaving] = useState(false)
+  const [leavePromptError, setLeavePromptError] = useState<string | null>(null)
   const is2DOpen = printExportOpen
   const editorWarmRef = useRef(false)
   const skipHistoryPushRef = useRef(false)
@@ -900,7 +904,12 @@ function App() {
     setUserPlan(plan)
   }
 
-  const handleChangeCar = useCallback(() => {
+  const executeLeaveAction = useCallback((action: LeaveAction) => {
+    if (action === 'home') {
+      setScreen('home')
+      return
+    }
+
     // Ensure no heavy editor overlays survive into the selector route on mobile.
     if (isMobileViewport) {
       setIsCarSwitching(true)
@@ -925,6 +934,75 @@ function App() {
     setScreen('selector')
   }, [isMobileViewport, clearSelectedCar, projectId])
 
+  const handleChangeCar = useCallback(() => {
+    setLeavePromptError(null)
+    setPendingLeaveAction('change-car')
+  }, [])
+
+  const handleGoHome = useCallback(() => {
+    setLeavePromptError(null)
+    setPendingLeaveAction('home')
+  }, [])
+
+  const handleCancelLeavePrompt = useCallback(() => {
+    if (leavePromptSaving) return
+    setPendingLeaveAction(null)
+    setLeavePromptError(null)
+  }, [leavePromptSaving])
+
+  const handleLeaveWithoutSaving = useCallback(() => {
+    if (!pendingLeaveAction || leavePromptSaving) return
+    const action = pendingLeaveAction
+    setPendingLeaveAction(null)
+    setLeavePromptError(null)
+    executeLeaveAction(action)
+  }, [pendingLeaveAction, leavePromptSaving, executeLeaveAction])
+
+  const handleSaveBeforeLeaving = useCallback(async () => {
+    if (!pendingLeaveAction || leavePromptSaving) return
+
+    setLeavePromptSaving(true)
+    setLeavePromptError(null)
+    try {
+      const liveState = useEditorStore.getState()
+      const liveCar = liveState.selectedCar ?? selectedCar
+
+      if (!liveCar) {
+        setLeavePromptError('No car selected to save. You can still leave without saving.')
+        return
+      }
+
+      if (isGuest) {
+        const draftId = projectId ?? liveState.project.meta.id
+        saveDraftProject(
+          draftId,
+          liveState.project,
+          liveCar,
+          liveState.targetPaints,
+          liveState.targetPrints,
+        )
+      } else {
+        const result = await saveFullProjectToProfile(
+          liveState.project,
+          liveCar,
+          liveState.targetPaints,
+          liveState.targetPrints,
+          screenshotRef.current?.() ?? null,
+        )
+        if (!result.ok) {
+          setLeavePromptError(result.error ?? 'Save failed. Please try again or leave without saving.')
+          return
+        }
+      }
+
+      const action = pendingLeaveAction
+      setPendingLeaveAction(null)
+      executeLeaveAction(action)
+    } finally {
+      setLeavePromptSaving(false)
+    }
+  }, [pendingLeaveAction, leavePromptSaving, isGuest, projectId, selectedCar, executeLeaveAction])
+
   // Handle recovery prompt
   const handleRecoverProject = async () => {
     if (recoverableProjectId) {
@@ -941,6 +1019,92 @@ function App() {
     setShowRecoveryPrompt(false)
     setRecoverableProjectId(null)
   }
+
+  const leavePromptModal = pendingLeaveAction ? (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.56)',
+      zIndex: 10020,
+      padding: 16,
+    }}>
+      <div style={{
+        width: 'min(460px, 100%)',
+        backgroundColor: '#0f141b',
+        border: '1px solid rgba(62, 201, 255, 0.24)',
+        borderRadius: 12,
+        padding: 20,
+        color: '#d7e2ec',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+      }}>
+        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>
+          Save before leaving?
+        </h2>
+        <p style={{ margin: '10px 0 0', opacity: 0.84, lineHeight: 1.45 }}>
+          {pendingLeaveAction === 'change-car' ? 'You are about to switch cars.' : 'You are about to go back home.'} Save now so your layers and car colors are preserved.
+        </p>
+        {isGuest && (
+          <p style={{ margin: '8px 0 0', opacity: 0.72, fontSize: '0.9rem' }}>
+            Guest mode will save a local draft on this device.
+          </p>
+        )}
+        {leavePromptError && (
+          <p style={{ margin: '10px 0 0', color: '#fca5a5', fontSize: '0.9rem' }}>{leavePromptError}</p>
+        )}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={handleCancelLeavePrompt}
+            disabled={leavePromptSaving}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid rgba(138, 160, 180, 0.35)',
+              background: 'rgba(255,255,255,0.04)',
+              color: '#c7d4e0',
+              cursor: leavePromptSaving ? 'default' : 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleLeaveWithoutSaving}
+            disabled={leavePromptSaving}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid rgba(248, 113, 113, 0.45)',
+              background: 'rgba(120, 25, 25, 0.2)',
+              color: '#fca5a5',
+              cursor: leavePromptSaving ? 'default' : 'pointer',
+            }}
+          >
+            Leave Without Saving
+          </button>
+          <button
+            type="button"
+            onClick={() => { void handleSaveBeforeLeaving() }}
+            disabled={leavePromptSaving}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: 'none',
+              background: '#3ec9ff',
+              color: '#0a0f14',
+              fontWeight: 700,
+              cursor: leavePromptSaving ? 'default' : 'pointer',
+            }}
+          >
+            {leavePromptSaving ? 'Saving...' : 'Save and Leave'}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   // Recovery modal
   if (showRecoveryPrompt && recoverableProjectId) {
@@ -1102,7 +1266,7 @@ function App() {
           onLightPreset={setLightPreset}
           onResetCamera={() => resetCameraRef.current?.()}
           onChangeCar={handleChangeCar}
-          onGoHome={() => setScreen('home')}
+          onGoHome={handleGoHome}
           onOpenProfile={() => setScreen('profile')}
           onGuestSignIn={handleGuestSignIn}
           isGuest={isGuest}
@@ -1194,6 +1358,8 @@ function App() {
             </div>
           </div>
         )}
+
+        {leavePromptModal}
       </div>
     )
   }
@@ -1227,7 +1393,7 @@ function App() {
         onLightPreset={setLightPreset}
         onResetCamera={() => resetCameraRef.current?.()}
         onChangeCar={handleChangeCar}
-        onGoHome={() => setScreen('home')}
+        onGoHome={handleGoHome}
         onOpenProfile={() => setScreen('profile')}
         onGuestSignIn={handleGuestSignIn}
         isGuest={isGuest}
@@ -1544,6 +1710,8 @@ function App() {
           ✓ {tabSyncNotification}
         </div>
       )}
+
+      {leavePromptModal}
     </div>
   )
 }

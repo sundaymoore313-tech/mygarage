@@ -641,7 +641,13 @@ export function TopBar({
         <button
           type="button"
           className="top-plain-btn top-bar-home"
-          onClick={() => { clearSelectedCar(); onGoHome?.() }}
+          onClick={() => {
+            if (onGoHome) {
+              onGoHome()
+              return
+            }
+            clearSelectedCar()
+          }}
           title="Back to home"
           aria-label="Home"
         >
