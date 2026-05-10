@@ -45,18 +45,51 @@ const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
 
 function shouldUseStaticSelectorThumbnails(): boolean {
-  if (typeof navigator === 'undefined') {
-    return false
+  // Always prefer static thumbnails in the selector to avoid many WebGL contexts
+  // and keep scrolling/tap latency smooth on all devices.
+  return true
+}
+
+function hashString(input: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
   }
+  return hash >>> 0
+}
 
-  const ua = navigator.userAgent
-  const isAppleMobile = /iPhone|iPad|iPod/i.test(ua)
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
-
-  // Mobile Safari and low-memory devices can crash when many WebGL contexts
-  // are created at once in the selector grid.
-  return isAppleMobile || isMobile || (typeof memory === 'number' && memory <= 4)
+function buildStaticCarThumbnailDataUrl(carName: string, fileName: string): string {
+  const seed = `${fileName}:${carName}`
+  const hash = hashString(seed)
+  const hueA = hash % 360
+  const hueB = (hueA + 38) % 360
+  const label = getDisplayCarName(carName).slice(0, 22)
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-label="${label}">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(${hueA} 56% 43%)"/>
+      <stop offset="100%" stop-color="hsl(${hueB} 52% 20%)"/>
+    </linearGradient>
+    <linearGradient id="car" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7fbff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#dbe8f5" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#bg)"/>
+  <circle cx="150" cy="120" r="130" fill="rgba(255,255,255,0.12)"/>
+  <circle cx="560" cy="560" r="180" fill="rgba(0,0,0,0.18)"/>
+  <path d="M86 398 L140 330 C164 300 205 282 248 282 L410 282 C452 282 488 304 516 332 L560 398 L86 398 Z" fill="url(#car)"/>
+  <rect x="152" y="304" width="162" height="52" rx="18" fill="#cfe0f0" fill-opacity="0.9"/>
+  <rect x="334" y="304" width="160" height="52" rx="18" fill="#cfe0f0" fill-opacity="0.9"/>
+  <circle cx="196" cy="430" r="58" fill="#132537"/>
+  <circle cx="196" cy="430" r="28" fill="#8da8c2"/>
+  <circle cx="454" cy="430" r="58" fill="#132537"/>
+  <circle cx="454" cy="430" r="28" fill="#8da8c2"/>
+  <text x="320" y="556" text-anchor="middle" fill="#eff7ff" font-size="34" font-family="Segoe UI, Tahoma, sans-serif" font-weight="700">${label}</text>
+</svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
 function loadImportedCarsFromStorage(): ImportedCarRecord[] {
@@ -290,10 +323,18 @@ function CarThumbnail({
   staticMode: boolean
 }) {
   if (staticMode) {
+    const imageSrc = buildStaticCarThumbnailDataUrl(carName, fileName)
     return (
       <div className="car-thumbnail-fallback" aria-hidden="true">
-        <span className="car-thumbnail-fallback-badge">Mobile Safe Preview</span>
-        <span className="car-thumbnail-fallback-name">{getDisplayCarName(carName)}</span>
+        <img
+          className="car-thumbnail-fallback-image"
+          src={imageSrc}
+          alt={`${getDisplayCarName(carName)} thumbnail`}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+        />
+        <span className="car-thumbnail-fallback-badge">Fast Preview</span>
       </div>
     )
   }
