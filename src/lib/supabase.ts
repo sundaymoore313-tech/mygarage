@@ -121,15 +121,29 @@ export async function supabaseSignIn(
 export async function supabaseSignOut(): Promise<SignOutResult> {
   if (!supabase) return { ok: true }
 
-  const globalResult = await supabase.auth.signOut()
-  if (!globalResult.error) {
+  try {
+    // Add timeout to prevent hanging on auth lock
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Sign out timeout')), 3000)
+    )
+    
+    const signOutPromise = (async () => {
+      const globalResult = await supabase!.auth.signOut()
+      if (!globalResult.error) {
+        return { ok: true as const }
+      }
+
+      const localResult = await supabase!.auth.signOut({ scope: 'local' })
+      if (!localResult.error) {
+        return { ok: true as const }
+      }
+
+      return { ok: false as const, error: globalResult.error?.message ?? 'Sign out failed' }
+    })()
+    
+    return await Promise.race([signOutPromise, timeoutPromise]) as SignOutResult
+  } catch (err) {
+    // On timeout or error, do local cleanup anyway
     return { ok: true }
   }
-
-  const localResult = await supabase.auth.signOut({ scope: 'local' })
-  if (!localResult.error) {
-    return { ok: true }
-  }
-
-  return { ok: false, error: globalResult.error.message }
 }
