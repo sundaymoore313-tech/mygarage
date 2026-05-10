@@ -576,6 +576,30 @@
 }
 .mobile-layer-icon { font-size: 0.85rem; opacity: 0.7; }
 .mobile-layer-name { max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+.mobile-layer-order-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mobile-layer-move {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(62, 201, 255, 0.14);
+  border: 1px solid rgba(62, 201, 255, 0.28);
+  border-radius: 6px;
+  color: #bfe9ff;
+  font-size: 0.72rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+.mobile-layer-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 .mobile-layer-del {
   background: none;
   border: none;

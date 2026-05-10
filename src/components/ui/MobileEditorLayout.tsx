@@ -222,12 +222,24 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const selectedLayerId      = useEditorStore(s => s.selectedLayerId)
   const setSelectedLayer     = useEditorStore(s => s.setSelectedLayer)
   const removeLayer          = useEditorStore(s => s.removeLayer)
+  const reorderLayer         = useEditorStore(s => s.reorderLayer)
   const updateLayer          = useEditorStore(s => s.updateLayer)
   const updateLayerTransient = useEditorStore(s => s.updateLayerTransient)
 
   // Selected layer (derived)
   const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null
   const textLayer = selectedLayer?.type === 'text' ? selectedLayer as any : null
+
+  const moveLayerByDisplayOffset = (layerId: string, offset: -1 | 1) => {
+    const displayLayers = [...layers].reverse()
+    const displayIndex = displayLayers.findIndex((layer) => layer.id === layerId)
+    if (displayIndex < 0) return
+    const nextDisplayIndex = displayIndex + offset
+    if (nextDisplayIndex < 0 || nextDisplayIndex >= displayLayers.length) return
+    const fromArrIndex = layers.length - 1 - displayIndex
+    const toArrIndex = layers.length - 1 - nextDisplayIndex
+    reorderLayer(fromArrIndex, toArrIndex)
+  }
 
   // Sync editing text content when selected text layer changes
   useEffect(() => {
@@ -950,7 +962,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             {layers.length === 0 && <span className="mobile-strip-label" style={{ opacity: 0.5 }}>No layers yet</span>}
           </div>
           <div className="mobile-layers-row">
-            {[...layers].reverse().map(layer => (
+            {[...layers].reverse().map((layer, displayIndex, displayList) => (
               <div key={layer.id} className={`mobile-layer-chip${selectedLayerId === layer.id ? ' active' : ''}`}
                 onClick={() => setSelectedLayer(layer.id)}
               >
@@ -962,6 +974,34 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     : layer.type === 'decal' ? 'Decal'
                     : layer.type}
                 </span>
+                <div className="mobile-layer-order-controls">
+                  <button
+                    type="button"
+                    className="mobile-layer-move"
+                    disabled={displayIndex === 0}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      moveLayerByDisplayOffset(layer.id, -1)
+                    }}
+                    aria-label="Move layer left"
+                    title="Move left"
+                  >
+                    {'<'}
+                  </button>
+                  <button
+                    type="button"
+                    className="mobile-layer-move"
+                    disabled={displayIndex === displayList.length - 1}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      moveLayerByDisplayOffset(layer.id, 1)
+                    }}
+                    aria-label="Move layer right"
+                    title="Move right"
+                  >
+                    {'>'}
+                  </button>
+                </div>
                 <button type="button" className="mobile-layer-del"
                   onClick={e => { e.stopPropagation(); removeLayer(layer.id) }}
                   aria-label="Remove layer"

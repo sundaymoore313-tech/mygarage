@@ -100,8 +100,6 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const project = useEditorStore((state) => state.project)
   const loadProject = useEditorStore((state) => state.loadProject)
   const selectedCar = useEditorStore((state) => state.selectedCar)
-  const targetPaints = useEditorStore((state) => state.targetPaints)
-  const targetPrints = useEditorStore((state) => state.targetPrints)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const showSaveToast = (type: 'ok' | 'error', msg: string) => {
@@ -113,6 +111,10 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   const handleSaveToProfile = async () => {
     if (isGuest) { onGuestNudge?.('Add to Profile'); return }
     if (profileSaving) return
+    const liveState = useEditorStore.getState()
+    const liveProject = liveState.project
+    const liveTargetPaints = liveState.targetPaints
+    const liveTargetPrints = liveState.targetPrints
     if (!selectedCar) {
       showSaveToast('error', 'No car selected. Pick a car first.')
       setOpen(false)
@@ -121,7 +123,7 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
 
     // Beta limit: check before saving (only blocks brand-new entries)
     const existing = readSavedProjects()
-    const isUpdate = existing.some((p) => p.id === project.meta.id)
+    const isUpdate = existing.some((p) => p.id === liveProject.meta.id)
     if (!isUpdate && existing.length >= BETA_SAVE_LIMIT) {
       showSaveToast('error', `Beta limit: ${BETA_SAVE_LIMIT} cars max. Delete a car from your Profile to save a new one.`)
       setOpen(false)
@@ -131,15 +133,15 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
     const previewImageUrl = onCaptureProfilePreview?.() ?? null
     // Use the real project ID so re-saves update rather than create duplicates
     const snapshotProject: EditorProject = {
-      ...project,
+      ...liveProject,
       meta: {
-        ...project.meta,
+        ...liveProject.meta,
         updatedAt: Date.now(),
       },
     }
     setProfileSaving(true)
     try {
-      const result = await saveFullProjectToProfile(snapshotProject, selectedCar, targetPaints, targetPrints, previewImageUrl)
+      const result = await saveFullProjectToProfile(snapshotProject, selectedCar, liveTargetPaints, liveTargetPrints, previewImageUrl)
 
       if (result.limitReached) {
         showSaveToast('error', result.error ?? `Beta limit: ${BETA_SAVE_LIMIT} cars max. Delete a car from your Profile to save a new one.`)
