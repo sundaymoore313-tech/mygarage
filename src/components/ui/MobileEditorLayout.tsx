@@ -436,7 +436,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── TEXT ─────────────────────────────────────────────────
       case 'text': {
-        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         const textHsl = textLayer ? hexToHsl(textLayer.colorHex) : null
         return (
         <div className="mobile-car-controls">
@@ -495,6 +495,25 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     {f.label}
                   </button>
                 ))}
+                <span className="mobile-chips-sep" />
+                <button
+                  type="button"
+                  className={`mobile-chip mobile-inline-mirror-chip${textLayer.mirrorToOtherSide ? ' active' : ''}`}
+                  onClick={() => updateLayer(textLayer.id, { mirrorToOtherSide: !textLayer.mirrorToOtherSide } as Parameters<typeof updateLayer>[1])}
+                  aria-label={textLayer.mirrorToOtherSide ? 'Mirrored to both sides' : 'Mirror to other side'}
+                  title="Mirror to other side of car"
+                >
+                  ⟷ Side
+                </button>
+                <button
+                  type="button"
+                  className={`mobile-chip mobile-inline-mirror-chip${textLayer.mirrorX ? ' active' : ''}`}
+                  onClick={() => updateLayer(textLayer.id, { mirrorX: !textLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
+                  aria-label={textLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
+                  title="Mirror horizontally"
+                >
+                  ↔ Flip
+                </button>
               </div>
               {textHsl && (
                 <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
@@ -601,7 +620,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── ELEMENTS ─────────────────────────────────────────────
       case 'elements': {
-        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
@@ -610,6 +629,40 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               <button type="button" className="mobile-chip" onClick={onGuestSignIn}>Sign in to import</button>
             )}
           </div>
+          {decalLayer && (
+            <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
+              <span className="mobile-strip-label">Finish</span>
+              {FINISHES.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`mobile-chip${decalLayer.finish === f.id ? ' active' : ''}`}
+                  onClick={() => updateLayer(decalLayer.id, { finish: f.id } as Parameters<typeof updateLayer>[1])}
+                >
+                  {f.label}
+                </button>
+              ))}
+              <span className="mobile-chips-sep" />
+              <button
+                type="button"
+                className={`mobile-chip mobile-inline-mirror-chip${decalLayer.mirrorToOtherSide ? ' active' : ''}`}
+                onClick={() => updateLayer(decalLayer.id, { mirrorToOtherSide: !decalLayer.mirrorToOtherSide } as Parameters<typeof updateLayer>[1])}
+                aria-label={decalLayer.mirrorToOtherSide ? 'Mirrored to both sides' : 'Mirror to other side'}
+                title="Mirror to other side of car"
+              >
+                ⟷ Side
+              </button>
+              <button
+                type="button"
+                className={`mobile-chip mobile-inline-mirror-chip${decalLayer.mirrorX ? ' active' : ''}`}
+                onClick={() => updateLayer(decalLayer.id, { mirrorX: !decalLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
+                aria-label={decalLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
+                title="Mirror horizontally"
+              >
+                ↔ Flip
+              </button>
+            </div>
+          )}
           {/* Color swatches for selected decal */}
           {decalLayer && (
             <div className="mobile-swatches-row" style={{ paddingTop: 4 }}>
