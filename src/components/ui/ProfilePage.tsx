@@ -52,9 +52,12 @@ function readCurrentUser(): AuthUser | null {
   }
 }
 
+const AUTH_REMEMBER_KEY = 'mygarage-auth-remember'
+
 function clearCachedAuth() {
   localStorage.removeItem(AUTH_LOCAL_KEY)
   sessionStorage.removeItem(AUTH_SESSION_KEY)
+  localStorage.removeItem(AUTH_REMEMBER_KEY)
 }
 
 const CACHE_PREFIXES_SAFE = [
@@ -332,6 +335,7 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
   const canUseDevOverride = canUseBillingDevOverride()
   const [billingOpen, setBillingOpen] = useState(false)
   const billingDropdownRef = useRef<HTMLDivElement>(null)
+  const [logoutStatus, setLogoutStatus] = useState<'idle' | 'error'>('idle')
 
   const initials = useMemo(() => {
     if (!user?.name) return 'MG'
@@ -456,12 +460,16 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
   }
 
   async function handleLogout() {
+    setLogoutStatus('idle')
     const result = await supabaseSignOut()
     if (!result.ok) {
-      alert(result.error)
+      setLogoutStatus('error')
+      setTimeout(() => setLogoutStatus('idle'), 5000)
       return
     }
     clearCachedAuth()
+    // Clear any draft projects and app state
+    sessionStorage.clear()
     onGoHome()
   }
 
@@ -506,6 +514,15 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
           </button>
         </div>
         <div className="profile-topbar-right">
+          <button
+            type="button"
+            className="profile-nav-btn"
+            onClick={() => { void handleLogout() }}
+            title="Log out"
+            aria-label="Log out"
+          >
+            Log Out
+          </button>
           <div className="profile-bubble-wrap" ref={billingDropdownRef}>
             <button
               type="button"
@@ -549,6 +566,9 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
                     {billingBusy === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
                   </button>
                 </div>
+                {logoutStatus === 'error' && (
+                  <p style={{ color: '#ff7b7b', fontSize: '0.85rem', marginTop: '8px' }}>Logout failed. Check your connection and try again.</p>
+                )}
                 <div className="profile-billing-meta">
                   <span>{billingConfig.configured ? 'Stripe configured' : 'Stripe not configured'}</span>
                   {billingConfig.supportEmail ? <span>Support: {billingConfig.supportEmail}</span> : null}
@@ -584,9 +604,6 @@ export function ProfilePage({ planTier, onPlanChange, onRefreshPlan, onGoHome, o
               </div>
             )}
           </div>
-          <button type="button" className="profile-nav-btn" onClick={handleLogout}>
-            Log Out
-          </button>
         </div>
       </header>
 
