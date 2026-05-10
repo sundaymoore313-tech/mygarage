@@ -552,9 +552,21 @@ function App() {
         }
 
         if (draft) {
-          const loadProject = useEditorStore.getState().loadProject
-          loadProject(draft.project)
+          const store = useEditorStore.getState()
+          store.loadProject(draft.project)
+          useEditorStore.setState({
+            targetPaints: draft.targetPaints ?? full?.targetPaints ?? store.targetPaints,
+            targetPrints: draft.targetPrints ?? full?.targetPrints ?? store.targetPrints,
+          })
           setLastSaveMs(draft.savedAtMs)
+        } else if (full) {
+          const store = useEditorStore.getState()
+          store.loadProject(full.project)
+          useEditorStore.setState({
+            targetPaints: full.targetPaints,
+            targetPrints: full.targetPrints,
+          })
+          setLastSaveMs(full.updatedAt)
         }
 
         // Update session
@@ -586,12 +598,23 @@ function App() {
     }
 
     const performAutoSave = () => {
-      const currentStateJson = JSON.stringify(project)
+      const liveState = useEditorStore.getState()
+      const currentStateJson = JSON.stringify({
+        project: liveState.project,
+        targetPaints: liveState.targetPaints,
+        targetPrints: liveState.targetPrints,
+      })
       if (currentStateJson !== lastAutoSaveStateRef.current) {
         lastAutoSaveStateRef.current = currentStateJson
         setIsSaving(true)
         try {
-          saveDraftProject(projectId, project, selectedCar ?? undefined)
+          saveDraftProject(
+            projectId,
+            liveState.project,
+            liveState.selectedCar ?? undefined,
+            liveState.targetPaints,
+            liveState.targetPrints,
+          )
           setLastSaveMs(Date.now())
           setIsSaving(false)
           // Update session
@@ -616,7 +639,7 @@ function App() {
         autoSaveIntervalRef.current = null
       }
     }
-  }, [screen, projectId, project, selectedCar])
+  }, [screen, projectId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -815,12 +838,13 @@ function App() {
       name: 'Dodge Charger SRT Hellcat',
       modelUrl: GUEST_MODEL_URL,
     })
-    const freshProject = useEditorStore.getState().project
+    const liveState = useEditorStore.getState()
+    const freshProject = liveState.project
     setProjectId(freshProject.meta.id)
     saveDraftProject(freshProject.meta.id, freshProject, {
       name: 'Dodge Charger SRT Hellcat',
       modelUrl: GUEST_MODEL_URL,
-    })
+    }, liveState.targetPaints, liveState.targetPrints)
     writeSession({
       projectId: freshProject.meta.id,
       screen: 'editor',
@@ -849,7 +873,7 @@ function App() {
       name: full.carName,
       modelUrl: full.modelUrl,
       groundOffsetY: full.groundOffsetY,
-    })
+    }, full.targetPaints, full.targetPrints)
     writeSession({
       projectId: full.id,
       screen: 'editor',
@@ -999,10 +1023,16 @@ function App() {
   if (screen === 'selector' || !selectedCar) {
     return <CarSelectorPage onGoHome={() => setScreen('home')} onOpenProfile={() => setScreen('profile')} onEnterEditor={() => {
       beginEditorOpen('selector_enter')
-      const freshProject = useEditorStore.getState().project
-      const selectedCarSnapshot = useEditorStore.getState().selectedCar
+      const liveState = useEditorStore.getState()
+      const freshProject = liveState.project
       setProjectId(freshProject.meta.id)
-      saveDraftProject(freshProject.meta.id, freshProject, selectedCarSnapshot ?? undefined)
+      saveDraftProject(
+        freshProject.meta.id,
+        freshProject,
+        liveState.selectedCar ?? undefined,
+        liveState.targetPaints,
+        liveState.targetPrints,
+      )
       writeSession({
         projectId: freshProject.meta.id,
         screen: 'editor',

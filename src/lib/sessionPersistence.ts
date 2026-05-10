@@ -5,7 +5,7 @@
  * - Tracks unsaved changes and last save time
  */
 
-import type { EditorProject } from '../types/editor'
+import type { EditorProject, PaintConfig, PaintTargetId, PrintConfig } from '../types/editor'
 
 const SESSION_KEY = 'mygarage-session'
 const PROJECT_DRAFT_PREFIX = 'mygarage-draft-'
@@ -33,6 +33,8 @@ export type DraftProjectState = {
   project: EditorProject
   savedAtMs: number
   car?: DraftProjectCar
+  targetPaints?: Partial<Record<PaintTargetId, PaintConfig>>
+  targetPrints?: Partial<Record<PaintTargetId, PrintConfig | null>>
 }
 
 /** Read session metadata from sessionStorage */
@@ -64,10 +66,16 @@ export function clearSession(): void {
 }
 
 /** Save full project to localStorage (for reload recovery + persistence) */
-export function saveDraftProject(projectId: string, project: EditorProject, car?: DraftProjectCar): boolean {
+export function saveDraftProject(
+  projectId: string,
+  project: EditorProject,
+  car?: DraftProjectCar,
+  targetPaints?: Partial<Record<PaintTargetId, PaintConfig>>,
+  targetPrints?: Partial<Record<PaintTargetId, PrintConfig | null>>,
+): boolean {
   try {
     const key = `${PROJECT_DRAFT_PREFIX}${projectId}`
-    localStorage.setItem(key, JSON.stringify({ project, savedAtMs: Date.now(), car }))
+    localStorage.setItem(key, JSON.stringify({ project, savedAtMs: Date.now(), car, targetPaints, targetPrints }))
     return true
   } catch {
     console.warn(`Failed to save draft for project ${projectId}`)
