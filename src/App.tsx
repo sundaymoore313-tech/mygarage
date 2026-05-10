@@ -1237,6 +1237,10 @@ function App() {
 
   // Mobile layout
   if (isMobileViewport) {
+    const mobileGuestFullAccess = isGuest
+    const mobileIsGuest = mobileGuestFullAccess ? false : isGuest
+    const mobilePlanTier = mobileGuestFullAccess ? 'paid' : accountPlan
+
     return (
       <div className="app-root">
         <TopBar
@@ -1269,8 +1273,8 @@ function App() {
           onGoHome={handleGoHome}
           onOpenProfile={() => setScreen('profile')}
           onGuestSignIn={handleGuestSignIn}
-          isGuest={isGuest}
-          planTier={accountPlan}
+          isGuest={mobileIsGuest}
+          planTier={mobilePlanTier}
           onUpgradeClick={() => setScreen('profile')}
           onCaptureProfilePreview={() => screenshotRef.current?.() ?? null}
           cloudStatusLabel={cloudStatusLabel}
@@ -1283,7 +1287,7 @@ function App() {
 
         <MobileEditorLayout
           editorCanvas={editorCanvasElement}
-          isGuest={isGuest}
+          isGuest={mobileIsGuest}
           onGuestSignIn={handleGuestSignIn}
           simplified
         />
@@ -1294,9 +1298,9 @@ function App() {
             <PrintExportModal
               captureRef={printCaptureRef}
               onClose={() => setPrintExportOpen(false)}
-              isGuest={isGuest}
+              isGuest={mobileIsGuest}
               onGuestSignIn={handleGuestSignIn}
-              planTier={accountPlan}
+              planTier={mobilePlanTier}
               onUpgradeClick={() => setScreen('profile')}
             />
           </Suspense>
