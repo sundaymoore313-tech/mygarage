@@ -10,6 +10,7 @@ values (
 on conflict (id) do nothing;
 
 -- Allow authenticated users to upload their own thumbnails
+drop policy if exists "Users can upload their own thumbnails" on storage.objects;
 create policy "Users can upload their own thumbnails"
   on storage.objects for insert
   to authenticated
@@ -19,6 +20,7 @@ create policy "Users can upload their own thumbnails"
   );
 
 -- Allow authenticated users to update/replace their own thumbnails
+drop policy if exists "Users can update their own thumbnails" on storage.objects;
 create policy "Users can update their own thumbnails"
   on storage.objects for update
   to authenticated
@@ -28,6 +30,7 @@ create policy "Users can update their own thumbnails"
   );
 
 -- Allow authenticated users to delete their own thumbnails
+drop policy if exists "Users can delete their own thumbnails" on storage.objects;
 create policy "Users can delete their own thumbnails"
   on storage.objects for delete
   to authenticated
@@ -37,6 +40,7 @@ create policy "Users can delete their own thumbnails"
   );
 
 -- Allow public read access so thumbnails load without auth
+drop policy if exists "Public can view thumbnails" on storage.objects;
 create policy "Public can view thumbnails"
   on storage.objects for select
   to public

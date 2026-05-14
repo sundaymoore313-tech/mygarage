@@ -14,6 +14,7 @@ set
   allowed_mime_types = excluded.allowed_mime_types;
 
 -- Allow authenticated users to upload videos inside their own folder
+drop policy if exists "Users can upload their own project videos" on storage.objects;
 create policy "Users can upload their own project videos"
   on storage.objects for insert
   to authenticated
@@ -23,6 +24,7 @@ create policy "Users can upload their own project videos"
   );
 
 -- Allow authenticated users to list/read their own videos
+drop policy if exists "Users can view their own project videos" on storage.objects;
 create policy "Users can view their own project videos"
   on storage.objects for select
   to authenticated
@@ -32,6 +34,7 @@ create policy "Users can view their own project videos"
   );
 
 -- Allow authenticated users to replace/update their own videos
+drop policy if exists "Users can update their own project videos" on storage.objects;
 create policy "Users can update their own project videos"
   on storage.objects for update
   to authenticated
@@ -41,6 +44,7 @@ create policy "Users can update their own project videos"
   );
 
 -- Allow authenticated users to delete their own videos
+drop policy if exists "Users can delete their own project videos" on storage.objects;
 create policy "Users can delete their own project videos"
   on storage.objects for delete
   to authenticated
