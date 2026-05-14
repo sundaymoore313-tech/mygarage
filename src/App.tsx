@@ -1,5 +1,5 @@
 ﻿import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Layers, Type, Car } from 'lucide-react'
+import { Layers, Type, Palette } from 'lucide-react'
 import { useEditorStore } from './store/editorStore'
 import { CarSelectorPage } from './components/ui/CarSelectorPage'
 import { HomePage } from './components/ui/HomePage'
@@ -7,7 +7,6 @@ import { ProfilePage } from './components/ui/ProfilePage'
 import { MobileEditorLayout } from './components/ui/MobileEditorLayout'
 import type { GlbExportOptions, GlbExportResult, LightPresetId } from './components/scene/EditorCanvas'
 import { clearModelSceneCache, preloadModelScene } from './components/scene/useModelScene'
-import { InspectorPanel } from './components/ui/InspectorPanel'
 import { LayerPanel } from './components/ui/LayerPanel'
 import { TopBar } from './components/ui/TopBar'
 import { readCachedPlanTier, writeCachedPlanTier } from './lib/billing'
@@ -25,8 +24,11 @@ import './App.css'
 const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const SCREEN_QUERY_KEY = 'screen'
 const PROJECT_ID_QUERY_KEY = 'projectId'
+const DISABLE_EXPORT_QUERY_KEY = 'disableExport'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
 const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
+// Lock mobile version - prevents mobile layout from rendering regardless of viewport size
+const LOCK_MOBILE_VERSION = false
 
 function isChunkLoadFailure(error: unknown): boolean {
   if (!error) return false
@@ -35,6 +37,8 @@ function isChunkLoadFailure(error: unknown): boolean {
 }
 
 function detectMobileEditorViewport(): boolean {
+  if (LOCK_MOBILE_VERSION) return false
+  
   if (typeof window === 'undefined') return false
 
   const mediaMatch = typeof window.matchMedia === 'function'
@@ -79,6 +83,13 @@ function readProjectIdFromUrl(): string | null {
   if (typeof window === 'undefined') return null
   const params = new URLSearchParams(window.location.search)
   return params.get(PROJECT_ID_QUERY_KEY)
+}
+
+function readDisableExportFromUrl(): boolean {
+  if (typeof window === 'undefined') return false
+  const params = new URLSearchParams(window.location.search)
+  const raw = (params.get(DISABLE_EXPORT_QUERY_KEY) ?? '').trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
 }
 
 function buildUrlForScreen(screen: AppScreen, projectId?: string | null): string {
@@ -126,36 +137,6 @@ const VideoRecordModal = lazy(async () => {
 })
 
 import { GuestAuthModal } from './components/ui/GuestAuthModal'
-
-const DecalLibraryPanel = lazy(async () => {
-  const mod = await import('./components/ui/DecalLibraryPanel')
-  return { default: mod.DecalLibraryPanel }
-})
-
-const TextLibraryPanel = lazy(async () => {
-  const mod = await import('./components/ui/TextLibraryPanel')
-  return { default: mod.TextLibraryPanel }
-})
-
-const CarLibraryPanel = lazy(async () => {
-  const mod = await import('./components/ui/CarLibraryPanel')
-  return { default: mod.CarLibraryPanel }
-})
-
-const SplitLibraryPanel = lazy(async () => {
-  const mod = await import('./components/ui/SplitLibraryPanel')
-  return { default: mod.SplitLibraryPanel }
-})
-
-const StripeLibraryPanel = lazy(async () => {
-  const mod = await import('./components/ui/StripeLibraryPanel')
-  return { default: mod.StripeLibraryPanel }
-})
-
-const WindowTintPanel = lazy(async () => {
-  const mod = await import('./components/ui/WindowTintPanel')
-  return { default: mod.WindowTintPanel }
-})
 
 const PrintLibraryPanel = lazy(async () => {
   const mod = await import('./components/ui/PrintLibraryPanel')
@@ -298,13 +279,13 @@ function App() {
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
+  const removeLayer = useEditorStore((state) => state.removeLayer)
+  const activeTool = useEditorStore((state) => state.activeTool)
   const [floatingPanel, setFloatingPanel] = useState<'elements' | 'text' | 'car' | 'split' | 'stripes' | 'tint' | 'prints' | null>(null)
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     return detectMobileEditorViewport()
   })
-  const [mobilePanelExpanded, setMobilePanelExpanded] = useState(false)
-  const carSplit = useEditorStore((state) => state.project.carSplit)
-  const carStripe = useEditorStore((state) => state.project.carStripe)
+  const selectedLayerId = useEditorStore((state) => state.selectedLayerId)
   const [sceneHovered, setSceneHovered] = useState(false)
   const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(false)
   const [layerPanelWidth, setLayerPanelWidth] = useState(320)
@@ -331,6 +312,7 @@ function App() {
   const [pendingLeaveAction, setPendingLeaveAction] = useState<LeaveAction | null>(null)
   const [leavePromptSaving, setLeavePromptSaving] = useState(false)
   const [leavePromptError, setLeavePromptError] = useState<string | null>(null)
+  const [disableExportActions] = useState(() => readDisableExportFromUrl())
   const is2DOpen = printExportOpen
   const editorWarmRef = useRef(false)
   const skipHistoryPushRef = useRef(false)
@@ -341,9 +323,25 @@ function App() {
   const lastSaveMsRef = useRef<number>(lastSaveMs)
   const accountPlan = isGuest ? 'guest' : userPlan
 
+  // Log mobile lock status on mount
+  useEffect(() => {
+    if (LOCK_MOBILE_VERSION) {
+      console.log('🔒 Mobile version is LOCKED - desktop layout only')
+    }
+  }, [])
+
   useEffect(() => {
     lastSaveMsRef.current = lastSaveMs
   }, [lastSaveMs])
+
+  useEffect(() => {
+    if (!disableExportActions) {
+      return
+    }
+
+    setPrintExportOpen(false)
+    setSvgMakerOpen(false)
+  }, [disableExportActions])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -681,13 +679,36 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!floatingPanel || !isMobileViewport) {
-      setMobilePanelExpanded(false)
+    if (isMobileViewport || screen !== 'editor' || !selectedLayerId) {
       return
     }
-    // Mobile opens compact by default; tap the panel or toggle button to expand.
-    setMobilePanelExpanded(false)
-  }, [floatingPanel, isMobileViewport])
+
+    const selectedLayer = project.layers.find((layer) => layer.id === selectedLayerId)
+    if (!selectedLayer || selectedLayer.type === 'group') {
+      return
+    }
+
+    // Only auto-switch panel when the selected layer type changes, not on every floatingPanel change.
+    // This allows the user to manually switch tabs while a layer is selected.
+    if (selectedLayer.type === 'stripe') {
+      setFloatingPanel((cur) => cur === 'stripes' ? cur : 'stripes')
+      return
+    }
+
+    if (selectedLayer.type === 'split') {
+      setFloatingPanel((cur) => cur === 'split' ? cur : 'split')
+      return
+    }
+
+    if (selectedLayer.type === 'text') {
+      setFloatingPanel((cur) => cur === 'text' ? cur : 'text')
+      return
+    }
+
+    if (selectedLayer.type === 'decal') {
+      setFloatingPanel((cur) => cur === 'elements' ? cur : 'elements')
+    }
+  }, [isMobileViewport, screen, selectedLayerId])
 
   const refreshPlanFromCloud = useCallback(async () => {
     // Owner always gets paid - read from the authenticated session so it cannot be spoofed.
@@ -814,15 +835,23 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
       if (document.querySelector('.svg-maker-page')) return
+
+      if (screen === 'editor' && selectedLayerId && activeTool !== 'mesh-classify' && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault()
+        removeLayer(selectedLayerId)
+        return
+      }
+
       if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo() }
       if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo() }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [undo, redo])
+  }, [undo, redo, screen, selectedLayerId, removeLayer, activeTool])
 
   const handleScreenshot = () => {
     const dataUrl = screenshotRef.current?.(exportQuality)
@@ -927,7 +956,6 @@ function App() {
     setSocialPreviewUrl(null)
     setVideoRecordOpen(false)
     setIsRecording(false)
-    setMobilePanelExpanded(false)
     clearModelSceneCache()
     clearSelectedCar()
     setProjectId(null)
@@ -1246,26 +1274,26 @@ function App() {
         <TopBar
           mobileCompact
           onScreenshot={handleScreenshot}
-          onExportGlb={(options) => exportGlbRef.current?.(options)}
-          onSocialExport={() => {
+          onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}
+          onSocialExport={disableExportActions ? undefined : () => {
             const url = screenshotRef.current?.()
             if (url) setSocialPreviewUrl(url)
           }}
-          onVideoRecord={() => {
+          onVideoRecord={disableExportActions ? undefined : () => {
             setExportQuality((prev) => (prev === 'standard' ? 'high' : prev))
             setVideoRecordOpen(true)
           }}
-          onPrintExport={() => setPrintExportOpen(true)}
-          onOpen2DEditor={() => setPrintExportOpen(true)}
-          onOpen3DEditor={() => setPrintExportOpen(false)}
+          onPrintExport={disableExportActions ? undefined : () => setPrintExportOpen(true)}
+          onOpen2DEditor={disableExportActions ? undefined : () => setPrintExportOpen(true)}
+          onOpen3DEditor={disableExportActions ? undefined : () => setPrintExportOpen(false)}
           is2DOpen={is2DOpen}
           isSvgMakerOpen={svgMakerOpen}
-          onOpenSvgMaker={() => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
-          onSvgCancel={() => setSvgMakerOpen(false)}
-          onSvgSave={() => svgSaveRef.current?.()}
-          onSvgUndo={() => svgUndoRef.current?.()}
-          onSvgRedo={() => svgRedoRef.current?.()}
-          onSvgExport={() => svgExportRef.current?.()}
+          onOpenSvgMaker={disableExportActions ? undefined : () => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
+          onSvgCancel={disableExportActions ? undefined : () => setSvgMakerOpen(false)}
+          onSvgSave={disableExportActions ? undefined : () => svgSaveRef.current?.()}
+          onSvgUndo={disableExportActions ? undefined : () => svgUndoRef.current?.()}
+          onSvgRedo={disableExportActions ? undefined : () => svgRedoRef.current?.()}
+          onSvgExport={disableExportActions ? undefined : () => svgExportRef.current?.()}
           lightPreset={lightPreset}
           onLightPreset={setLightPreset}
           onResetCamera={() => resetCameraRef.current?.()}
@@ -1282,6 +1310,7 @@ function App() {
           exportQuality={exportQuality}
           onExportQualityChange={setExportQuality}
           blockGuestSaveToProfile={isGuest}
+          disableExportActions={disableExportActions}
           isSaving={isSaving}
           lastSaveMs={lastSaveMs}
         />
@@ -1294,7 +1323,7 @@ function App() {
         />
 
         {/* Modals and overlays - same for desktop and mobile */}
-        {printExportOpen && (
+        {!disableExportActions && printExportOpen && (
           <Suspense fallback={null}>
             <PrintExportModal
               captureRef={printCaptureRef}
@@ -1307,7 +1336,7 @@ function App() {
           </Suspense>
         )}
 
-        {svgMakerOpen && (
+        {!disableExportActions && svgMakerOpen && (
           <Suspense fallback={<div style={{ padding: 16 }}>Loading Create a Logo...</div>}>
             <SvgMakerPage
               onClose={() => setSvgMakerOpen(false)}
@@ -1370,30 +1399,39 @@ function App() {
   }
 
   // Desktop layout
+  const fitCarInView = () => {
+    setTimeout(() => resetCameraRef.current?.(), 300)
+  }
+
+  const toggleDockPanel = (panel: NonNullable<typeof floatingPanel>) => {
+    setFloatingPanel((v) => (v === panel ? null : panel))
+    fitCarInView()
+  }
+
   return (
     <div className="app-root">
       <TopBar
         onScreenshot={handleScreenshot}
-        onExportGlb={(options) => exportGlbRef.current?.(options)}
-        onSocialExport={() => {
+        onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}
+        onSocialExport={disableExportActions ? undefined : () => {
           const url = screenshotRef.current?.()
           if (url) setSocialPreviewUrl(url)
         }}
-        onVideoRecord={() => {
+        onVideoRecord={disableExportActions ? undefined : () => {
           setExportQuality((prev) => (prev === 'standard' ? 'high' : prev))
           setVideoRecordOpen(true)
         }}
-        onPrintExport={() => setPrintExportOpen(true)}
-        onOpen2DEditor={() => setPrintExportOpen(true)}
-        onOpen3DEditor={() => setPrintExportOpen(false)}
+        onPrintExport={disableExportActions ? undefined : () => setPrintExportOpen(true)}
+        onOpen2DEditor={disableExportActions ? undefined : () => setPrintExportOpen(true)}
+        onOpen3DEditor={disableExportActions ? undefined : () => setPrintExportOpen(false)}
         is2DOpen={is2DOpen}
         isSvgMakerOpen={svgMakerOpen}
-        onOpenSvgMaker={() => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
-        onSvgCancel={() => setSvgMakerOpen(false)}
-        onSvgSave={() => svgSaveRef.current?.()}
-        onSvgUndo={() => svgUndoRef.current?.()}
-        onSvgRedo={() => svgRedoRef.current?.()}
-        onSvgExport={() => svgExportRef.current?.()}
+        onOpenSvgMaker={disableExportActions ? undefined : () => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
+        onSvgCancel={disableExportActions ? undefined : () => setSvgMakerOpen(false)}
+        onSvgSave={disableExportActions ? undefined : () => svgSaveRef.current?.()}
+        onSvgUndo={disableExportActions ? undefined : () => svgUndoRef.current?.()}
+        onSvgRedo={disableExportActions ? undefined : () => svgRedoRef.current?.()}
+        onSvgExport={disableExportActions ? undefined : () => svgExportRef.current?.()}
         lightPreset={lightPreset}
         onLightPreset={setLightPreset}
         onResetCamera={() => resetCameraRef.current?.()}
@@ -1409,11 +1447,12 @@ function App() {
         cloudStatusTone={cloudStatusTone}
         exportQuality={exportQuality}
         onExportQualityChange={setExportQuality}
+        disableExportActions={disableExportActions}
         isSaving={isSaving}
         lastSaveMs={lastSaveMs}
       />
 
-      {printExportOpen && (
+      {!disableExportActions && printExportOpen && (
         <Suspense fallback={null}>
           <PrintExportModal
             captureRef={printCaptureRef}
@@ -1426,7 +1465,7 @@ function App() {
         </Suspense>
       )}
 
-      {svgMakerOpen && (
+      {!disableExportActions && svgMakerOpen && (
         <Suspense fallback={<div style={{ padding: 16 }}>Loading Create a Logo...</div>}>
           <SvgMakerPage
             onClose={() => setSvgMakerOpen(false)}
@@ -1506,148 +1545,6 @@ function App() {
                 onFirstInteraction={() => endPerfSpan('editor_first_interaction', { carModel: selectedCar.modelUrl })}
               />
             </Suspense>
-            <div className="fab-group">
-              <button
-                type="button"
-                className={floatingPanel === 'car' ? 'car-fab active' : 'car-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'car' ? null : 'car'))}
-                aria-label={floatingPanel === 'car' ? 'Close car paint tools' : 'Open car paint tools'}
-                title={floatingPanel === 'car' ? 'Close car paint tools' : 'Open car paint tools'}
-              >
-                <Car size={24} />
-              </button>
-              <span className="fab-label">Car</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'text' ? 'text-fab active' : 'text-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'text' ? null : 'text'))}
-                aria-label={floatingPanel === 'text' ? 'Close text library' : 'Open text library'}
-                title={floatingPanel === 'text' ? 'Close text library' : 'Open text library'}
-              >
-                <Type size={24} />
-              </button>
-              <span className="fab-label">Text</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'elements' ? 'decal-fab active' : 'decal-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'elements' ? null : 'elements'))}
-                aria-label={floatingPanel === 'elements' ? 'Close elements library' : 'Open elements library'}
-                title={floatingPanel === 'elements' ? 'Close elements library' : 'Open elements library'}
-              >
-                <Layers size={24} />
-              </button>
-              <span className="fab-label">Elements</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'stripes' || carStripe.enabled ? 'stripes-fab active' : 'stripes-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'stripes' ? null : 'stripes'))}
-                aria-label={floatingPanel === 'stripes' ? 'Close racing stripes tools' : 'Open racing stripes tools'}
-                title={floatingPanel === 'stripes' ? 'Close racing stripes tools' : 'Open racing stripes tools'}
-              >
-                <span>RS</span>
-              </button>
-              <span className="fab-label">Stripes</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'split' || carSplit.enabled ? 'split-fab active' : 'split-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'split' ? null : 'split'))}
-                aria-label={floatingPanel === 'split' ? 'Close split paint tools' : 'Open split paint tools'}
-                title={floatingPanel === 'split' ? 'Close split paint tools' : 'Open split paint tools'}
-              >
-                <span>S</span>
-              </button>
-              <span className="fab-label">Split</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'prints' ? 'prints-fab active' : 'prints-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'prints' ? null : 'prints'))}
-                aria-label={floatingPanel === 'prints' ? 'Close prints library' : 'Open prints library'}
-                title={floatingPanel === 'prints' ? 'Close prints library' : 'Open prints library'}
-              >
-                {/* Camouflage / pattern icon */}
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden>
-                  <rect x="2" y="2" width="5" height="5" rx="1" opacity="0.9" />
-                  <rect x="9" y="2" width="7" height="3" rx="1" opacity="0.7" />
-                  <rect x="18" y="4" width="4" height="4" rx="1" opacity="0.85" />
-                  <rect x="2" y="9" width="3" height="7" rx="1" opacity="0.75" />
-                  <rect x="7" y="7" width="5" height="5" rx="1" opacity="0.95" />
-                  <rect x="14" y="9" width="8" height="3" rx="1" opacity="0.7" />
-                  <rect x="2" y="18" width="6" height="4" rx="1" opacity="0.8" />
-                  <rect x="10" y="14" width="5" height="8" rx="1" opacity="0.9" />
-                  <rect x="17" y="14" width="5" height="5" rx="1" opacity="0.65" />
-                  <rect x="6" y="20" width="3" height="2" rx="1" opacity="0.5" />
-                </svg>
-              </button>
-              <span className="fab-label">Print</span>
-
-              <button
-                type="button"
-                className={floatingPanel === 'tint' ? 'tint-fab active' : 'tint-fab'}
-                onClick={() => setFloatingPanel((value) => (value === 'tint' ? null : 'tint'))}
-                aria-label={floatingPanel === 'tint' ? 'Close window tint tools' : 'Open window tint tools'}
-                title={floatingPanel === 'tint' ? 'Close window tint tools' : 'Open window tint tools'}
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M3 17 L5 8 Q5.5 6 8 6 L16 6 Q18.5 6 19 8 L21 17 Q21.5 18.5 20 19 L4 19 Q2.5 18.5 3 17 Z" />
-                  <line x1="3" y1="14" x2="21" y2="14" />
-                  <line x1="12" y1="6" x2="12" y2="14" />
-                </svg>
-              </button>
-              <span className="fab-label">Tint</span>
-            </div>
-
-            {floatingPanel ? (
-              <>
-                <div
-                  className="floating-panel-backdrop"
-                  onClick={() => setFloatingPanel(null)}
-                  aria-label="Close panel"
-                />
-                <div
-                  className={`floating-decal-panel${isMobileViewport ? (mobilePanelExpanded ? ' mobile-expanded' : ' mobile-collapsed') : ''}`}
-                  onClickCapture={(event) => {
-                    if (!isMobileViewport || mobilePanelExpanded) return
-                    const target = event.target as HTMLElement
-                    if (target.closest('.floating-panel-size-toggle')) return
-                    setMobilePanelExpanded(true)
-                  }}
-                >
-                  {isMobileViewport && (
-                    <button
-                      type="button"
-                      className="floating-panel-size-toggle"
-                      onClick={() => setMobilePanelExpanded((value) => !value)}
-                      aria-label={mobilePanelExpanded ? 'Collapse panel' : 'Expand panel'}
-                      title={mobilePanelExpanded ? 'Collapse panel' : 'Expand panel'}
-                    >
-                      {mobilePanelExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                  )}
-                  <Suspense fallback={<div style={{ padding: 12 }}>Loading panel...</div>}>
-                    {floatingPanel === 'elements' ? (
-                      <DecalLibraryPanel onDecalPicked={() => setFloatingPanel(null)} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
-                    ) : floatingPanel === 'text' ? (
-                      <TextLibraryPanel onFontPicked={() => setFloatingPanel(null)} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
-                    ) : floatingPanel === 'car' ? (
-                      <CarLibraryPanel onClose={() => setFloatingPanel(null)} />
-                    ) : floatingPanel === 'split' ? (
-                      <SplitLibraryPanel onClose={() => setFloatingPanel(null)} />
-                    ) : floatingPanel === 'stripes' ? (
-                      <StripeLibraryPanel onClose={() => setFloatingPanel(null)} />
-                    ) : floatingPanel === 'prints' ? (
-                      <PrintLibraryPanel onClose={() => setFloatingPanel(null)} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
-                    ) : (
-                      <WindowTintPanel />
-                    )}
-                  </Suspense>
-                </div>
-              </>
-            ) : null}
 
             <ClassifyLegend
               classifyWindowClickThrough={classifyWindowClickThrough}
@@ -1682,8 +1579,115 @@ function App() {
           </section>
         </div>
 
-        <section className="inspector-toolbar" aria-label="Inspector toolbar">
-          <InspectorPanel />
+        <section className="bottom-dock" aria-label="Tools and inspector">
+          {floatingPanel === 'prints' && (
+            <div className="bottom-dock-panel-area">
+              <Suspense fallback={<div style={{ padding: 12, color: '#8ea0b4' }}>Loading...</div>}>
+                <PrintLibraryPanel onClose={() => {
+                  setFloatingPanel(null)
+                  fitCarInView()
+                }} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
+              </Suspense>
+            </div>
+          )}
+
+          {floatingPanel && floatingPanel !== 'prints' && (
+            <div className="bottom-dock-inspector bottom-dock-inspector--mobile is-tab-open">
+              <MobileEditorLayout
+                embedded
+                embeddedTab={floatingPanel}
+                editorCanvas={null}
+                isGuest={isGuest}
+                onGuestSignIn={handleGuestSignIn}
+              />
+            </div>
+          )}
+
+          {/* Tab bar — always at the bottom of the dock */}
+          <div className="bottom-dock-tab-bar">
+            <button
+              type="button"
+              className={floatingPanel === 'car' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('car')}
+              title="Wrap Color"
+            >
+              <Palette size={22} />
+              <span>Wrap Color</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'text' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('text')}
+              title="Text"
+            >
+              <Type size={22} />
+              <span>Text</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'elements' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('elements')}
+              title="Elements / Decals"
+            >
+              <Layers size={22} />
+              <span>Elements</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'stripes' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('stripes')}
+              title="Racing Stripes"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+                <rect x="4" y="3" width="4" height="18" rx="1.4" />
+                <rect x="10" y="3" width="4" height="18" rx="1.4" />
+                <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
+              </svg>
+              <span>Stripes</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'split' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('split')}
+              title="Split paint"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
+                <path d="M12 4v16" />
+                <path d="M6.5 8.5h5.5" opacity="0.8" />
+                <path d="M12 15.5h5.5" opacity="0.8" />
+              </svg>
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'prints' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('prints')}
+              title="Prints"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M7 8V4h10v4" />
+                <rect x="5" y="9" width="14" height="8" rx="2.3" />
+                <rect x="7" y="14" width="10" height="6" rx="1.2" />
+                <circle cx="16.8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
+              </svg>
+              <span>Print</span>
+            </button>
+            <button
+              type="button"
+              className={floatingPanel === 'tint' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+              onClick={() => toggleDockPanel('tint')}
+              title="Window tint"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
+                <path d="M3.7 14h16.6" opacity="0.9" />
+                <path d="M12 6v8" opacity="0.45" />
+                <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
+              </svg>
+              <span>Tint</span>
+            </button>
+          </div>
         </section>
       </main>
 

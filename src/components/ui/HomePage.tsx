@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { Layers, Type, Car, Paintbrush, Download, Pen, Star, Undo2, Image, Printer, SunDim, Columns2 } from 'lucide-react'
-import { HeroCarScene } from '../scene/HeroCarScene'
 import { isSupabaseConfigured, supabaseSignIn, supabaseSignOut, supabaseSignUp, supabase } from '../../lib/supabase'
 import { LegalDocsModal } from './LegalDocsModal'
 
@@ -120,6 +119,8 @@ const TAGLINES = [
   'Make it yours.',
 ]
 
+const DESKTOP_HOME_LOGO = '/mgws-home-logo.jpg'
+
 const LEGAL_NOTICE_ITEMS = [
   'Vehicle brand names, model names, logos, and trade dress shown in or with this tool are trademarks of their respective owners. MyGarage is an independent design platform and is not affiliated with or endorsed by those owners.',
   'You retain ownership of your original content. You may only upload, trace, reproduce, or export content that you own or are legally authorized to use.',
@@ -131,9 +132,8 @@ const LEGAL_NOTICE_ITEMS = [
 ]
 
 const DEFAULT_DISCORD_URL = 'https://discord.gg/mygaragewrapstudio'
-const CASHAPP_TAG = '$sundaymoore9'
-const CASHAPP_SUPPORT_URL = 'https://cash.app/$sundaymoore9'
-const MOBILE_HOME_LOGO_IMAGE = '/mobile-home-logo.png'
+const DISCORD_FEEDBACK_WEBHOOK_URL = (import.meta.env.VITE_DISCORD_FEEDBACK_WEBHOOK_URL as string | undefined)?.trim() ?? ''
+const FEEDBACK_MAX_CHARS = 1000
 
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
   const value = JSON.stringify(user)
@@ -165,7 +165,7 @@ function clearCachedAuth() {
   localStorage.removeItem(AUTH_REMEMBER_KEY)
 }
 
-export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroModelUrl, heroPreviewImageUrl }: HomePageProps) {
+export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEditorPathVisible, onLikelyEditorPathIntent, heroPreviewImageUrl }: HomePageProps) {
   const [taglineIdx, setTaglineIdx] = useState(0)
   const [fading, setFading] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
@@ -185,7 +185,9 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const [carCount, setCarCount] = useState(12)
   const [fontCount, setFontCount] = useState(49)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [heroOverlayAlpha, setHeroOverlayAlpha] = useState(0.16)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.matchMedia('(max-width: 860px)').matches
@@ -201,7 +203,6 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const primaryCtaRef = useRef<HTMLButtonElement | null>(null)
   const lowerCtaRef = useRef<HTMLButtonElement | null>(null)
   const touchStartYRef = useRef<number | null>(null)
-  const heroBackgroundImageUrl = isMobileViewport ? MOBILE_HOME_LOGO_IMAGE : heroPreviewImageUrl
   const visibleFeatures = isMobileViewport
     ? FEATURES.filter((feature) => feature.title !== 'Create a Logo')
     : FEATURES
@@ -264,46 +265,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     }
   }, [drawerOpen])
 
-  useEffect(() => {
-    const sampleBrightness = () => {
-      const canvas = document.querySelector<HTMLCanvasElement>('.hero-car-canvas')
-      if (!canvas || canvas.width === 0 || canvas.height === 0) return
 
-      const probe = document.createElement('canvas')
-      const probeW = 42
-      const probeH = 24
-      probe.width = probeW
-      probe.height = probeH
-      const ctx = probe.getContext('2d')
-      if (!ctx) return
-
-      const srcW = Math.max(1, Math.floor(canvas.width * 0.22))
-      const srcH = Math.max(1, Math.floor(canvas.height * 0.2))
-      const srcX = Math.max(0, Math.floor(canvas.width * 0.39))
-      const srcY = Math.max(0, Math.floor(canvas.height * 0.24))
-
-      try {
-        ctx.drawImage(canvas, srcX, srcY, srcW, srcH, 0, 0, probeW, probeH)
-        const { data } = ctx.getImageData(0, 0, probeW, probeH)
-        let total = 0
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] / 255
-          const g = data[i + 1] / 255
-          const b = data[i + 2] / 255
-          total += 0.2126 * r + 0.7152 * g + 0.0722 * b
-        }
-        const avg = total / (data.length / 4)
-        const targetAlpha = Math.min(0.26, Math.max(0.08, 0.22 - avg * 0.16))
-        setHeroOverlayAlpha((prev) => prev * 0.7 + targetAlpha * 0.3)
-      } catch {
-        // Ignore transient canvas read errors while WebGL frame is initializing.
-      }
-    }
-
-    sampleBrightness()
-    const id = window.setInterval(sampleBrightness, 1300)
-    return () => window.clearInterval(id)
-  }, [])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartYRef.current = e.touches[0]?.clientY ?? null
@@ -520,6 +482,34 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     }
   }
 
+  async function handleSendFeedback() {
+    const trimmed = feedbackText.trim()
+    if (!trimmed || !DISCORD_FEEDBACK_WEBHOOK_URL) return
+    setFeedbackStatus('sending')
+    try {
+      const res = await fetch(DISCORD_FEEDBACK_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'MyGarage Feedback',
+          content: `**Anonymous Feedback**\n${trimmed}`,
+        }),
+      })
+      if (res.ok || res.status === 204) {
+        setFeedbackStatus('sent')
+        setFeedbackText('')
+        setTimeout(() => {
+          setFeedbackStatus('idle')
+          setFeedbackOpen(false)
+        }, 2000)
+      } else {
+        setFeedbackStatus('error')
+      }
+    } catch {
+      setFeedbackStatus('error')
+    }
+  }
+
   async function handleLogout() {
     const result = await supabaseSignOut()
     if (!result.ok) {
@@ -543,14 +533,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
         <div
           className="home-hero-bg"
           aria-hidden="true"
-          style={heroBackgroundImageUrl ? { '--home-hero-preview-url': `url("${heroBackgroundImageUrl}")` } as React.CSSProperties : undefined}
         >
-          {!isMobileViewport && <HeroCarScene modelUrl={heroModelUrl} />}
-          {!isMobileViewport && heroPreviewImageUrl ? (
+          <img src={DESKTOP_HOME_LOGO} alt="MyGarage Wrap Studio" className="home-hero-logo-bg" />
+          {isMobileViewport && heroPreviewImageUrl ? (
             <img className="home-hero-preview-image" src={heroPreviewImageUrl} alt="Latest saved project preview" />
           ) : null}
         </div>
-        <div className="home-hero-readability" aria-hidden="true" style={{ '--hero-readability-alpha': heroOverlayAlpha } as React.CSSProperties} />
+        <div className="home-hero-readability" aria-hidden="true" />
 
         <div className="home-auth-actions">
           <div className="home-auth-actions-row">
@@ -641,6 +630,15 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
                 <button type="button" className="home-cta-secondary" onClick={onEnter}>
                   Start New Project
                 </button>
+                <button
+                  type="button"
+                  className="home-feedback-trigger"
+                  onClick={() => { setFeedbackOpen(true); setFeedbackStatus('idle') }}
+                  aria-label="Send feedback"
+                  title="Send anonymous feedback"
+                >
+                  💬 Feedback
+                </button>
               </>
             ) : null}
           </div>
@@ -652,6 +650,15 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
             <p className="home-cta-prompt">Ready to build your dream livery?</p>
             <button ref={primaryCtaRef} type="button" className="home-cta-primary" onClick={onContinueAsGuest}>
               <span className="home-cta-label">Continue as Guest →</span>
+            </button>
+            <button
+              type="button"
+              className="home-feedback-trigger"
+              onClick={() => { setFeedbackOpen(true); setFeedbackStatus('idle') }}
+              aria-label="Send feedback"
+              title="Send anonymous feedback"
+            >
+              💬 Feedback
             </button>
             <div className="home-discord-cta home-discord-cta--hero">
               <a
@@ -665,19 +672,6 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
               <p className="home-discord-copy">
                 Upload your car builds, send feedback, report bugs, and help shape future features.
               </p>
-            </div>
-            <div className="home-support-creator home-support-creator--desktop" role="group" aria-label="Support MyGarage">
-              <p className="home-support-creator-title">Support MyGarage</p>
-              <p className="home-support-creator-copy">If this app helps you, you can tip the creator on Cash App.</p>
-              <a
-                className="home-support-creator-btn"
-                href={CASHAPP_SUPPORT_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Support the app on Cash App ${CASHAPP_TAG}`}
-              >
-                Tip on Cash App {CASHAPP_TAG}
-              </a>
             </div>
             <p className="home-legal-inline">
               For visualization and planning only. You are responsible for rights ownership, licensing, and legal clearance before commercial use, printing, or resale.
@@ -904,6 +898,48 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
         onSelectDoc={setLegalDoc}
         onClose={() => setLegalOpen(false)}
       />
+
+      {feedbackOpen && (
+        <div
+          className="feedback-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Send anonymous feedback"
+          onClick={(e) => { if (e.target === e.currentTarget) setFeedbackOpen(false) }}
+        >
+          <div className="feedback-modal">
+            <div className="feedback-modal-header">
+              <h3>Anonymous Feedback</h3>
+              <button type="button" className="feedback-modal-close" aria-label="Close" onClick={() => setFeedbackOpen(false)}>✕</button>
+            </div>
+            <p className="feedback-modal-sub">Tell us what you think — no account needed, 100% anonymous.</p>
+            <textarea
+              className="feedback-textarea"
+              placeholder="What do you love, hate, or wish existed?"
+              value={feedbackText}
+              maxLength={FEEDBACK_MAX_CHARS}
+              rows={5}
+              onChange={(e) => { setFeedbackText(e.target.value); setFeedbackStatus('idle') }}
+              disabled={feedbackStatus === 'sending' || feedbackStatus === 'sent'}
+            />
+            <div className="feedback-char-count">{feedbackText.length} / {FEEDBACK_MAX_CHARS}</div>
+            {feedbackStatus === 'error' && (
+              <p className="feedback-error">Failed to send. Please try again.</p>
+            )}
+            {!DISCORD_FEEDBACK_WEBHOOK_URL && (
+              <p className="feedback-error">Feedback webhook not configured (VITE_DISCORD_FEEDBACK_WEBHOOK_URL).</p>
+            )}
+            <button
+              type="button"
+              className="feedback-submit"
+              disabled={!feedbackText.trim() || feedbackStatus === 'sending' || feedbackStatus === 'sent' || !DISCORD_FEEDBACK_WEBHOOK_URL}
+              onClick={handleSendFeedback}
+            >
+              {feedbackStatus === 'sending' ? 'Sending…' : feedbackStatus === 'sent' ? '✓ Sent!' : 'Send Feedback'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

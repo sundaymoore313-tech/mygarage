@@ -192,7 +192,7 @@ export function TextLibraryPanel({ onFontPicked, isGuest = false, onGuestSignIn 
         <h2>Text Library</h2>
         <button
           type="button"
-          className="import-btn"
+          className="import-btn import-btn--labeled"
           onClick={() => {
             if (isGuest) {
               showGuestPrompt('Font Import')
@@ -203,7 +203,8 @@ export function TextLibraryPanel({ onFontPicked, isGuest = false, onGuestSignIn 
           title={isGuest ? 'Sign in to import fonts' : 'Import a custom font (TTF, OTF, WOFF)'}
           aria-label="Import font"
         >
-          <Upload size={18} />
+          <Upload size={16} />
+          <span>Import</span>
         </button>
         <input
           ref={fileInputRef}

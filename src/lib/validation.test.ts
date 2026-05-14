@@ -103,15 +103,15 @@ describe('validation utilities', () => {
   })
 
   describe('clampStripeWidth', () => {
-    it('clamps to 0.02-1.5 range', () => {
-      expect(clampStripeWidth(0.01)).toBe(0.02)
+    it('clamps to 0.0001-1.5 range', () => {
+      expect(clampStripeWidth(0.00001)).toBe(0.0001)
       expect(clampStripeWidth(2)).toBe(1.5)
       expect(clampStripeWidth(0.5)).toBe(0.5)
     })
 
     it('handles invalid values', () => {
-      expect(clampStripeWidth(NaN)).toBe(0.02)
-      expect(clampStripeWidth('invalid')).toBe(0.02)
+      expect(clampStripeWidth(NaN)).toBe(0.0001)
+      expect(clampStripeWidth('invalid')).toBe(0.0001)
     })
   })
 

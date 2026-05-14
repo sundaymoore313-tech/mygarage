@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Upload, X } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
-import type { PaintFinish, PaintTargetId, PrintConfig } from '../../types/editor'
+import type { PaintFinish, PrintConfig } from '../../types/editor'
 import { PAINT_TARGETS } from '../../lib/paintTargets'
-import { PaintTargetToolbar } from './PaintTargetToolbar'
 import { WrapColorPicker } from './WrapColorPicker'
 
 type PrintManifestItem = {
@@ -27,6 +26,7 @@ const DEFAULT_PRINT_CONFIG: Omit<PrintConfig, 'imageUrl'> = {
 }
 
 const FINISH_OPTIONS: PaintFinish[] = ['gloss', 'matte', 'satin', 'chrome']
+const PRINT_TARGET_ID = 'fullCar' as const
 
 type PrintLibraryPanelProps = {
   onClose?: () => void
@@ -36,7 +36,6 @@ type PrintLibraryPanelProps = {
 
 export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: PrintLibraryPanelProps) {
   void onClose
-  const selectedPaintTarget = useEditorStore((state) => state.selectedPaintTarget)
   const targetPrints = useEditorStore((state) => state.targetPrints)
   const setTargetPrint = useEditorStore((state) => state.setTargetPrint)
   const clearTargetPrint = useEditorStore((state) => state.clearTargetPrint)
@@ -45,8 +44,22 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
+  const [disabledPrintCache, setDisabledPrintCache] = useState<PrintConfig | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const guestPromptTimerRef = useRef<number | null>(null)
+
+  const handlePrintGridWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    // Convert wheel scrolling into horizontal movement for the print strip.
+    // Do this whenever the strip can overflow so parent vertical scroll does not steal the gesture.
+    if (el.scrollWidth > el.clientWidth) {
+      const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+      if (delta !== 0) {
+        el.scrollLeft += delta
+        e.preventDefault()
+      }
+    }
+  }
 
   const showGuestPrompt = (feature: string) => {
     setGuestPrompt(`Create an account to use ${feature}.`)
@@ -60,8 +73,7 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
   }
 
   // Active print for the currently selected target
-  const activePrint: PrintConfig | null =
-    selectedPaintTarget ? (targetPrints[selectedPaintTarget] ?? null) : null
+  const activePrint: PrintConfig | null = targetPrints[PRINT_TARGET_ID] ?? null
 
   useEffect(() => {
     let mounted = true
@@ -90,9 +102,8 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
   }, [])
 
   const applyPrint = (imageUrl: string) => {
-    if (!selectedPaintTarget) return
-    const existing = targetPrints[selectedPaintTarget]
-    setTargetPrint(selectedPaintTarget, {
+    const existing = targetPrints[PRINT_TARGET_ID]
+    setTargetPrint(PRINT_TARGET_ID, {
       imageUrl,
       tileScale: existing?.tileScale ?? DEFAULT_PRINT_CONFIG.tileScale,
       opacity: existing?.opacity ?? DEFAULT_PRINT_CONFIG.opacity,
@@ -102,8 +113,19 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
   }
 
   const updateActivePrint = (patch: Partial<Omit<PrintConfig, 'imageUrl'>>) => {
-    if (!selectedPaintTarget || !activePrint) return
-    setTargetPrint(selectedPaintTarget, { ...activePrint, ...patch })
+    if (!activePrint) return
+    setTargetPrint(PRINT_TARGET_ID, { ...activePrint, ...patch })
+  }
+
+  const togglePrintEnabled = () => {
+    if (activePrint) {
+      setDisabledPrintCache(activePrint)
+      clearTargetPrint(PRINT_TARGET_ID)
+      return
+    }
+    if (disabledPrintCache) {
+      setTargetPrint(PRINT_TARGET_ID, disabledPrintCache)
+    }
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,9 +139,7 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
     const reader = new FileReader()
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string
-      if (selectedPaintTarget) {
-        applyPrint(dataUrl)
-      }
+      applyPrint(dataUrl)
     }
     reader.readAsDataURL(file)
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -139,7 +159,7 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
         <h2>Prints</h2>
         <button
           type="button"
-          className="import-btn"
+          className="import-btn import-btn--labeled"
           onClick={() => {
             if (isGuest) {
               showGuestPrompt('Print Import')
@@ -150,7 +170,8 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
           title={isGuest ? 'Sign in to import print images' : 'Import a custom print/pattern image'}
           aria-label="Import print image"
         >
-          <Upload size={18} />
+          <Upload size={16} />
+          <span>Import</span>
         </button>
         <input
           ref={fileInputRef}
@@ -159,6 +180,19 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
           onChange={handleImport}
           style={{ display: 'none' }}
         />
+      </div>
+
+      <div className="print-toggle-row">
+        <span className="print-toggle-label">Print</span>
+        <button
+          type="button"
+          className={activePrint ? 'print-toggle-btn active' : 'print-toggle-btn'}
+          onClick={togglePrintEnabled}
+          disabled={!activePrint && !disabledPrintCache}
+          title={activePrint ? 'Turn print off' : 'Turn print on'}
+        >
+          {activePrint ? 'On' : 'Off'}
+        </button>
       </div>
 
       {isGuest && guestPrompt && (
@@ -170,8 +204,6 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
         </div>
       )}
 
-      <PaintTargetToolbar />
-
       {/* Active print summary */}
       {activePrint && (
         <div className="print-active-bar">
@@ -182,14 +214,17 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
               style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }}
             />
             <span className="print-active-label">
-              {PAINT_TARGETS.find((t) => t.id === selectedPaintTarget)?.label ?? selectedPaintTarget} — Print active
+              {PAINT_TARGETS.find((t) => t.id === PRINT_TARGET_ID)?.label ?? PRINT_TARGET_ID} — Print active
             </span>
           </div>
           <button
             type="button"
             className="print-remove-btn"
             title="Remove print from this target"
-            onClick={() => { if (selectedPaintTarget) clearTargetPrint(selectedPaintTarget) }}
+            onClick={() => {
+              setDisabledPrintCache(null)
+              clearTargetPrint(PRINT_TARGET_ID)
+            }}
           >
             <X size={14} />
           </button>
@@ -263,11 +298,23 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
 
       {/* Print grid */}
       <div className="print-grid-header">
-        <span>
-          {selectedPaintTarget
-            ? `Click a print to apply to: ${PAINT_TARGETS.find((t) => t.id === selectedPaintTarget)?.label ?? selectedPaintTarget}`
-            : 'Select a paint target above, then choose a print'}
-        </span>
+        <span>Click a print to apply to: Full Car</span>
+        <button
+          type="button"
+          className="import-btn import-btn--labeled print-import-inline-btn"
+          onClick={() => {
+            if (isGuest) {
+              showGuestPrompt('Print Import')
+              return
+            }
+            fileInputRef.current?.click()
+          }}
+          title={isGuest ? 'Sign in to import print images' : 'Import a custom print image'}
+          aria-label="Import print image"
+        >
+          <Upload size={14} />
+          <span>Import Print</span>
+        </button>
       </div>
 
       {loading ? <p className="hint">Loading prints...</p> : null}
@@ -280,18 +327,22 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
         </p>
       ) : null}
 
-      <div className="decal-grid print-grid" role="list" aria-label="Print patterns">
+      <div
+        className="decal-grid print-grid"
+        role="list"
+        aria-label="Print patterns"
+        onWheelCapture={handlePrintGridWheel}
+        onWheel={handlePrintGridWheel}
+      >
         {items.map((item) => (
           <button
             key={item.fileName}
             type="button"
             className={
               'decal-card print-card' +
-              (activePrint?.imageUrl === item.url ? ' print-card--active' : '') +
-              (!selectedPaintTarget ? ' print-card--disabled' : '')
+              (activePrint?.imageUrl === item.url ? ' print-card--active' : '')
             }
-            disabled={!selectedPaintTarget}
-            title={selectedPaintTarget ? `Apply "${item.name}" to ${PAINT_TARGETS.find((t) => t.id === selectedPaintTarget)?.label}` : 'Select a paint target first'}
+            title={`Apply "${item.name}" to Full Car`}
             onClick={() => applyPrint(item.url)}
           >
             <img src={item.url} alt={item.name} loading="lazy" />
@@ -299,33 +350,6 @@ export function PrintLibraryPanel({ onClose, isGuest = false, onGuestSignIn }: P
           </button>
         ))}
       </div>
-
-      {/* Per-target print summary */}
-      {Object.entries(targetPrints).some(([, v]) => v != null) && (
-        <div className="print-targets-summary">
-          <div className="print-targets-summary-title">Active Prints</div>
-          {(Object.entries(targetPrints) as [PaintTargetId, PrintConfig | null | undefined][])
-            .filter(([, cfg]) => cfg != null)
-            .map(([targetId, cfg]) => cfg && (
-              <div key={targetId} className="print-target-row">
-                <img
-                  src={cfg.imageUrl}
-                  alt="print"
-                  style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 3 }}
-                />
-                <span>{PAINT_TARGETS.find((t) => t.id === targetId)?.label ?? targetId}</span>
-                <button
-                  type="button"
-                  className="print-remove-btn"
-                  title={`Remove print from ${targetId}`}
-                  onClick={() => clearTargetPrint(targetId)}
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-        </div>
-      )}
     </section>
   )
 }

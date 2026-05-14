@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Layers, Type, Car } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Layers, Type, Palette } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
 import { cleanFontDisplayName } from '../../lib/fontNames'
 import type { PaintTargetId } from '../../lib/paintTargets'
+import { WRAP_COLOR_SWATCHES } from '../../lib/wrapColorPalette'
 
 type TabId = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'tint' | 'layers'
 
@@ -11,38 +13,163 @@ interface MobileEditorLayoutProps {
   isGuest: boolean
   onGuestSignIn: () => void
   simplified?: boolean
+  /** When true: render only the controls strip (no canvas, no tab bar) for embedding in the desktop dock */
+  embedded?: boolean
+  /** When embedded, which tab to show. Defaults to 'layers'. */
+  embeddedTab?: TabId
 }
 
 // ── Static data ─────────────────────────────────────────────────
-const CAR_COLORS = [
-  { name: 'Red',      hex: '#CC1010' },
-  { name: 'Blue',     hex: '#1050CC' },
-  { name: 'Green',    hex: '#10A030' },
-  { name: 'Yellow',   hex: '#D4B800' },
-  { name: 'Black',    hex: '#111111' },
-  { name: 'White',    hex: '#F5F5F5' },
-  { name: 'Silver',   hex: '#A0A8B0' },
-  { name: 'Orange',   hex: '#E05010' },
-  { name: 'Purple',   hex: '#6020A0' },
-  { name: 'Pink',     hex: '#D02080' },
-  { name: 'Navy',     hex: '#101870' },
-  { name: 'Burgundy', hex: '#5C1010' },
-  { name: 'Gold',     hex: '#C8980A' },
-  { name: 'Teal',     hex: '#0A7878' },
+const CAR_COLORS = WRAP_COLOR_SWATCHES.map((swatch) => ({
+  id: swatch.id,
+  name: swatch.name,
+  hex: swatch.colorHex,
+  brand: swatch.brand,
+  code: swatch.code,
+  finish: swatch.finish,
+}))
+
+type PaintTargetOption = {
+  id: PaintTargetId
+  label: string
+  icon: ReactNode
+}
+
+type FinishOption = {
+  id: 'gloss' | 'matte' | 'chrome' | 'satin'
+  label: string
+  icon: ReactNode
+}
+
+function getFinishPreviewStyle(finish: FinishOption['id']) {
+  switch (finish) {
+    case 'matte':
+      return {
+        background: '#8e949c',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+      }
+    case 'chrome':
+      return {
+        background: 'linear-gradient(135deg, #f8fbff 0%, #b9c0c8 28%, #ffffff 46%, #8f98a3 66%, #f0f4f8 100%)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
+      }
+    case 'satin':
+      return {
+        background: 'linear-gradient(135deg, #c7cbd1 0%, #7e8691 50%, #d9dde2 100%)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)',
+      }
+    case 'gloss':
+    default:
+      return {
+        background: 'radial-gradient(circle at 30% 28%, rgba(255,255,255,0.98) 0 12%, rgba(255,255,255,0.35) 13%, rgba(255,255,255,0) 28%), linear-gradient(135deg, #40444d 0%, #0f1115 100%)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.22)',
+      }
+  }
+}
+
+function mapWrapFinishToPaintFinish(finish: 'gloss' | 'matte' | 'satin' | 'metallic' | 'chrome'): 'gloss' | 'matte' | 'satin' | 'chrome' {
+  if (finish === 'chrome') return 'chrome'
+  if (finish === 'matte') return 'matte'
+  if (finish === 'satin') return 'satin'
+  return 'gloss'
+}
+
+const PAINT_TARGETS: PaintTargetOption[] = [
+  {
+    id: 'fullCar',
+    label: 'Full car',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M5 15h14l-1.1-4.2A2.4 2.4 0 0 0 15.6 9H8.4a2.4 2.4 0 0 0-2.3 1.8L5 15Z" />
+        <path d="M7.2 9.1 8.7 6.7h6.6l1.5 2.4" opacity="0.85" />
+        <circle cx="8.1" cy="15.6" r="1.3" />
+        <circle cx="15.9" cy="15.6" r="1.3" />
+      </svg>
+    ),
+  },
+  {
+    id: 'hood',
+    label: 'Hood',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4.5 15h15L18 9.2A2.5 2.5 0 0 0 15.6 7H8.4a2.5 2.5 0 0 0-2.4 2.2L4.5 15Z" />
+        <path d="M12 7v8" opacity="0.6" />
+        <path d="M7 9h5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'trunk',
+    label: 'Trunk',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4.5 15h15l-1.2-4.8A2.4 2.4 0 0 0 15.9 8H8.1a2.4 2.4 0 0 0-2.4 2.2L4.5 15Z" />
+        <path d="M12 7v8" opacity="0.6" />
+        <path d="M12 9h5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'rims',
+    label: 'Rims',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="7" />
+        <circle cx="12" cy="12" r="2.2" />
+        <path d="M12 5v4" />
+        <path d="M12 15v4" />
+        <path d="M5 12h4" />
+        <path d="M15 12h4" />
+      </svg>
+    ),
+  },
 ]
 
-const PAINT_TARGETS: Array<{ id: PaintTargetId; label: string }> = [
-  { id: 'fullCar', label: 'Full car' },
-  { id: 'hood',    label: 'Hood' },
-  { id: 'trunk',   label: 'trunk' },
-  { id: 'rims',    label: 'rims' },
-]
-
-const FINISHES = [
-  { id: 'gloss'  as const, label: 'gloss'  },
-  { id: 'matte'  as const, label: 'matte'  },
-  { id: 'chrome' as const, label: 'chrome' },
-  { id: 'satin'  as const, label: 'satin'  },
+const FINISHES: FinishOption[] = [
+  {
+    id: 'gloss',
+    label: 'gloss',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="7.5" />
+        <path d="M8.8 9.1c.7-1 1.8-1.6 3.2-1.6" opacity="0.6" />
+        <circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none" opacity="0.35" />
+      </svg>
+    ),
+  },
+  {
+    id: 'matte',
+    label: 'matte',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="7.5" />
+        <path d="M7.8 12h8.4" opacity="0.5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'chrome',
+    label: 'chrome',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="7.5" />
+        <path d="M9 7.6a6 6 0 0 1 5.8 0" opacity="0.8" />
+        <path d="M8.8 16.2a6 6 0 0 0 6.4 0" opacity="0.55" />
+        <path d="M9.1 9.2h5.8" opacity="0.45" />
+      </svg>
+    ),
+  },
+  {
+    id: 'satin',
+    label: 'satin',
+    icon: (
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <circle cx="12" cy="12" r="7.5" />
+        <path d="M7.8 15.8 16.2 7.4" opacity="0.7" />
+        <path d="M8 10.8h8" opacity="0.35" />
+      </svg>
+    ),
+  },
 ]
 
 const FONT_PRESETS = [
@@ -80,7 +207,7 @@ const TINT_OPACITIES = [
   { label: '90%', amount: 90 },
 ]
 
-const TINT_COLORS = ['#101820', '#1a1000', '#001810', '#100010', '#181818']
+const POSITION_NUDGE_STEP = 0.04
 
 // ── Types ───────────────────────────────────────────────────────
 type FontItem = { label: string; family: string; url?: string }
@@ -170,9 +297,12 @@ function hslToHex(hue: number, saturation: number, lightness: number) {
   return `#${toHex(red)}${toHex(green)}${toHex(blue)}`
 }
 
-export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: MobileEditorLayoutProps) {
-  const [activeTab, setActiveTab] = useState<TabId | null>(null)
+export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embedded, embeddedTab }: MobileEditorLayoutProps) {
+  const [_internalTab, setActiveTab] = useState<TabId | null>(null)
+  // Embedded mode: derive active tab synchronously from prop (no effect delay = no flicker)
+  const activeTab: TabId | null = embedded ? (embeddedTab ?? null) : _internalTab
   const [layerScaleMode, setLayerScaleMode] = useState<LayerScaleMode>('uniform')
+  const [textDetailsTab, setTextDetailsTab] = useState<'text' | 'transform'>('text')
 
   // Car paint
   const setPaint               = useEditorStore(s => s.setPaint)
@@ -193,19 +323,25 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
   const [fonts, setFonts] = useState<FontItem[]>(FONT_PRESETS)
   const [selectedFont, setSelectedFont] = useState<string>('Impact')
   const [editingTextContent, setEditingTextContent] = useState<string>('')
+  const textImportInputRef = useRef<HTMLInputElement>(null)
 
   // Elements / decals
   const addDecalLayer = useEditorStore(s => s.addDecalLayer)
+  const customDecals = useEditorStore(s => s.project.customDecals)
   const [decals, setDecals] = useState<DecalItem[]>([])
   const [decalsLoading, setDecalsLoading] = useState(false)
+  const elementsImportInputRef = useRef<HTMLInputElement>(null)
 
   // Gradient color slot
   const [gradColorSlot, setGradColorSlot] = useState<1 | 2>(1)
+  const visibleWrapColors = CAR_COLORS
 
   // Stripes
   const carStripe    = useEditorStore(s => s.project.carStripe)
   const setCarStripe = useEditorStore(s => s.setCarStripe)
-  const [stripeSlider, setStripeSlider] = useState<'width' | 'angle' | 'offset'>('width')
+  const addStripeLayer = useEditorStore(s => s.addStripeLayer)
+  const addStripeLayerPreset = useEditorStore(s => s.addStripeLayerPreset)
+  const [stripeSlider, setStripeSlider] = useState<'width' | 'gap' | 'angle' | 'offset' | 'soft'>('width')
 
   // Split
   const carSplit    = useEditorStore(s => s.project.carSplit)
@@ -246,7 +382,15 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
     if (activeTab === 'text' && textLayer) {
       setEditingTextContent(textLayer.text || '')
     }
-  }, [activeTab, textLayer?.id])
+  }, [activeTab, textLayer])
+
+  // Commit text to undo history when leaving the text tab
+  useEffect(() => {
+    if (activeTab === 'text') return
+    if (textLayer) {
+      updateLayer(textLayer.id, { text: editingTextContent } as any)
+    }
+  }, [activeTab, editingTextContent, textLayer, updateLayer])
 
   // Load fonts
   useEffect(() => {
@@ -281,8 +425,76 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
       .catch(() => setDecalsLoading(false))
   }, [activeTab, decals.length])
 
+  const handleDecalsRowWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    if (el.scrollWidth > el.clientWidth) {
+      const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+      if (delta !== 0) {
+        el.scrollLeft += delta
+        e.preventDefault()
+      }
+    }
+  }
+
+  const handleElementsImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      onGuestSignIn()
+      if (elementsImportInputRef.current) elementsImportInputRef.current.value = ''
+      return
+    }
+
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      addDecalLayer(dataUrl)
+      setTool('decal')
+    }
+    reader.readAsDataURL(file)
+
+    if (elementsImportInputRef.current) elementsImportInputRef.current.value = ''
+  }
+
+  const handleTextFontImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      onGuestSignIn()
+      if (textImportInputRef.current) textImportInputRef.current.value = ''
+      return
+    }
+
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      const baseFamily = file.name.replace(/\.[^/.]+$/, '')
+      const importedFamily = `${baseFamily} (imported)`
+      const label = cleanFontDisplayName(baseFamily)
+
+      let style = document.getElementById('mgfonts') as HTMLStyleElement | null
+      if (!style) {
+        style = document.createElement('style')
+        style.id = 'mgfonts'
+        document.head.appendChild(style)
+      }
+      style.textContent = `${style.textContent ?? ''}\n@font-face{font-family:"${importedFamily}";src:url("${dataUrl}");font-display:swap;}`
+
+      setFonts((prev) => {
+        const deduped = prev.filter((font) => font.family !== importedFamily)
+        return [{ label, family: importedFamily, url: dataUrl }, ...deduped]
+      })
+      setSelectedFont(importedFamily)
+    }
+    reader.readAsDataURL(file)
+
+    if (textImportInputRef.current) textImportInputRef.current.value = ''
+  }
+
   const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
-    { id: 'car',      label: 'Car',      icon: <Car size={22} /> },
+    { id: 'car',      label: 'Wrap Color',      icon: <Palette size={22} /> },
     { id: 'text',     label: 'Text',     icon: <Type size={22} /> },
     { id: 'elements', label: 'Elements', icon: (
       <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden>
@@ -291,16 +503,26 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
       </svg>
     )},
     { id: 'stripes',  label: 'Stripes',  icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden>
-        <rect x="2" y="3" width="3" height="18" rx="1"/><rect x="7" y="3" width="2" height="18" rx="1"/>
-        <rect x="11" y="3" width="4" height="18" rx="1"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+        <rect x="4" y="3" width="4" height="18" rx="1.4" />
+        <rect x="10" y="3" width="4" height="18" rx="1.4" />
+        <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
       </svg>
     )},
-    { id: 'split',    label: 'Split',    icon: <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>S</span> },
+    { id: 'split',    label: 'Split',    icon: (
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
+        <path d="M12 4v16" />
+        <path d="M6.5 8.5h5.5" opacity="0.8" />
+        <path d="M12 15.5h5.5" opacity="0.8" />
+      </svg>
+    )},
     { id: 'tint',     label: 'Tint',     icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-        <path d="M3 17 L5 8 Q5.5 6 8 6 L16 6 Q18.5 6 19 8 L21 17 Q21.5 18.5 20 19 L4 19 Q2.5 18.5 3 17 Z"/>
-        <line x1="3" y1="14" x2="21" y2="14"/><line x1="12" y1="6" x2="12" y2="14"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
+        <path d="M3.7 14h16.6" opacity="0.9" />
+        <path d="M12 6v8" opacity="0.45" />
+        <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
       </svg>
     )},
     { id: 'layers',   label: 'Layers',   icon: <Layers size={22} /> },
@@ -330,24 +552,53 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               <button key={t.id} type="button"
                 className={`mobile-chip${selectedPaintTarget === t.id ? ' active' : ''}`}
                 onClick={() => setSelectedPaintTarget(selectedPaintTarget === t.id ? null : t.id)}
-              >{t.label}</button>
+              >
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, lineHeight: 1.05 }}>
+                  {t.icon}
+                  <span>{t.label}</span>
+                </span>
+              </button>
             ))}
             <span className="mobile-chips-sep" />
             {FINISHES.map(f => (
               <button key={f.id} type="button"
                 className={`mobile-chip${currentFinish === f.id ? ' active' : ''}`}
                 onClick={() => setPaint({ finish: f.id })}
-              >{f.label}</button>
+              >
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, lineHeight: 1.05 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: '999px',
+                      ...getFinishPreviewStyle(f.id),
+                    }}
+                  />
+                  <span>{f.label}</span>
+                </span>
+              </button>
             ))}
           </div>
 
           {paintMode === 'paint' ? (
             <div className="mobile-swatches-row">
-              {CAR_COLORS.map(c => (
-                <button key={c.name} type="button" className="mobile-color-swatch"
+              {visibleWrapColors.map(c => (
+                <button key={c.id} type="button" className="mobile-color-swatch"
                   style={{ backgroundColor: c.hex }}
-                  onClick={() => setPaint({ colorHex: c.hex })}
-                  aria-label={c.name} title={c.name}
+                  onClick={() => setPaint({
+                    colorHex: c.hex,
+                    finish: mapWrapFinishToPaintFinish(c.finish),
+                    colorRef: {
+                      swatchId: c.id,
+                      brand: c.brand,
+                      code: c.code,
+                      name: c.name,
+                      finish: c.finish,
+                    },
+                  })}
+                  aria-label={`${c.brand} ${c.code} ${c.name}`}
+                  title={`${c.brand} ${c.code} - ${c.name}`}
                 />
               ))}
             </div>
@@ -395,14 +646,15 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                   <span className="mobile-color-swatch-number">2</span>
                 </button>
                 <span className="mobile-chips-sep mobile-chips-sep--swatches" />
-                {CAR_COLORS.map(c => (
-                  <button key={c.name} type="button" className="mobile-color-swatch"
+                {visibleWrapColors.map(c => (
+                  <button key={c.id} type="button" className="mobile-color-swatch"
                     style={{ backgroundColor: c.hex }}
                     onClick={() => {
                       if (gradColorSlot === 1) setCarGradient({ enabled: true, fromHex: c.hex })
                       else setCarGradient({ enabled: true, toHex: c.hex })
                     }}
-                    aria-label={c.name} title={c.name}
+                    aria-label={`${c.brand} ${c.code} ${c.name}`}
+                    title={`${c.brand} ${c.code} - ${c.name}`}
                   />
                 ))}
               </div>
@@ -436,20 +688,42 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── TEXT ─────────────────────────────────────────────────
       case 'text': {
-        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const textLayer = selectedLayer?.type === 'text' ? selectedLayer as { id: string; type: 'text'; text: string; fontFamily: string; fontUrl: string | null; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; mirrorColorHex: string | null; mirrorMirrorX: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         const textHsl = textLayer ? hexToHsl(textLayer.colorHex) : null
         return (
         <div className="mobile-car-controls">
           {/* Font chips */}
-          <div className="mobile-chips-row">
-            <span className="mobile-strip-label">Font</span>
-            {fonts.map(f => (
-              <button key={f.family} type="button"
-                className={`mobile-font-chip${selectedFont === f.family ? ' active' : ''}`}
-                style={{ fontFamily: f.family }}
-                onClick={() => setSelectedFont(f.family)}
-              >{f.label}</button>
-            ))}
+          <div className="mobile-chips-row mobile-fonts-row">
+            <span className="mobile-strip-label" style={{ flexShrink: 0 }}>Font</span>
+            <button
+              type="button"
+              className="mobile-chip"
+              onClick={() => {
+                if (isGuest) {
+                  onGuestSignIn()
+                  return
+                }
+                textImportInputRef.current?.click()
+              }}
+            >
+              Import Font
+            </button>
+            <input
+              ref={textImportInputRef}
+              type="file"
+              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+              onChange={handleTextFontImport}
+              style={{ display: 'none' }}
+            />
+            <div className="mobile-fonts-scroll">
+              {fonts.map(f => (
+                <button key={f.family} type="button"
+                  className={`mobile-font-chip${selectedFont === f.family ? ' active' : ''}`}
+                  style={{ fontFamily: f.family }}
+                  onClick={() => setSelectedFont(f.family)}
+                >{f.label}</button>
+              ))}
+            </div>
           </div>
           {/* Add text + color row */}
           <div className="mobile-swatches-row">
@@ -464,8 +738,8 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               }}
             >+ Add Text</button>
             <span className="mobile-chips-sep" />
-            {CAR_COLORS.map(c => (
-              <button key={c.hex} type="button" className="mobile-color-swatch"
+            {visibleWrapColors.map(c => (
+              <button key={c.id} type="button" className="mobile-color-swatch"
                 style={{ backgroundColor: c.hex, boxShadow: textLayer?.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
                 onClick={() => {
                   if (isGuest) { onGuestSignIn(); return }
@@ -476,7 +750,8 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     setTool('text')
                   }
                 }}
-                aria-label={c.name}
+                aria-label={`${c.brand} ${c.code} ${c.name}`}
+                title={`${c.brand} ${c.code} - ${c.name}`}
               />
             ))}
           </div>
@@ -492,7 +767,18 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     className={`mobile-chip${textLayer.finish === f.id ? ' active' : ''}`}
                     onClick={() => updateLayer(textLayer.id, { finish: f.id } as Parameters<typeof updateLayer>[1])}
                   >
-                    {f.label}
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, lineHeight: 1.05 }}>
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: '999px',
+                          ...getFinishPreviewStyle(f.id),
+                        }}
+                      />
+                      <span>{f.label}</span>
+                    </span>
                   </button>
                 ))}
                 <span className="mobile-chips-sep" />
@@ -503,19 +789,164 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                   aria-label={textLayer.mirrorToOtherSide ? 'Mirrored to both sides' : 'Mirror to other side'}
                   title="Mirror to other side of car"
                 >
-                  ⟷ Side
+                  ⟷ Mirror
                 </button>
+                {textLayer.mirrorToOtherSide && (
+                  <button
+                    type="button"
+                    className={`mobile-chip mobile-inline-mirror-chip${textLayer.mirrorX ? ' active' : ''}`}
+                    onClick={() => updateLayer(textLayer.id, { mirrorX: !textLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
+                    aria-label={textLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
+                    title="Flip the mirrored copy"
+                  >
+                    ↔ Flip
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={`mobile-chip mobile-inline-mirror-chip${textLayer.mirrorX ? ' active' : ''}`}
-                  onClick={() => updateLayer(textLayer.id, { mirrorX: !textLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
-                  aria-label={textLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
-                  title="Mirror horizontally"
+                  className={`mobile-chip${textDetailsTab === 'transform' ? ' active' : ''}`}
+                  onClick={() => setTextDetailsTab((v) => (v === 'transform' ? 'text' : 'transform'))}
+                  title="Transform controls"
                 >
-                  ↔ Flip
+                  Transform
                 </button>
+                <span className="mobile-chips-sep" />
+                <input
+                  type="text"
+                  value={editingTextContent}
+                  onChange={e => {
+                    const nextText = e.target.value
+                    setEditingTextContent(nextText)
+                    updateLayerTransient(textLayer.id, { text: nextText } as any)
+                  }}
+                  onBlur={() => updateLayer(textLayer.id, { text: editingTextContent } as any)}
+                  placeholder="Change text..."
+                  className="mobile-layer-text-input"
+                  style={{ fontFamily: textLayer.fontFamily || 'Arial', width: 260, minWidth: 260, flex: '0 0 260px' }}
+                />
+                {textLayer.mirrorToOtherSide && (
+                  <>
+                    <span className="mobile-chips-sep" />
+                    <span className="mobile-strip-label" style={{ fontSize: '0.72rem' }}>Mirror</span>
+                    <button
+                      type="button"
+                      className={`mobile-chip${textLayer.mirrorMirrorX ? ' active' : ''}`}
+                      onClick={() => updateLayer(textLayer.id, { mirrorMirrorX: !textLayer.mirrorMirrorX } as Parameters<typeof updateLayer>[1])}
+                      title="Flip the mirrored copy"
+                      style={{ minWidth: 38, fontSize: '0.75rem' }}
+                    >Flip</button>
+                    <button
+                      type="button"
+                      className={`mobile-chip${!textLayer.mirrorColorHex ? ' active' : ''}`}
+                      style={{ fontSize: '0.75rem', minWidth: 44 }}
+                      onClick={() => updateLayer(textLayer.id, { mirrorColorHex: null } as Parameters<typeof updateLayer>[1])}
+                      title="Same color as main side"
+                    >Same</button>
+                    <div className="mobile-mirror-colors-scroll">
+                      {visibleWrapColors.map(c => (
+                        <button key={c.id} type="button" className="mobile-color-swatch"
+                          style={{ backgroundColor: c.hex, width: 28, height: 28, minWidth: 28, flex: '0 0 28px',
+                            boxShadow: textLayer.mirrorColorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
+                          onClick={() => updateLayer(textLayer.id, { mirrorColorHex: c.hex } as Parameters<typeof updateLayer>[1])}
+                          aria-label={`Mirror: ${c.brand} ${c.code}`}
+                          title={`${c.brand} ${c.code}`}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {textDetailsTab === 'transform' && (
+                  <>
+                    <span className="mobile-chips-sep" />
+                    {(['uniform', 'horl', 'vert', 'rotate'] as LayerScaleMode[]).map(m => (
+                      <button key={m} type="button"
+                        className={`mobile-chip${layerScaleMode === m ? ' active' : ''}`}
+                        onClick={() => setLayerScaleMode(m)}
+                      >
+                        {m === 'uniform' ? 'Scale' : m === 'horl' ? 'Wide' : m === 'vert' ? 'Tall' : 'Rotate'}
+                      </button>
+                    ))}
+                    {layerScaleMode === 'uniform' && (
+                      <>
+                        <input
+                          type="range"
+                          min={0.1}
+                          max={4}
+                          step={0.05}
+                          value={textLayer.transform.scale.x}
+                          onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                          onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
+                          className="mobile-slider mobile-slider--transform"
+                          style={{ width: 140 }}
+                        />
+                        <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}x</span>
+                      </>
+                    )}
+                    <span className="mobile-chips-sep" />
+                    <button
+                      type="button"
+                      className="mobile-chip mobile-chip--nudge"
+                      onClick={() => updateLayer(textLayer.id, {
+                        transform: {
+                          position: {
+                            ...textLayer.transform.position,
+                            y: textLayer.transform.position.y + POSITION_NUDGE_STEP,
+                          },
+                        },
+                      } as Parameters<typeof updateLayer>[1])}
+                      title="Nudge up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="mobile-chip mobile-chip--nudge"
+                      onClick={() => updateLayer(textLayer.id, {
+                        transform: {
+                          position: {
+                            ...textLayer.transform.position,
+                            z: textLayer.transform.position.z - POSITION_NUDGE_STEP,
+                          },
+                        },
+                      } as Parameters<typeof updateLayer>[1])}
+                      title="Nudge left"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="mobile-chip mobile-chip--nudge"
+                      onClick={() => updateLayer(textLayer.id, {
+                        transform: {
+                          position: {
+                            ...textLayer.transform.position,
+                            z: textLayer.transform.position.z + POSITION_NUDGE_STEP,
+                          },
+                        },
+                      } as Parameters<typeof updateLayer>[1])}
+                      title="Nudge right"
+                    >
+                      →
+                    </button>
+                    <button
+                      type="button"
+                      className="mobile-chip mobile-chip--nudge"
+                      onClick={() => updateLayer(textLayer.id, {
+                        transform: {
+                          position: {
+                            ...textLayer.transform.position,
+                            y: textLayer.transform.position.y - POSITION_NUDGE_STEP,
+                          },
+                        },
+                      } as Parameters<typeof updateLayer>[1])}
+                      title="Nudge down"
+                    >
+                      ↓
+                    </button>
+                  </>
+                )}
               </div>
-              {textHsl && (
+              {textDetailsTab === 'text' && textHsl && (
                 <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
                   <span className="mobile-slider-label">Saturation</span>
                   <input
@@ -537,81 +968,49 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                   <span className="mobile-slider-val">{textHsl.s}%</span>
                 </div>
               )}
-              {/* Inline text edit input */}
-              <div className="mobile-layer-input-row">
-                <input
-                  type="text"
-                  value={editingTextContent}
-                  onChange={e => setEditingTextContent(e.target.value)}
-                  onBlur={() => updateLayer(textLayer.id, { text: editingTextContent } as any)}
-                  placeholder="Change text…"
-                  className="mobile-layer-text-input"
-                  style={{ fontFamily: textLayer.fontFamily || 'Arial' }}
-                />
-              </div>
-              {/* Scale / Rotate mode tabs */}
-              <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
-                <span className="mobile-strip-label">Transform</span>
-                {(['uniform', 'horl', 'vert', 'rotate'] as LayerScaleMode[]).map(m => (
-                  <button key={m} type="button"
-                    className={`mobile-chip${layerScaleMode === m ? ' active' : ''}`}
-                    onClick={() => setLayerScaleMode(m)}
-                  >
-                    {m === 'uniform' ? 'Scale' : m === 'horl' ? 'Wide' : m === 'vert' ? 'Tall' : 'Rotate'}
-                  </button>
-                ))}
-              </div>
-              {/* Slider for active mode */}
-              <div className="mobile-transform-slider-row">
-                {layerScaleMode === 'uniform' && (
-                  <>
-                    <span className="mobile-slider-label">Scale</span>
-                    <input type="range" min={0.1} max={4} step={0.05}
-                      value={textLayer.transform.scale.x}
-                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
-                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { ...textLayer.transform, scale: { x: v, y: v, z: 1 } } } as any) }}
-                      className="mobile-slider mobile-slider--transform"
-                    />
-                    <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}×</span>
-                  </>
-                )}
-                {layerScaleMode === 'horl' && (
-                  <>
-                    <span className="mobile-slider-label">Wide</span>
-                    <input type="range" min={0.1} max={4} step={0.05}
-                      value={textLayer.transform.scale.x}
-                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as any) }}
-                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { x: v } } } as any) }}
-                      className="mobile-slider mobile-slider--transform"
-                    />
-                    <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}×</span>
-                  </>
-                )}
-                {layerScaleMode === 'vert' && (
-                  <>
-                    <span className="mobile-slider-label">Tall</span>
-                    <input type="range" min={0.1} max={4} step={0.05}
-                      value={textLayer.transform.scale.y}
-                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as any) }}
-                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { y: v } } } as any) }}
-                      className="mobile-slider mobile-slider--transform"
-                    />
-                    <span className="mobile-slider-val">{textLayer.transform.scale.y.toFixed(2)}×</span>
-                  </>
-                )}
-                {layerScaleMode === 'rotate' && (
-                  <>
-                    <span className="mobile-slider-label">Rotate</span>
-                    <input type="range" min={-3.14} max={3.14} step={0.02}
-                      value={textLayer.transform.rotation?.z ?? 0}
-                      onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
-                      onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
-                      className="mobile-slider mobile-slider--transform"
-                    />
-                    <span className="mobile-slider-val">{Math.round(((textLayer.transform.rotation?.z ?? 0) * 180) / Math.PI)}°</span>
-                  </>
-                )}
-              </div>
+
+              {textDetailsTab === 'transform' && (
+                <>
+                  <div className="mobile-transform-slider-row">
+                    {layerScaleMode === 'horl' && (
+                      <>
+                        <span className="mobile-slider-label">Wide</span>
+                        <input type="range" min={0.1} max={4} step={0.05}
+                          value={textLayer.transform.scale.x}
+                          onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { x: v } } } as any) }}
+                          onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { x: v } } } as any) }}
+                          className="mobile-slider mobile-slider--transform"
+                        />
+                        <span className="mobile-slider-val">{textLayer.transform.scale.x.toFixed(2)}×</span>
+                      </>
+                    )}
+                    {layerScaleMode === 'vert' && (
+                      <>
+                        <span className="mobile-slider-label">Tall</span>
+                        <input type="range" min={0.1} max={4} step={0.05}
+                          value={textLayer.transform.scale.y}
+                          onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { scale: { y: v } } } as any) }}
+                          onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { scale: { y: v } } } as any) }}
+                          className="mobile-slider mobile-slider--transform"
+                        />
+                        <span className="mobile-slider-val">{textLayer.transform.scale.y.toFixed(2)}×</span>
+                      </>
+                    )}
+                    {layerScaleMode === 'rotate' && (
+                      <>
+                        <span className="mobile-slider-label">Rotate</span>
+                        <input type="range" min={-3.14} max={3.14} step={0.02}
+                          value={textLayer.transform.rotation?.z ?? 0}
+                          onChange={e => { const v = Number(e.target.value); updateLayerTransient(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
+                          onPointerUp={e => { const v = Number((e.target as HTMLInputElement).value); updateLayer(textLayer.id, { transform: { rotation: { ...textLayer.transform.rotation, z: v } } } as any) }}
+                          className="mobile-slider mobile-slider--transform"
+                        />
+                        <span className="mobile-slider-val">{Math.round(((textLayer.transform.rotation?.z ?? 0) * 180) / Math.PI)}°</span>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -620,14 +1019,31 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       // ── ELEMENTS ─────────────────────────────────────────────
       case 'elements': {
-        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
+        const decalLayer = selectedLayer?.type === 'decal' ? selectedLayer as { id: string; type: 'decal'; colorHex: string; finish: 'gloss' | 'matte' | 'chrome' | 'satin'; mirrorX: boolean; mirrorToOtherSide: boolean; mirrorColorHex: string | null; mirrorMirrorX: boolean; transform: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; scale: { x: number; y: number; z: number } } } : null
         return (
         <div className="mobile-car-controls">
           <div className="mobile-chips-row">
             <span className="mobile-strip-label">Decals</span>
-            {isGuest && (
-              <button type="button" className="mobile-chip" onClick={onGuestSignIn}>Sign in to import</button>
-            )}
+            <button
+              type="button"
+              className="mobile-chip"
+              onClick={() => {
+                if (isGuest) {
+                  onGuestSignIn()
+                  return
+                }
+                elementsImportInputRef.current?.click()
+              }}
+            >
+              Import
+            </button>
+            <input
+              ref={elementsImportInputRef}
+              type="file"
+              accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+              onChange={handleElementsImport}
+              style={{ display: 'none' }}
+            />
           </div>
           {decalLayer && (
             <div className="mobile-chips-row" style={{ paddingTop: 6 }}>
@@ -650,32 +1066,68 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                 aria-label={decalLayer.mirrorToOtherSide ? 'Mirrored to both sides' : 'Mirror to other side'}
                 title="Mirror to other side of car"
               >
-                ⟷ Side
+                ⟷ Mirror
               </button>
-              <button
-                type="button"
-                className={`mobile-chip mobile-inline-mirror-chip${decalLayer.mirrorX ? ' active' : ''}`}
-                onClick={() => updateLayer(decalLayer.id, { mirrorX: !decalLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
-                aria-label={decalLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
-                title="Mirror horizontally"
-              >
-                ↔ Flip
-              </button>
+              {decalLayer.mirrorToOtherSide && (
+                <button
+                  type="button"
+                  className={`mobile-chip mobile-inline-mirror-chip${decalLayer.mirrorX ? ' active' : ''}`}
+                  onClick={() => updateLayer(decalLayer.id, { mirrorX: !decalLayer.mirrorX } as Parameters<typeof updateLayer>[1])}
+                  aria-label={decalLayer.mirrorX ? 'Horizontally mirrored' : 'Mirror horizontally'}
+                  title="Flip the mirrored copy"
+                >
+                  ↔ Flip
+                </button>
+              )}
             </div>
           )}
           {/* Color swatches for selected decal */}
           {decalLayer && (
-            <div className="mobile-swatches-row" style={{ paddingTop: 4 }}>
+            <>
+            <div className="mobile-swatches-row mobile-swatches-row--mirror" style={{ paddingTop: 4 }}>
               <span className="mobile-strip-label">Color</span>
-              {CAR_COLORS.map(c => (
-                <button key={c.hex} type="button" className="mobile-color-swatch"
+              {visibleWrapColors.map(c => (
+                <button key={c.id} type="button" className="mobile-color-swatch"
                   style={{ backgroundColor: c.hex, width: 34, height: 34, minWidth: 34,
                     boxShadow: decalLayer.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
                   onClick={() => updateLayer(decalLayer.id, { colorHex: c.hex } as Parameters<typeof updateLayer>[1])}
-                  aria-label={c.name}
+                  aria-label={`${c.brand} ${c.code} ${c.name}`}
+                  title={`${c.brand} ${c.code} - ${c.name}`}
                 />
               ))}
+              {decalLayer.mirrorToOtherSide && (
+                <>
+                  <span className="mobile-chips-sep" />
+                  <span className="mobile-strip-label" style={{ fontSize: '0.72rem' }}>Mirror</span>
+                  <button
+                    type="button"
+                    className={`mobile-chip${decalLayer.mirrorMirrorX ? ' active' : ''}`}
+                    onClick={() => updateLayer(decalLayer.id, { mirrorMirrorX: !decalLayer.mirrorMirrorX } as Parameters<typeof updateLayer>[1])}
+                    title="Flip the mirrored copy"
+                    style={{ minWidth: 38, fontSize: '0.75rem' }}
+                  >Flip</button>
+                  <button
+                    type="button"
+                    className={`mobile-chip${!decalLayer.mirrorColorHex ? ' active' : ''}`}
+                    style={{ fontSize: '0.75rem', minWidth: 44 }}
+                    onClick={() => updateLayer(decalLayer.id, { mirrorColorHex: null } as Parameters<typeof updateLayer>[1])}
+                    title="Same color as main side"
+                  >Same</button>
+                  <div className="mobile-mirror-colors-scroll">
+                    {visibleWrapColors.map(c => (
+                      <button key={`mirror-${c.id}`} type="button" className="mobile-color-swatch"
+                        style={{ backgroundColor: c.hex, width: 28, height: 28, minWidth: 28, flex: '0 0 28px',
+                          boxShadow: decalLayer.mirrorColorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
+                        onClick={() => updateLayer(decalLayer.id, { mirrorColorHex: c.hex } as Parameters<typeof updateLayer>[1])}
+                        aria-label={`Mirror: ${c.brand} ${c.code}`}
+                        title={`${c.brand} ${c.code}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
+            </>
           )}
           {/* Scale / Rotate mode tabs + slider for selected decal */}
           {decalLayer && (
@@ -690,6 +1142,67 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
                     {m === 'uniform' ? 'Scale' : m === 'horl' ? 'Wide' : m === 'vert' ? 'Tall' : 'Rotate'}
                   </button>
                 ))}
+                <span className="mobile-chips-sep" />
+                <button
+                  type="button"
+                  className="mobile-chip mobile-chip--nudge"
+                  onClick={() => updateLayer(decalLayer.id, {
+                    transform: {
+                      position: {
+                        ...decalLayer.transform.position,
+                        y: decalLayer.transform.position.y + POSITION_NUDGE_STEP,
+                      },
+                    },
+                  } as Parameters<typeof updateLayer>[1])}
+                  title="Nudge up"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="mobile-chip mobile-chip--nudge"
+                  onClick={() => updateLayer(decalLayer.id, {
+                    transform: {
+                      position: {
+                        ...decalLayer.transform.position,
+                        z: decalLayer.transform.position.z - POSITION_NUDGE_STEP,
+                      },
+                    },
+                  } as Parameters<typeof updateLayer>[1])}
+                  title="Nudge left"
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="mobile-chip mobile-chip--nudge"
+                  onClick={() => updateLayer(decalLayer.id, {
+                    transform: {
+                      position: {
+                        ...decalLayer.transform.position,
+                        z: decalLayer.transform.position.z + POSITION_NUDGE_STEP,
+                      },
+                    },
+                  } as Parameters<typeof updateLayer>[1])}
+                  title="Nudge right"
+                >
+                  →
+                </button>
+                <button
+                  type="button"
+                  className="mobile-chip mobile-chip--nudge"
+                  onClick={() => updateLayer(decalLayer.id, {
+                    transform: {
+                      position: {
+                        ...decalLayer.transform.position,
+                        y: decalLayer.transform.position.y - POSITION_NUDGE_STEP,
+                      },
+                    },
+                  } as Parameters<typeof updateLayer>[1])}
+                  title="Nudge down"
+                >
+                  ↓
+                </button>
               </div>
               <div className="mobile-transform-slider-row">
                 {layerScaleMode === 'uniform' && (
@@ -743,11 +1256,23 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               </div>
             </>
           )}
-          <div className="mobile-decals-row">
+          <div
+            className="mobile-decals-row"
+            onWheelCapture={handleDecalsRowWheel}
+            onWheel={handleDecalsRowWheel}
+          >
             {decalsLoading && <span className="mobile-strip-label">Loading…</span>}
-            {!decalsLoading && decals.length === 0 && <span className="mobile-strip-label">No decals yet</span>}
+            {!decalsLoading && decals.length === 0 && customDecals.length === 0 && <span className="mobile-strip-label">No decals yet</span>}
+            {customDecals.map(d => (
+              <button key={`created-${d.id}`} type="button" className="mobile-decal-thumb"
+                onClick={() => { addDecalLayer(d.imageUrl); setTool('decal') }}
+                title={`${d.name} (Created)`}
+              >
+                <img src={d.imageUrl} alt={d.name} loading="lazy" />
+              </button>
+            ))}
             {decals.map(d => (
-              <button key={d.fileName} type="button" className="mobile-decal-thumb"
+              <button key={`library-${d.fileName}`} type="button" className="mobile-decal-thumb"
                 onClick={() => { addDecalLayer(d.url); setTool('decal') }}
                 title={d.name}
               >
@@ -763,23 +1288,128 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
       case 'stripes': return (
         <div className="mobile-car-controls">
           {(() => {
-            const stripeHsl = hexToHsl(carStripe.colorHex)
+            const stripeLayers = layers.filter((layer): layer is Extract<typeof layer, { type: 'stripe' }> => layer.type === 'stripe')
+            const selectedStripeLayer = selectedLayer?.type === 'stripe' ? selectedLayer : null
+            const activeStripeLayer = selectedStripeLayer ?? (stripeLayers.length > 0 ? stripeLayers[stripeLayers.length - 1] : null)
+            const stripeColorHex = activeStripeLayer?.colorHex ?? carStripe.colorHex
+            const stripeFinish = activeStripeLayer?.finish ?? carStripe.finish
+            const stripeWidth = activeStripeLayer?.stripeWidth ?? carStripe.width
+            const stripeGap = activeStripeLayer?.stripeGap ?? carStripe.gap
+            const stripeOffset = activeStripeLayer?.stripeOffsetX ?? carStripe.offsetX
+            const stripeAngle = activeStripeLayer?.transform.rotation.z ?? carStripe.angle
+            const stripeSoftEdge = activeStripeLayer?.softEdge ?? carStripe.softEdge
+            const stripeEnabled = activeStripeLayer ? activeStripeLayer.visible : carStripe.enabled
+            const stripeHsl = hexToHsl(stripeColorHex)
+
+            const applyStripePatch = (patch: {
+              colorHex?: string
+              finish?: 'gloss' | 'matte' | 'chrome' | 'satin'
+              width?: number
+              gap?: number
+              offsetX?: number
+              softEdge?: number
+              angle?: number
+              enabled?: boolean
+            }) => {
+              const carStripePatch = {
+                ...(patch.colorHex !== undefined ? { colorHex: patch.colorHex } : {}),
+                ...(patch.finish !== undefined ? { finish: patch.finish } : {}),
+                ...(patch.width !== undefined ? { width: patch.width } : {}),
+                ...(patch.gap !== undefined ? { gap: patch.gap } : {}),
+                ...(patch.offsetX !== undefined ? { offsetX: patch.offsetX } : {}),
+                ...(patch.softEdge !== undefined ? { softEdge: patch.softEdge } : {}),
+                ...(patch.angle !== undefined ? { angle: patch.angle } : {}),
+                ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+              }
+
+              if (!activeStripeLayer) {
+                setCarStripe(carStripePatch)
+                return
+              }
+
+              const layerPatch = {
+                ...(patch.colorHex !== undefined ? { colorHex: patch.colorHex } : {}),
+                ...(patch.finish !== undefined ? { finish: patch.finish } : {}),
+                ...(patch.width !== undefined ? { stripeWidth: patch.width } : {}),
+                ...(patch.gap !== undefined ? { stripeGap: patch.gap } : {}),
+                ...(patch.offsetX !== undefined ? { stripeOffsetX: patch.offsetX } : {}),
+                ...(patch.softEdge !== undefined ? { softEdge: patch.softEdge } : {}),
+                ...(patch.enabled !== undefined ? { visible: patch.enabled } : {}),
+                ...(patch.angle !== undefined ? { transform: { rotation: { z: patch.angle } } } : {}),
+              }
+
+              updateLayer(activeStripeLayer.id, layerPatch as Parameters<typeof updateLayer>[1])
+            }
+
+            const applyStripePreset = (preset: typeof STRIPE_PRESETS[number]['config']) => {
+              if (activeStripeLayer) {
+                applyStripePatch({
+                  colorHex: preset.colorHex,
+                  finish: preset.finish,
+                  width: preset.width,
+                  gap: preset.gap,
+                  offsetX: preset.offsetX,
+                  softEdge: preset.softEdge,
+                  angle: preset.angle,
+                  enabled: true,
+                })
+                return
+              }
+
+              addStripeLayerPreset([
+                {
+                  colorHex: preset.colorHex,
+                  finish: preset.finish,
+                  stripeWidth: preset.width,
+                  stripeGap: preset.gap,
+                  stripeOffsetX: preset.offsetX,
+                  softEdge: preset.softEdge,
+                  visible: true,
+                  transform: {
+                    rotation: { z: preset.angle },
+                  },
+                } as any,
+              ])
+            }
+
             return (
               <>
+          <div className="mobile-chips-row">
+            <button
+              type="button"
+              className="mobile-add-btn"
+              onClick={() => {
+                if (isGuest) { onGuestSignIn(); return }
+                addStripeLayer()
+              }}
+            >+ Add Stripe</button>
+            <span className="mobile-chips-sep" />
+            {stripeLayers.slice().reverse().map((layer) => (
+              <button
+                key={layer.id}
+                type="button"
+                className={`mobile-layer-chip${activeStripeLayer?.id === layer.id ? ' active' : ''}`}
+                onClick={() => setSelectedLayer(layer.id)}
+                title={layer.name}
+              >
+                {layer.name}
+              </button>
+            ))}
+          </div>
           {/* Preset chips */}
           <div className="mobile-chips-row">
             {/* ON/OFF toggle */}
             <button type="button"
-              className={`mobile-chip${carStripe.enabled ? ' active' : ''}`}
+              className={`mobile-chip${stripeEnabled ? ' active' : ''}`}
               style={{ minWidth: 56, fontWeight: 700 }}
-              onClick={() => setCarStripe({ enabled: !carStripe.enabled })}
-            >{carStripe.enabled ? 'ON' : 'OFF'}</button>
+              onClick={() => applyStripePatch({ enabled: !stripeEnabled })}
+            >{stripeEnabled ? 'ON' : 'OFF'}</button>
             <span className="mobile-chips-sep" />
             <span className="mobile-strip-label">Style</span>
             {STRIPE_PRESETS.map(p => (
               <button key={p.id} type="button"
-                className={`mobile-preset-chip${carStripe.enabled && carStripe.width === p.config.width && carStripe.angle === p.config.angle ? ' active' : ''}`}
-                onClick={() => setCarStripe({ ...p.config, enabled: true })}
+                className={`mobile-preset-chip${stripeEnabled && stripeWidth === p.config.width && stripeAngle === p.config.angle ? ' active' : ''}`}
+                onClick={() => applyStripePreset(p.config)}
               >
                 <span className="mobile-preset-preview" style={{ background: p.preview }} />
                 {p.label}
@@ -788,15 +1418,28 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             <span className="mobile-chips-sep" />
             {FINISHES.map(f => (
               <button key={f.id} type="button"
-                className={`mobile-chip${carStripe.finish === f.id ? ' active' : ''}`}
-                onClick={() => setCarStripe({ finish: f.id, enabled: true })}
-              >{f.label}</button>
+                className={`mobile-chip${stripeFinish === f.id ? ' active' : ''}`}
+                onClick={() => applyStripePatch({ finish: f.id, enabled: true })}
+              >
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 3, lineHeight: 1.05 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: '999px',
+                      ...getFinishPreviewStyle(f.id),
+                    }}
+                  />
+                  <span>{f.label}</span>
+                </span>
+              </button>
             ))}
           </div>
           {/* Slider row */}
           <div className="mobile-swatches-row" style={{ gap: 8 }}>
             {/* Slider selector */}
-            {(['width', 'angle', 'offset'] as const).map(s => (
+            {(['width', 'gap', 'angle', 'offset', 'soft'] as const).map(s => (
               <button key={s} type="button"
                 className={`mobile-chip${stripeSlider === s ? ' active' : ''}`}
                 onClick={() => setStripeSlider(s)}
@@ -804,33 +1447,48 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             ))}
             <span className="mobile-chips-sep" />
             {stripeSlider === 'width' && (
-              <input type="range" min={0.03} max={0.5} step={0.01}
-                value={carStripe.width ?? 0.14}
-                onChange={e => setCarStripe({ width: Number(e.target.value) })}
+              <input type="range" min={0.0001} max={0.5} step={0.0001}
+                value={stripeWidth ?? 0.14}
+                onChange={e => applyStripePatch({ width: Number(e.target.value) })}
+                className="mobile-slider"
+              />
+            )}
+            {stripeSlider === 'gap' && (
+              <input type="range" min={0} max={0.9} step={0.01}
+                value={stripeGap ?? 0}
+                onChange={e => applyStripePatch({ gap: Number(e.target.value) })}
                 className="mobile-slider"
               />
             )}
             {stripeSlider === 'angle' && (
               <input type="range" min={-1} max={1} step={0.01}
-                value={carStripe.angle ?? 0}
-                onChange={e => setCarStripe({ angle: Number(e.target.value) })}
+                value={stripeAngle ?? 0}
+                onChange={e => applyStripePatch({ angle: Number(e.target.value) })}
                 className="mobile-slider"
               />
             )}
             {stripeSlider === 'offset' && (
               <input type="range" min={-1} max={1} step={0.01}
-                value={carStripe.offsetX ?? 0}
-                onChange={e => setCarStripe({ offsetX: Number(e.target.value) })}
+                value={stripeOffset ?? 0}
+                onChange={e => applyStripePatch({ offsetX: Number(e.target.value) })}
+                className="mobile-slider"
+              />
+            )}
+            {stripeSlider === 'soft' && (
+              <input type="range" min={0} max={0.2} step={0.005}
+                value={stripeSoftEdge ?? 0.02}
+                onChange={e => applyStripePatch({ softEdge: Number(e.target.value) })}
                 className="mobile-slider"
               />
             )}
             <span className="mobile-chips-sep" />
             {/* Stripe color swatches */}
-            {CAR_COLORS.slice(0, 8).map(c => (
-              <button key={c.hex} type="button" className="mobile-color-swatch"
+            {visibleWrapColors.map(c => (
+              <button key={c.id} type="button" className="mobile-color-swatch"
                 style={{ backgroundColor: c.hex, width: 32, height: 32, minWidth: 32 }}
-                onClick={() => setCarStripe({ colorHex: c.hex })}
-                aria-label={c.name}
+                onClick={() => applyStripePatch({ colorHex: c.hex })}
+                aria-label={`${c.brand} ${c.code} ${c.name}`}
+                title={`${c.brand} ${c.code} - ${c.name}`}
               />
             ))}
           </div>
@@ -845,7 +1503,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               onChange={(e) => {
                 const nextSaturation = Number(e.target.value)
                 const nextHex = hslToHex(stripeHsl.h, nextSaturation, stripeHsl.l)
-                setCarStripe({ colorHex: nextHex, enabled: true })
+                applyStripePatch({ colorHex: nextHex, enabled: true })
               }}
               className="mobile-slider mobile-slider--transform mobile-slider--saturation"
               style={{
@@ -936,11 +1594,12 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
             )}
             <span className="mobile-chips-sep" />
             {/* Color swatches for active side */}
-            {CAR_COLORS.slice(0, 8).map(c => (
-              <button key={c.hex} type="button" className="mobile-color-swatch"
+            {visibleWrapColors.map(c => (
+              <button key={c.id} type="button" className="mobile-color-swatch"
                 style={{ backgroundColor: c.hex, width: 32, height: 32, minWidth: 32 }}
                 onClick={() => setCarSplit(splitSide === 'A' ? { sideAHex: c.hex } : { sideBHex: c.hex })}
-                aria-label={c.name}
+                aria-label={`${c.brand} ${c.code} ${c.name}`}
+                title={`${c.brand} ${c.code} - ${c.name}`}
               />
             ))}
           </div>
@@ -996,11 +1655,18 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
               className="mobile-slider"
             />
             <span className="mobile-chips-sep" />
-            {TINT_COLORS.map(c => (
-              <button key={c} type="button" className="mobile-color-swatch"
-                style={{ backgroundColor: c, width: 38, height: 38, minWidth: 38 }}
-                onClick={() => setWindowTint({ colorHex: c })}
-                aria-label={c}
+            {visibleWrapColors.map(c => (
+              <button key={c.id} type="button" className="mobile-color-swatch"
+                style={{
+                  backgroundColor: c.hex,
+                  width: 38,
+                  height: 38,
+                  minWidth: 38,
+                  boxShadow: windowTint.colorHex?.toLowerCase() === c.hex.toLowerCase() ? '0 0 0 2px #fff' : undefined,
+                }}
+                onClick={() => setWindowTint({ enabled: true, colorHex: c.hex })}
+                aria-label={`${c.brand} ${c.code} ${c.name}`}
+                title={`${c.brand} ${c.code} - ${c.name}`}
               />
             ))}
           </div>
@@ -1095,6 +1761,15 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn }: Mob
 
       default: return null
     }
+  }
+
+  // Embedded mode — just the controls strip, no canvas or tab bar
+  if (embedded) {
+    return (
+      <div className="mobile-controls-strip mobile-controls-strip--embedded">
+        {renderStrip()}
+      </div>
+    )
   }
 
   return (

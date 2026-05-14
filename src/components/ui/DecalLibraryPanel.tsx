@@ -56,6 +56,17 @@ export function DecalLibraryPanel({ onDecalPicked, isGuest = false, onGuestSignI
   const fileInputRef = useRef<HTMLInputElement>(null)
   const guestPromptTimerRef = useRef<number | null>(null)
 
+  const handleDecalGridWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    if (el.scrollWidth > el.clientWidth) {
+      const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+      if (delta !== 0) {
+        el.scrollLeft += delta
+        e.preventDefault()
+      }
+    }
+  }
+
   const showGuestPrompt = (feature: string) => {
     setGuestPrompt(`Create an account to use ${feature}.`)
     if (guestPromptTimerRef.current !== null) {
@@ -140,26 +151,25 @@ export function DecalLibraryPanel({ onDecalPicked, isGuest = false, onGuestSignI
   }, [])
 
   return (
-    <section className="panel decal-library-panel">
+    <section className="panel decal-library-panel elements-library-panel">
       <div className="panel-header">
         <h2>Elements</h2>
-        {activeTab === 'library' && (
-          <button
-            type="button"
-            className="import-btn"
-            onClick={() => {
-              if (isGuest) {
-                showGuestPrompt('Decal Import')
-                return
-              }
-              fileInputRef.current?.click()
-            }}
-            title={isGuest ? 'Sign in to import decals' : 'Import a custom decal (SVG, PNG, JPG, WEBP)'}
-            aria-label="Import decal"
-          >
-            <Upload size={18} />
-          </button>
-        )}
+        <button
+          type="button"
+          className="import-btn import-btn--labeled"
+          onClick={() => {
+            if (isGuest) {
+              showGuestPrompt('Decal Import')
+              return
+            }
+            fileInputRef.current?.click()
+          }}
+          title={isGuest ? 'Sign in to import decals' : 'Import a custom decal (SVG, PNG, JPG, WEBP)'}
+          aria-label="Import decal"
+        >
+          <Upload size={16} />
+          <span>Import</span>
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -208,7 +218,13 @@ export function DecalLibraryPanel({ onDecalPicked, isGuest = false, onGuestSignI
             <p className="hint">Drop .svg/.png/.webp/.jpg files into public/decals, then restart dev server.</p>
           ) : null}
 
-          <div className="decal-grid" role="list" aria-label="Decal images">
+          <div
+            className="decal-grid"
+            role="list"
+            aria-label="Decal images"
+            onWheelCapture={handleDecalGridWheel}
+            onWheel={handleDecalGridWheel}
+          >
             {items.map((item) => (
               <button
                 key={item.fileName}
@@ -235,7 +251,13 @@ export function DecalLibraryPanel({ onDecalPicked, isGuest = false, onGuestSignI
             <p className="hint">No created decals yet. Use the Create a Logo button in the toolbar to create one.</p>
           ) : null}
 
-          <div className="decal-grid" role="list" aria-label="Created decals">
+          <div
+            className="decal-grid"
+            role="list"
+            aria-label="Created decals"
+            onWheelCapture={handleDecalGridWheel}
+            onWheel={handleDecalGridWheel}
+          >
             {customDecals.map((item) => (
               <div key={item.id} className="decal-card-wrap" style={{ position: 'relative' }}>
                 {renamingId === item.id ? (

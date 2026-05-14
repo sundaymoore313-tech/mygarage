@@ -153,6 +153,7 @@ const createDecalLayer = (
   mirrorX: defaults?.mirrorX ?? false,
   mirrorToOtherSide: defaults?.mirrorToOtherSide ?? false,
   mirrorColorHex: null,
+  mirrorMirrorX: false,
   imageUrl: imageUrl ?? null,
   colorHex: defaults?.colorHex ?? '#ffffff',
   colorRef: defaults?.colorRef ?? null,
@@ -180,6 +181,7 @@ const createTextLayer = (
   mirrorX: defaults?.mirrorX ?? false,
   mirrorToOtherSide: false,
   mirrorColorHex: null,
+  mirrorMirrorX: false,
   text: options?.text ?? 'Text',
   fontFamily: options?.fontFamily ?? defaults?.fontFamily ?? 'Arial',
   fontUrl: options?.fontUrl ?? defaults?.fontUrl ?? null,
@@ -293,38 +295,52 @@ function patchLayer(existing: Layer, patch: Partial<Layer>): Layer {
     return { ...existing, ...typedPatch, type: 'group', updatedAt: now() }
   }
 
+  const existingWithTransform = existing as DecalLayer | TextLayer | StripeLayer | SplitLayer
+  const transformPatch = (patch as Partial<DecalLayer | TextLayer | StripeLayer | SplitLayer>).transform
+  const nextTransform = transformPatch
+    ? {
+        ...existingWithTransform.transform,
+        ...transformPatch,
+        position: {
+          ...existingWithTransform.transform.position,
+          ...transformPatch.position,
+        },
+        rotation: {
+          ...existingWithTransform.transform.rotation,
+          ...transformPatch.rotation,
+        },
+        scale: {
+          ...existingWithTransform.transform.scale,
+          ...transformPatch.scale,
+        },
+        skew: {
+          ...existingWithTransform.transform.skew,
+          ...transformPatch.skew,
+        },
+      }
+    : existingWithTransform.transform
+
   if (existing.type === 'stripe') {
     const typedPatch = patch as Partial<StripeLayer>
-    return { ...existing, ...typedPatch, type: 'stripe', updatedAt: now() }
+    return {
+      ...existing,
+      ...typedPatch,
+      type: 'stripe',
+      transform: nextTransform,
+      updatedAt: now(),
+    }
   }
 
   if (existing.type === 'split') {
     const typedPatch = patch as Partial<SplitLayer>
-    return { ...existing, ...typedPatch, type: 'split', updatedAt: now() }
+    return {
+      ...existing,
+      ...typedPatch,
+      type: 'split',
+      transform: nextTransform,
+      updatedAt: now(),
+    }
   }
-
-  const nextTransform = (patch as Partial<DecalLayer | TextLayer>).transform
-    ? {
-        ...existing.transform,
-        ...(patch as Partial<DecalLayer | TextLayer>).transform,
-        position: {
-          ...existing.transform.position,
-          ...(patch as Partial<DecalLayer | TextLayer>).transform?.position,
-        },
-        rotation: {
-          ...existing.transform.rotation,
-          ...(patch as Partial<DecalLayer | TextLayer>).transform?.rotation,
-        },
-        scale: {
-          ...existing.transform.scale,
-          ...(patch as Partial<DecalLayer | TextLayer>).transform?.scale,
-        },
-        skew: {
-          ...existing.transform.skew,
-          ...(patch as Partial<DecalLayer | TextLayer>).transform?.skew,
-        },
-      }
-    : existing.transform
 
   if (existing.type === 'decal') {
     const typedPatch = patch as Partial<DecalLayer>
@@ -354,6 +370,7 @@ const createStripeLayer = (count: number): StripeLayer => ({
   mirrorX: false,
   mirrorToOtherSide: false,
   mirrorColorHex: null,
+  mirrorMirrorX: false,
   colorHex: '#ffffff',
   colorRef: null,
   finish: 'gloss',
@@ -426,6 +443,7 @@ const createSplitLayer = (count: number): SplitLayer => ({
   mirrorX: false,
   mirrorToOtherSide: false,
   mirrorColorHex: null,
+  mirrorMirrorX: false,
   colorHex: '#d13b52',
   colorRef: null,
   sideBColorHex: '#3f63d6',

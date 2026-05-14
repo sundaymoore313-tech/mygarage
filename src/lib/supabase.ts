@@ -142,7 +142,7 @@ export async function supabaseSignOut(): Promise<SignOutResult> {
     })()
     
     return await Promise.race([signOutPromise, timeoutPromise]) as SignOutResult
-  } catch (err) {
+  } catch {
     // On timeout or error, do local cleanup anyway
     return { ok: true }
   }
