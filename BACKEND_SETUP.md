@@ -3,7 +3,7 @@
 This project already contains:
 
 - Supabase migration for `public.user_billing`
-- Edge functions for checkout, portal, and Stripe webhook
+- Edge functions for checkout, portal, Stripe webhook, and anonymous feedback submission
 
 This guide completes the backend setup for local development and production.
 
@@ -69,6 +69,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_SUCCESS_URL=http://localhost:5173/profile
 STRIPE_CANCEL_URL=http://localhost:5173/profile
 STRIPE_PORTAL_RETURN_URL=http://localhost:5173/profile
+DISCORD_FEEDBACK_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook-id/your-webhook-token
 ```
 
 Run functions locally:
@@ -111,6 +112,7 @@ npx supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
 npx supabase secrets set STRIPE_SUCCESS_URL=https://yourdomain.com/profile
 npx supabase secrets set STRIPE_CANCEL_URL=https://yourdomain.com/profile
 npx supabase secrets set STRIPE_PORTAL_RETURN_URL=https://yourdomain.com/profile
+npx supabase secrets set DISCORD_FEEDBACK_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
 Deploy all functions:

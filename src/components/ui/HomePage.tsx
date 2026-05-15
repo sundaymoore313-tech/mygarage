@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Layers, Type, Car, Paintbrush, Download, Pen, Star, Undo2, Image, Printer, SunDim, Columns2 } from 'lucide-react'
 import { isSupabaseConfigured, supabaseSignIn, supabaseSignOut, supabaseSignUp, supabase } from '../../lib/supabase'
-import { isDiscordConfigured, sendDiscordFeedback } from '../../lib/discord'
+import { sendAnonymousFeedback } from '../../lib/feedback'
 import { LegalDocsModal } from './LegalDocsModal'
 
 type HomePageProps = {
@@ -187,6 +187,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackText, setFeedbackText] = useState('')
   const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [feedbackErrorMessage, setFeedbackErrorMessage] = useState<string | null>(null)
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.matchMedia('(max-width: 860px) and (orientation: portrait)').matches
@@ -195,7 +196,6 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
     DEFAULT_DISCORD_URL
   )
-  const hasDiscordFeedbackWebhook = isDiscordConfigured
   const drawerRef = useRef<HTMLDivElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const heroCtaRef = useRef<HTMLDivElement | null>(null)
@@ -485,11 +485,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     const trimmed = feedbackText.trim()
     if (!trimmed) return
     setFeedbackStatus('sending')
+    setFeedbackErrorMessage(null)
     try {
-      const result = await sendDiscordFeedback(trimmed, currentUser?.email)
+      const result = await sendAnonymousFeedback(trimmed)
       if (result.success) {
         setFeedbackStatus('sent')
         setFeedbackText('')
+        setFeedbackErrorMessage(null)
         setTimeout(() => {
           setFeedbackStatus('idle')
           setFeedbackOpen(false)
@@ -497,16 +499,13 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
       } else {
         console.error('Feedback error:', result.error)
         setFeedbackStatus('error')
+        setFeedbackErrorMessage(result.error ?? 'Failed to send. Please try again.')
       }
     } catch (error) {
       console.error('Feedback error:', error)
       setFeedbackStatus('error')
+      setFeedbackErrorMessage('Failed to send. Please try again.')
     }
-  }
-
-  function openDiscordFeedback() {
-    if (typeof window === 'undefined') return
-    window.open(discordCommunityUrl, '_blank', 'noopener,noreferrer')
   }
 
   async function handleLogout() {
@@ -633,15 +632,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
                   type="button"
                   className="home-feedback-trigger"
                   onClick={() => {
-                    if (hasDiscordFeedbackWebhook) {
-                      setFeedbackOpen(true)
-                      setFeedbackStatus('idle')
-                    } else {
-                      openDiscordFeedback()
-                    }
+                    setFeedbackOpen(true)
+                    setFeedbackStatus('idle')
+                    setFeedbackErrorMessage(null)
                   }}
-                  aria-label={hasDiscordFeedbackWebhook ? 'Send feedback' : 'Open Discord feedback'}
-                  title={hasDiscordFeedbackWebhook ? 'Send anonymous feedback' : 'Open Discord feedback'}
+                  aria-label="Send feedback"
+                  title="Send anonymous feedback"
                 >
                   💬 Feedback
                 </button>
@@ -661,15 +657,12 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
               type="button"
               className="home-feedback-trigger"
               onClick={() => {
-                if (hasDiscordFeedbackWebhook) {
-                  setFeedbackOpen(true)
-                  setFeedbackStatus('idle')
-                } else {
-                  openDiscordFeedback()
-                }
+                setFeedbackOpen(true)
+                setFeedbackStatus('idle')
+                setFeedbackErrorMessage(null)
               }}
-              aria-label={hasDiscordFeedbackWebhook ? 'Send feedback' : 'Open Discord feedback'}
-              title={hasDiscordFeedbackWebhook ? 'Send anonymous feedback' : 'Open Discord feedback'}
+              aria-label="Send feedback"
+              title="Send anonymous feedback"
             >
               💬 Feedback
             </button>
@@ -912,7 +905,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
         onClose={() => setLegalOpen(false)}
       />
 
-      {feedbackOpen && hasDiscordFeedbackWebhook && (
+      {feedbackOpen && (
         <div
           className="feedback-backdrop"
           role="dialog"
@@ -923,7 +916,17 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
           <div className="feedback-modal">
             <div className="feedback-modal-header">
               <h3>Anonymous Feedback</h3>
-              <button type="button" className="feedback-modal-close" aria-label="Close" onClick={() => setFeedbackOpen(false)}>✕</button>
+              <button
+                type="button"
+                className="feedback-modal-close"
+                aria-label="Close"
+                onClick={() => {
+                  setFeedbackErrorMessage(null)
+                  setFeedbackOpen(false)
+                }}
+              >
+                ✕
+              </button>
             </div>
             <p className="feedback-modal-sub">Tell us what you think — no account needed, 100% anonymous.</p>
             <textarea
@@ -932,12 +935,16 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
               value={feedbackText}
               maxLength={FEEDBACK_MAX_CHARS}
               rows={5}
-              onChange={(e) => { setFeedbackText(e.target.value); setFeedbackStatus('idle') }}
+              onChange={(e) => {
+                setFeedbackText(e.target.value)
+                setFeedbackStatus('idle')
+                setFeedbackErrorMessage(null)
+              }}
               disabled={feedbackStatus === 'sending' || feedbackStatus === 'sent'}
             />
             <div className="feedback-char-count">{feedbackText.length} / {FEEDBACK_MAX_CHARS}</div>
             {feedbackStatus === 'error' && (
-              <p className="feedback-error">Failed to send. Please try again.</p>
+              <p className="feedback-error">{feedbackErrorMessage ?? 'Failed to send. Please try again.'}</p>
             )}
             <button
               type="button"

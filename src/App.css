@@ -9700,6 +9700,9 @@ hr {
   .feedback-modal {
     width: 100%;
     border-radius: 14px 14px 0 0;
+    max-height: min(78vh, 640px);
+    padding: 18px 16px calc(14px + env(safe-area-inset-bottom));
+    overflow-y: auto;
   }
 }
 
@@ -9720,9 +9723,9 @@ hr {
   background: none;
   border: none;
   color: #64748b;
-  font-size: 1rem;
+  font-size: 1.05rem;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 8px 10px;
   border-radius: 4px;
   transition: color 0.15s;
 }

@@ -57,6 +57,7 @@ In Dashboard go to Edge Functions -> Secrets, then add:
 - `STRIPE_SUCCESS_URL`
 - `STRIPE_CANCEL_URL`
 - `STRIPE_PORTAL_RETURN_URL`
+- `DISCORD_FEEDBACK_WEBHOOK_URL`
 
 Use your live values in production.
 
@@ -75,6 +76,7 @@ Then in Dashboard -> Edge Functions verify these are present:
 - `create-stripe-checkout-session`
 - `create-stripe-portal-session`
 - `stripe-webhook`
+- `submit-feedback`
 
 ## 6. Connect Stripe Webhook Endpoint
 
