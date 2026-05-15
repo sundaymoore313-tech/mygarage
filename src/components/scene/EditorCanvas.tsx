@@ -469,9 +469,9 @@ function CameraPresetSync({
     const ty = preset.target[1]
     const tz = preset.target[2]
 
-    const distanceScale = view === 'side' ? 0.68 : 0.76
-    const yTargetOffset = view === 'side' ? -0.18 : -0.08
-    const yCameraOffset = view === 'side' ? 0.12 : 0.06
+    const distanceScale = view === 'side' ? 0.5 : 0.6
+    const yTargetOffset = view === 'side' ? -0.2 : -0.1
+    const yCameraOffset = view === 'side' ? 0.14 : 0.08
 
     const nx = tx + (px - tx) * distanceScale
     const ny = ty + (py - ty) * distanceScale + yCameraOffset
