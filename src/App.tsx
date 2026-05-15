@@ -70,17 +70,11 @@ function detectMobileLandscapeViewport(): boolean {
 
   if (!isLandscape) return false
 
-  const coarsePointer = typeof window.matchMedia === 'function'
-    ? window.matchMedia('(pointer: coarse)').matches
-    : false
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua)
   const shortEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0)
-  const longEdge = Math.max(window.innerWidth || 0, window.innerHeight || 0)
-  const touchMobileLike = coarsePointer && shortEdge > 0 && shortEdge <= 1024 && longEdge <= 1700
-  const compactLandscape = shortEdge <= 560 || (window.innerWidth > 0 && window.innerWidth <= 1280)
+  const touchPoints = typeof navigator !== 'undefined' ? navigator.maxTouchPoints || 0 : 0
+  const touchMobileLike = touchPoints > 0 && shortEdge > 0 && shortEdge <= 1200
 
-  return compactLandscape && (uaMobile || touchMobileLike)
+  return touchMobileLike
 }
 
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'

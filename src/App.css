@@ -6831,6 +6831,62 @@ hr {
   }
 }
 
+@media (orientation: landscape) and (pointer: coarse) {
+  .app-root.app-root-landscape-desktop {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 1440px;
+    height: 900px;
+    min-height: 900px;
+    max-height: none;
+    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
+    transform-origin: center center;
+    overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar {
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    padding: 6px 10px;
+    position: relative;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar-left,
+  .app-root.app-root-landscape-desktop .top-bar-center,
+  .app-root.app-root-landscape-desktop .top-bar-right {
+    width: auto;
+    min-width: 0;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar-right {
+    justify-content: flex-end;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace {
+    min-height: 0;
+    height: 100%;
+    align-content: stretch;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace-main,
+  .app-root.app-root-landscape-desktop .scene-panel {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace-main {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
+    overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .layer-panel-wrap {
+    display: block;
+  }
+}
+
 /* ── Opacity row ─────────────────────────────────────── */
 .opacity-row {
   display: flex;
