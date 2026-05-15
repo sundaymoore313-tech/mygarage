@@ -2149,10 +2149,13 @@ function MeshClassifyOverlay({
 }
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
-  // Front and back must be opposite. Determine orientation from the vertex normal
-  // nearest the current layer position (not the first vertex of the whole mesh).
-  let rollCorrection = DECAL_UPRIGHT_ROLL
-  if (targetMesh.geometry instanceof THREE.BufferGeometry) {
+  // Enforce opposite front/back behavior by placement position first.
+  // This avoids mesh-normal winding inconsistencies that can flip logic.
+  const frontBackEpsilon = 0.02
+  let rollCorrection = layer.transform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+
+  // Near the car centerline, fall back to nearest vertex normal at placement point.
+  if (Math.abs(layer.transform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
     const positionAttr = targetMesh.geometry.getAttribute('position')
     const normalAttr = targetMesh.geometry.getAttribute('normal')
 
@@ -2184,15 +2187,7 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
       )
       const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
       nearestNormal.applyMatrix3(normalMatrix).normalize()
-
-      // Opposite behavior for front/back:
-      // front-facing (positive world Z) => apply upright roll,
-      // back-facing (negative world Z) => no extra roll.
-      if (nearestNormal.z < -0.05) {
-        rollCorrection = 0
-      } else if (nearestNormal.z > 0.05) {
-        rollCorrection = DECAL_UPRIGHT_ROLL
-      }
+      rollCorrection = nearestNormal.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
     }
   }
   const projectorRotation = new THREE.Euler(
