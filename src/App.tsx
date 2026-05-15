@@ -21,7 +21,8 @@ const SCREEN_QUERY_KEY = 'screen'
 const PROJECT_ID_QUERY_KEY = 'projectId'
 const DISABLE_EXPORT_QUERY_KEY = 'disableExport'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px) and (orientation: portrait)'
-const MOBILE_LANDSCAPE_BASE_WIDTH = 1280
+const MOBILE_LANDSCAPE_BASE_WIDTH = 1920
+const MOBILE_LANDSCAPE_BASE_HEIGHT = 1080
 const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
 // Lock mobile version - prevents mobile layout from rendering regardless of viewport size
 const LOCK_MOBILE_VERSION = false
@@ -341,7 +342,7 @@ function App() {
     return detectMobileLandscapeViewport()
   })
   const [mobileLandscapeScale, setMobileLandscapeScale] = useState(1)
-  const [mobileLandscapeBaseHeight, setMobileLandscapeBaseHeight] = useState(620)
+  const [mobileLandscapeBaseHeight, setMobileLandscapeBaseHeight] = useState(MOBILE_LANDSCAPE_BASE_HEIGHT)
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId)
   const [sceneHovered, setSceneHovered] = useState(false)
   const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(false)
@@ -712,10 +713,7 @@ function App() {
       if (mobileLandscapeViewport) {
         const viewportW = Math.max(1, window.innerWidth - 12)
         const viewportH = Math.max(1, window.innerHeight - 10)
-        const targetBaseHeight = Math.max(
-          540,
-          Math.round((MOBILE_LANDSCAPE_BASE_WIDTH * viewportH) / viewportW),
-        )
+        const targetBaseHeight = MOBILE_LANDSCAPE_BASE_HEIGHT
         setMobileLandscapeBaseHeight(targetBaseHeight)
 
         const fitScale = Math.min(
@@ -725,7 +723,7 @@ function App() {
         setMobileLandscapeScale(Math.max(0.5, Math.min(1, fitScale)))
       } else {
         setMobileLandscapeScale(1)
-        setMobileLandscapeBaseHeight(620)
+        setMobileLandscapeBaseHeight(MOBILE_LANDSCAPE_BASE_HEIGHT)
       }
     }
 
@@ -770,6 +768,17 @@ function App() {
       setFloatingPanel((cur) => cur === 'elements' ? cur : 'elements')
     }
   }, [isMobileViewport, screen, selectedLayerId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isMobileLandscapeViewport) return
+
+    const rafId = window.requestAnimationFrame(() => {
+      // Force R3F canvas to recompute bounds after dock/layout height changes.
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    return () => window.cancelAnimationFrame(rafId)
+  }, [isMobileLandscapeViewport, floatingPanel, mobileLandscapeBaseHeight, mobileLandscapeScale])
 
   const refreshPlanFromCloud = useCallback(async () => {
     // Owner always gets paid - read from the authenticated session so it cannot be spoofed.
@@ -1466,7 +1475,6 @@ function App() {
 
   const toggleDockPanel = (panel: NonNullable<typeof floatingPanel>) => {
     setFloatingPanel((v) => (v === panel ? null : panel))
-    fitCarInView()
   }
 
   const landscapeRootStyle: CSSProperties | undefined = isMobileLandscapeViewport
@@ -1586,7 +1594,7 @@ function App() {
       </Suspense>
 
       <main className="workspace" style={{ display: (printExportOpen || svgMakerOpen) ? 'none' : undefined }}>
-        <div className="workspace-main">
+        <div className={floatingPanel ? 'workspace-main' : 'workspace-main workspace-main-no-dock'}>
           <section
             className="scene-panel"
             aria-label="3D car viewport"

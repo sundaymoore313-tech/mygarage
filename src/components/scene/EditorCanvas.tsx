@@ -18,13 +18,16 @@ import type { CameraViewId, CarObjectPart, DecalLayer, MeshClass, PaintConfig, P
 import type { ExportQuality } from '../../types/exportQuality'
 
 const CAMERA_PRESETS: Record<CameraViewId, { position: [number, number, number]; target: [number, number, number] }> = {
-  side: { position: [-8.2, 0.48, 0.25], target: [0, 0.75, 0] },
-  front: { position: [0.15, 1.0, 5.1], target: [0, 0.9, 0] },
-  back: { position: [0.15, 1.0, -5.1], target: [0, 0.9, 0] },
+  side: { position: [-30, 0.5, 0.25], target: [0, 0.75, 0] },
+  front: { position: [0.15, 1.04, 30], target: [0, 0.9, 0] },
+  back: { position: [0.15, 1.04, -30], target: [0, 0.9, 0] },
 }
 
 const CAMERA_VIEW_OVERRIDES_BY_FILE: Record<string, Partial<Record<CameraViewId, CameraViewId>>> = {
 }
+
+const MOBILE_LANDSCAPE_MAX_DISTANCE = 9.5
+const MOBILE_LANDSCAPE_START_DISTANCE = MOBILE_LANDSCAPE_MAX_DISTANCE
 
 const CAMERA_START_POSITION: [number, number, number] = CAMERA_PRESETS.side.position
 const CAMERA_START_TARGET: [number, number, number] = CAMERA_PRESETS.side.target
@@ -458,6 +461,30 @@ function CameraPresetSync({
 
   const getResponsivePreset = useCallback((view: CameraViewId, preset: { position: [number, number, number]; target: [number, number, number] }) => {
     const aspect = size.width / Math.max(1, size.height)
+    const isMobileLandscape = typeof window !== 'undefined'
+      && window.matchMedia('(orientation: landscape)').matches
+      && (navigator.maxTouchPoints ?? 0) > 0
+
+    if (isMobileLandscape) {
+      const px = preset.position[0]
+      const py = preset.position[1]
+      const pz = preset.position[2]
+      const tx = preset.target[0]
+      const ty = preset.target[1]
+      const tz = preset.target[2]
+
+      const direction = new THREE.Vector3(px - tx, py - ty, pz - tz)
+      if (direction.lengthSq() < 1e-6) {
+        direction.set(1, 0, 0)
+      }
+      direction.normalize().multiplyScalar(MOBILE_LANDSCAPE_START_DISTANCE)
+
+      return {
+        position: [tx + direction.x, ty + direction.y, tz + direction.z] as [number, number, number],
+        target: [tx, ty, tz] as [number, number, number],
+      }
+    }
+
     if (aspect <= 1.7) {
       return preset
     }
@@ -469,7 +496,10 @@ function CameraPresetSync({
     const ty = preset.target[1]
     const tz = preset.target[2]
 
-    const distanceScale = view === 'side' ? 0.36 : 0.48
+    const isPhoneLandscape = size.width <= 900
+    const distanceScale = isPhoneLandscape
+      ? (view === 'side' ? 0.58 : 0.66)
+      : (view === 'side' ? 0.36 : 0.48)
     const yTargetOffset = view === 'side' ? -0.22 : -0.12
     const yCameraOffset = view === 'side' ? 0.16 : 0.1
 
@@ -3438,6 +3468,9 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
     const lowMemory = typeof memory === 'number' && memory <= 4
     const highMemory = typeof memory === 'number' && memory >= 8
+    const isTouchLandscape = typeof window !== 'undefined'
+      && window.matchMedia('(orientation: landscape)').matches
+      && isMobile
 
     if (!isMobile) {
       return {
@@ -3447,6 +3480,18 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         shadowMapSize: 2048,
         antialias: true,
         powerPreference: 'high-performance' as const,
+      }
+    }
+
+    // Keep phone landscape cool and responsive: lower DPR and disable dynamic shadows.
+    if (isTouchLandscape) {
+      return {
+        isMobile: true,
+        idleDpr: [0.85, 1.2] as [number, number],
+        shadowMode: false as const,
+        shadowMapSize: 1024,
+        antialias: false,
+        powerPreference: 'low-power' as const,
       }
     }
 
@@ -3484,6 +3529,18 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
 
   // Keep recording DPR conservative to avoid GPU stalls/freeze on start.
   const recordingDpr: number = recordingQuality === 'ultra' ? 2.5 : recordingQuality === 'standard' ? 1.5 : 2
+  const isTouchLandscapeViewport = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches
+    const isTouchDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    return isLandscape && isTouchDevice
+  }, [])
+  const landscapeOrbitMaxDistance = useMemo(() => {
+    if (typeof window === 'undefined') return 5
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches
+    const isTouchDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    return isLandscape && isTouchDevice ? MOBILE_LANDSCAPE_MAX_DISTANCE : 5
+  }, [])
 
   return (
     <Canvas
@@ -3584,11 +3641,15 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         ref={controlsRef}
         target={CAMERA_START_TARGET}
         minDistance={2.5}
-        maxDistance={5}
+        maxDistance={landscapeOrbitMaxDistance}
         maxPolarAngle={Math.PI / 2 - 0.05}
         enableDamping={!isRecording}
         dampingFactor={0.08}
-        enabled={isRecording ? false : orbitEnabled && !isLayerDragging}
+        enablePan={!isTouchLandscapeViewport}
+        touches={isTouchLandscapeViewport
+          ? { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }
+          : undefined}
+        enabled={isRecording ? false : (isTouchLandscapeViewport ? orbitEnabled : orbitEnabled && !isLayerDragging)}
         autoRotate={false}
         autoRotateSpeed={2.4}
         onChange={() => {
