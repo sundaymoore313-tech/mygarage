@@ -3533,7 +3533,26 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
       </Suspense>
 
       {lightPreset === 'garage' ? (
-        <GarageRoom />
+        <>
+          <GarageRoom />
+          {/* Wide mobile landscape can expose beyond the room bounds; keep a large enclosure behind the main garage. */}
+          <mesh position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow userData={{ isFloor: true }}>
+            <planeGeometry args={[120, 120]} />
+            <meshStandardMaterial color="#18222d" roughness={0.96} metalness={0} />
+          </mesh>
+          <mesh position={[0, 12, -38]} receiveShadow>
+            <planeGeometry args={[140, 34]} />
+            <meshStandardMaterial color="#2a3340" roughness={0.98} metalness={0} />
+          </mesh>
+          <mesh position={[-58, 11, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[120, 30]} />
+            <meshStandardMaterial color="#252e39" roughness={1} metalness={0} />
+          </mesh>
+          <mesh position={[58, 11, 0]} rotation={[0, -Math.PI / 2, 0]}>
+            <planeGeometry args={[120, 30]} />
+            <meshStandardMaterial color="#252e39" roughness={1} metalness={0} />
+          </mesh>
+        </>
       ) : (
         <>
           {/* Studio backdrop — large dark cylinder surrounds the scene */}
