@@ -2182,7 +2182,7 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
 
     // 2. X axis: horizontal on the car surface, perpendicular to world-up and normal
     const worldUp = new THREE.Vector3(0, 1, 0)
-    const xAxis = new THREE.Vector3().crossVectors(surfaceNormal, worldUp)
+    const xAxis = new THREE.Vector3().crossVectors(worldUp, surfaceNormal)
     if (xAxis.lengthSq() < 1e-6) {
       // Normal is nearly straight up/down — fall back to world X
       xAxis.set(1, 0, 0)
@@ -2190,16 +2190,17 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     xAxis.normalize()
 
     // 3. Y axis: "up" direction on the car surface
-    const yAxis = new THREE.Vector3().crossVectors(xAxis, surfaceNormal).normalize()
+    const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
 
     // 4. Build rotation from this upright basis
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
-    // 5. Apply user's manual spin (rotation.z) around the surface normal
+    // 5. Apply fixed in-plane correction for text orientation.
     const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, TEXT_UPRIGHT_SPIN)
     baseQ.premultiply(uprightQ)
 
+    // 6. Apply user's manual spin (rotation.z) around the surface normal
     if (layer.transform.rotation.z !== 0) {
       const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
       baseQ.premultiply(spinQ)
