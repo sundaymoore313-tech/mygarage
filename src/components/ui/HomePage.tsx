@@ -9,7 +9,6 @@ type HomePageProps = {
   onContinueAsGuest?: () => void
   onLikelyEditorPathVisible?: () => void
   onLikelyEditorPathIntent?: () => void
-  heroModelUrl?: string
   heroPreviewImageUrl?: string
 }
 
@@ -190,7 +189,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 860px)').matches
+    return window.matchMedia('(max-width: 860px) and (orientation: portrait)').matches
   })
   const discordCommunityUrl = (
     (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
@@ -209,7 +208,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const mediaQuery = window.matchMedia('(max-width: 860px)')
+    const mediaQuery = window.matchMedia('(max-width: 860px) and (orientation: portrait)')
     const updateMobileViewport = () => setIsMobileViewport(mediaQuery.matches)
     updateMobileViewport()
 

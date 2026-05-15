@@ -1,14 +1,8 @@
 ﻿import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Layers, Type, Palette } from 'lucide-react'
 import { useEditorStore } from './store/editorStore'
-import { CarSelectorPage } from './components/ui/CarSelectorPage'
-import { HomePage } from './components/ui/HomePage'
-import { ProfilePage } from './components/ui/ProfilePage'
-import { MobileEditorLayout } from './components/ui/MobileEditorLayout'
 import type { GlbExportOptions, GlbExportResult, LightPresetId } from './components/scene/EditorCanvas'
 import { clearModelSceneCache, preloadModelScene } from './components/scene/useModelScene'
-import { LayerPanel } from './components/ui/LayerPanel'
-import { TopBar } from './components/ui/TopBar'
 import { readCachedPlanTier, writeCachedPlanTier } from './lib/billing'
 import { endPerfSpan, markPerfOnce, startPerfSpan } from './lib/perfDebug'
 import { isOwnerEmail } from './lib/access'
@@ -25,7 +19,7 @@ const GUEST_MODEL_URL = '/models/dodge_charger_srt_hellcat__high_quality.glb'
 const SCREEN_QUERY_KEY = 'screen'
 const PROJECT_ID_QUERY_KEY = 'projectId'
 const DISABLE_EXPORT_QUERY_KEY = 'disableExport'
-const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px)'
+const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px) and (orientation: portrait)'
 const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
 // Lock mobile version - prevents mobile layout from rendering regardless of viewport size
 const LOCK_MOBILE_VERSION = false
@@ -38,8 +32,14 @@ function isChunkLoadFailure(error: unknown): boolean {
 
 function detectMobileEditorViewport(): boolean {
   if (LOCK_MOBILE_VERSION) return false
-  
+
   if (typeof window === 'undefined') return false
+
+  const isPortrait = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(orientation: portrait)').matches
+    : window.innerHeight >= window.innerWidth
+
+  if (!isPortrait) return false
 
   const mediaMatch = typeof window.matchMedia === 'function'
     ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
@@ -55,6 +55,29 @@ function detectMobileEditorViewport(): boolean {
   const touchMobileLike = coarsePointer && shortEdge > 0 && shortEdge <= 1024
 
   return mediaMatch || uaMobile || touchMobileLike
+}
+
+function detectMobileLandscapeViewport(): boolean {
+  if (LOCK_MOBILE_VERSION) return false
+  if (typeof window === 'undefined') return false
+
+  const isLandscape = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(orientation: landscape)').matches
+    : window.innerWidth > window.innerHeight
+
+  if (!isLandscape) return false
+
+  const coarsePointer = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(pointer: coarse)').matches
+    : false
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua)
+  const shortEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0)
+  const longEdge = Math.max(window.innerWidth || 0, window.innerHeight || 0)
+  const touchMobileLike = coarsePointer && shortEdge > 0 && shortEdge <= 1024 && longEdge <= 1700
+  const compactLandscape = shortEdge <= 560 || (window.innerWidth > 0 && window.innerWidth <= 1280)
+
+  return compactLandscape && (uaMobile || touchMobileLike)
 }
 
 type AppScreen = 'home' | 'profile' | 'selector' | 'editor'
@@ -111,6 +134,41 @@ function buildUrlForScreen(screen: AppScreen, projectId?: string | null): string
 
 const loadEditorCanvasModule = async () => import('./components/scene/EditorCanvas')
 
+const CarSelectorPage = lazy(async () => {
+  const mod = await import('./components/ui/CarSelectorPage')
+  return { default: mod.CarSelectorPage }
+})
+
+const HomePage = lazy(async () => {
+  const mod = await import('./components/ui/HomePage')
+  return { default: mod.HomePage }
+})
+
+const ProfilePage = lazy(async () => {
+  const mod = await import('./components/ui/ProfilePage')
+  return { default: mod.ProfilePage }
+})
+
+const MobileEditorLayout = lazy(async () => {
+  const mod = await import('./components/ui/MobileEditorLayout')
+  return { default: mod.MobileEditorLayout }
+})
+
+const LayerPanel = lazy(async () => {
+  const mod = await import('./components/ui/LayerPanel')
+  return { default: mod.LayerPanel }
+})
+
+const TopBar = lazy(async () => {
+  const mod = await import('./components/ui/TopBar')
+  return { default: mod.TopBar }
+})
+
+const GuestAuthModal = lazy(async () => {
+  const mod = await import('./components/ui/GuestAuthModal')
+  return { default: mod.GuestAuthModal }
+})
+
 const SvgMakerPage = lazy(async () => {
   const mod = await import('./components/ui/SvgMakerModal')
   return { default: mod.SvgMakerPage }
@@ -135,8 +193,6 @@ const VideoRecordModal = lazy(async () => {
   const mod = await import('./components/ui/VideoRecordModal')
   return { default: mod.VideoRecordModal }
 })
-
-import { GuestAuthModal } from './components/ui/GuestAuthModal'
 
 const PrintLibraryPanel = lazy(async () => {
   const mod = await import('./components/ui/PrintLibraryPanel')
@@ -285,11 +341,14 @@ function App() {
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     return detectMobileEditorViewport()
   })
+  const [isMobileLandscapeViewport, setIsMobileLandscapeViewport] = useState(() => {
+    return detectMobileLandscapeViewport()
+  })
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId)
   const [sceneHovered, setSceneHovered] = useState(false)
   const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(false)
   const [layerPanelWidth, setLayerPanelWidth] = useState(320)
-  const [lightPreset, setLightPreset] = useState<LightPresetId>('studio')
+  const [lightPreset, setLightPreset] = useState<LightPresetId>('garage')
   const screenshotRef = useRef<((quality?: ExportQuality) => string) | null>(null)
   const exportGlbRef = useRef<((options?: GlbExportOptions) => Promise<GlbExportResult>) | null>(null)
   const printCaptureRef = useRef<import('./components/scene/EditorCanvas').PrintCaptureFn | null>(null)
@@ -646,33 +705,16 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    const mediaQuery = typeof window.matchMedia === 'function'
-      ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY)
-      : null
-
     const updateMobileViewport = () => {
       setIsMobileViewport(detectMobileEditorViewport())
+      setIsMobileLandscapeViewport(detectMobileLandscapeViewport())
     }
 
     updateMobileViewport()
-    if (mediaQuery) {
-      if (typeof mediaQuery.addEventListener === 'function') {
-        mediaQuery.addEventListener('change', updateMobileViewport)
-      } else if (typeof mediaQuery.addListener === 'function') {
-        mediaQuery.addListener(updateMobileViewport)
-      }
-    }
     window.addEventListener('resize', updateMobileViewport)
     window.addEventListener('orientationchange', updateMobileViewport)
 
     return () => {
-      if (mediaQuery) {
-        if (typeof mediaQuery.removeEventListener === 'function') {
-          mediaQuery.removeEventListener('change', updateMobileViewport)
-        } else if (typeof mediaQuery.removeListener === 'function') {
-          mediaQuery.removeListener(updateMobileViewport)
-        }
-      }
       window.removeEventListener('resize', updateMobileViewport)
       window.removeEventListener('orientationchange', updateMobileViewport)
     }
@@ -1409,7 +1451,7 @@ function App() {
   }
 
   return (
-    <div className="app-root">
+    <div className={isMobileLandscapeViewport ? 'app-root app-root-landscape-desktop' : 'app-root'}>
       <TopBar
         onScreenshot={handleScreenshot}
         onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}
@@ -1554,6 +1596,91 @@ function App() {
               setClassifyBodyClickThrough={setClassifyBodyClickThrough}
               setClassifyShowMeshNames={setClassifyShowMeshNames}
             />
+
+            <div className="scene-tab-rail" aria-label="Tools and inspector tabs">
+              <button
+                type="button"
+                className={floatingPanel === 'car' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('car')}
+                title="Wrap Color"
+              >
+                <Palette size={22} />
+                <span>Wrap Color</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'text' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('text')}
+                title="Text"
+              >
+                <Type size={22} />
+                <span>Text</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'elements' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('elements')}
+                title="Elements / Decals"
+              >
+                <Layers size={22} />
+                <span>Elements</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'stripes' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('stripes')}
+                title="Racing Stripes"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+                  <rect x="4" y="3" width="4" height="18" rx="1.4" />
+                  <rect x="10" y="3" width="4" height="18" rx="1.4" />
+                  <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
+                </svg>
+                <span>Stripes</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'split' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('split')}
+                title="Split paint"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
+                  <path d="M12 4v16" />
+                  <path d="M6.5 8.5h5.5" opacity="0.8" />
+                  <path d="M12 15.5h5.5" opacity="0.8" />
+                </svg>
+                <span>Split</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'prints' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('prints')}
+                title="Prints"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M7 8V4h10v4" />
+                  <rect x="5" y="9" width="14" height="8" rx="2.3" />
+                  <rect x="7" y="14" width="10" height="6" rx="1.2" />
+                  <circle cx="16.8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
+                </svg>
+                <span>Print</span>
+              </button>
+              <button
+                type="button"
+                className={floatingPanel === 'tint' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+                onClick={() => toggleDockPanel('tint')}
+                title="Window tint"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
+                  <path d="M3.7 14h16.6" opacity="0.9" />
+                  <path d="M12 6v8" opacity="0.45" />
+                  <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
+                </svg>
+                <span>Tint</span>
+              </button>
+            </div>
           </section>
 
           <section
@@ -1603,91 +1730,6 @@ function App() {
             </div>
           )}
 
-          {/* Tab bar — always at the bottom of the dock */}
-          <div className="bottom-dock-tab-bar">
-            <button
-              type="button"
-              className={floatingPanel === 'car' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('car')}
-              title="Wrap Color"
-            >
-              <Palette size={22} />
-              <span>Wrap Color</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'text' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('text')}
-              title="Text"
-            >
-              <Type size={22} />
-              <span>Text</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'elements' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('elements')}
-              title="Elements / Decals"
-            >
-              <Layers size={22} />
-              <span>Elements</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'stripes' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('stripes')}
-              title="Racing Stripes"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                <rect x="4" y="3" width="4" height="18" rx="1.4" />
-                <rect x="10" y="3" width="4" height="18" rx="1.4" />
-                <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
-              </svg>
-              <span>Stripes</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'split' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('split')}
-              title="Split paint"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
-                <path d="M12 4v16" />
-                <path d="M6.5 8.5h5.5" opacity="0.8" />
-                <path d="M12 15.5h5.5" opacity="0.8" />
-              </svg>
-              <span>Split</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'prints' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('prints')}
-              title="Prints"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M7 8V4h10v4" />
-                <rect x="5" y="9" width="14" height="8" rx="2.3" />
-                <rect x="7" y="14" width="10" height="6" rx="1.2" />
-                <circle cx="16.8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
-              </svg>
-              <span>Print</span>
-            </button>
-            <button
-              type="button"
-              className={floatingPanel === 'tint' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-              onClick={() => toggleDockPanel('tint')}
-              title="Window tint"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
-                <path d="M3.7 14h16.6" opacity="0.9" />
-                <path d="M12 6v8" opacity="0.45" />
-                <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
-              </svg>
-              <span>Tint</span>
-            </button>
-          </div>
         </section>
       </main>
 

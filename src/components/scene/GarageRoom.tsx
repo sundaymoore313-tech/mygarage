@@ -3,6 +3,20 @@ import { MeshReflectorMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { useEditorStore } from '../../store/editorStore'
 
+// ── Seeded pseudo-random number generator (mulberry32) ───────────────────────
+// Using a fixed seed means all procedural textures look identical across
+// every page load / component remount instead of changing randomly.
+function makePrng(seed: number): () => number {
+  let s = seed >>> 0
+  return () => {
+    s += 0x6d2b79f5
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 // ── Procedural epoxy flake floor texture ────────────────────────────────────
 function makeEpoxyFloorTexture(): THREE.CanvasTexture {
   const size = 1024
@@ -33,7 +47,8 @@ function makeEpoxyFloorTexture(): THREE.CanvasTexture {
     '#8a8a90', // cool gray
     '#e0e0e0', // bright white chip
   ]
-  const rng = (n: number) => Math.random() * n
+  const _rand = makePrng(0xdeadbeef)
+  const rng = (n: number) => _rand() * n
 
   // Large flakes (vinyl chips)
   for (let i = 0; i < 6000; i++) {
@@ -91,7 +106,8 @@ function makeCinderblockTexture(): THREE.CanvasTexture {
 
   // CMU blocks are ~16"×8" — 2:1 ratio, taller than brick
   const bW = 96, bH = 48, m = 3
-  const rng = (n: number) => Math.random() * n
+  const _rand = makePrng(0xcafe1234)
+  const rng = (n: number) => _rand() * n
 
   for (let row = 0; row < Math.ceil(size / bH) + 1; row++) {
     const offset = (row % 2) * (bW / 2)
@@ -194,63 +210,6 @@ function makeExitSignTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas)
   tex.minFilter = THREE.LinearFilter
   tex.magFilter = THREE.LinearFilter
-  return tex
-}
-
-// ── Graffiti logo decal texture ─────────────────────────────────────────────
-function makeGraffitiLogoTexture(): THREE.CanvasTexture {
-  const w = 1024
-  const h = 512
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')!
-
-  // Transparent background so only paint appears on the wall.
-  ctx.clearRect(0, 0, w, h)
-
-  const rng = (n: number) => Math.random() * n
-
-  // Paint splatter backdrop.
-  for (let i = 0; i < 180; i++) {
-    const x = rng(w)
-    const y = rng(h)
-    const r = 4 + rng(16)
-    ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fillStyle = i % 3 === 0 ? 'rgba(26,232,118,0.26)' : i % 3 === 1 ? 'rgba(0,178,255,0.24)' : 'rgba(255,74,210,0.22)'
-    ctx.fill()
-  }
-
-  // Shadow layer for chunky graffiti depth.
-  const grad = ctx.createLinearGradient(180, 130, 840, 360)
-  grad.addColorStop(0, '#00d07d')
-  grad.addColorStop(0.45, '#2afff4')
-  grad.addColorStop(1, '#3ea8ff')
-  ctx.font = '900 220px Impact, Haettenschweiler, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = 'rgba(0,0,0,0.62)'
-  ctx.fillText('MGWS', w / 2 + 10, h / 2 + 12)
-
-  // Main fill with neon gradient.
-  ctx.fillStyle = grad
-  ctx.fillText('MGWS', w / 2, h / 2)
-
-  // Bold black outline.
-  ctx.lineWidth = 18
-  ctx.strokeStyle = 'rgba(8,8,8,0.9)'
-  ctx.strokeText('MGWS', w / 2, h / 2)
-
-  // White highlight stroke to make it pop from distance.
-  ctx.lineWidth = 6
-  ctx.strokeStyle = 'rgba(255,255,255,0.65)'
-  ctx.strokeText('MGWS', w / 2, h / 2)
-
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.minFilter = THREE.LinearFilter
-  tex.magFilter = THREE.LinearFilter
-  tex.needsUpdate = true
   return tex
 }
 
@@ -477,14 +436,12 @@ export function GarageRoom() {
   const cinderblockTexture = useMemo(() => makeCinderblockTexture(), [])
   const ceilingTexture = useMemo(() => makeCeilingTexture(), [])
   const exitSignTexture = useMemo(() => makeExitSignTexture(), [])
-  const graffitiLogoTexture = useMemo(() => makeGraffitiLogoTexture(), [])
   const customDecals = useEditorStore((state) => state.project.customDecals)
   const latestCustomLogoUrl = customDecals[0]?.imageUrl ?? null
   const wallLogoTexture = useMemo(() => {
-    if (!latestCustomLogoUrl) {
-      return null
-    }
-    const tex = new THREE.TextureLoader().load(latestCustomLogoUrl)
+    // Use custom decal if available, otherwise use default from public folder
+    const logoUrl = latestCustomLogoUrl ?? '/logos/default-garage-logo.png'
+    const tex = new THREE.TextureLoader().load(logoUrl)
     tex.minFilter = THREE.LinearFilter
     tex.magFilter = THREE.LinearFilter
     tex.needsUpdate = true
@@ -494,8 +451,8 @@ export function GarageRoom() {
   const W = 22   // room width
   const D = 22   // room depth
   const H = 5.8  // room height
-  const wallLogoWidth = 14.8
-  const wallLogoHeight = 6.1
+  const wallLogoWidth = 12.0
+  const wallLogoHeight = 4.9
 
   return (
     <group>
@@ -545,18 +502,20 @@ export function GarageRoom() {
         />
       </mesh>
       {/* Graffiti logo decal on camera-facing back wall */}
-      <mesh position={[-5.2, 2.25, -D / 2 + 0.03]}>
-        <planeGeometry args={[wallLogoWidth, wallLogoHeight]} />
-        <meshBasicMaterial
-          map={wallLogoTexture ?? graffitiLogoTexture}
-          color="#ffffff"
-          transparent
-          alphaTest={0}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          toneMapped={false}
-        />
-      </mesh>
+      {wallLogoTexture && (
+        <mesh position={[-6.8, 2.25, -D / 2 + 0.03]}>
+          <planeGeometry args={[wallLogoWidth, wallLogoHeight]} />
+          <meshBasicMaterial
+            map={wallLogoTexture}
+            color="#ffffff"
+            transparent
+            alphaTest={0}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       {/* ── Right wall — cinderblock ── */}
       <mesh position={[W / 2, H / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
@@ -569,18 +528,20 @@ export function GarageRoom() {
         />
       </mesh>
       {/* Same logo decal on right wall */}
-      <mesh position={[W / 2 - 0.03, 2.25, -2.2]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[wallLogoWidth, wallLogoHeight]} />
-        <meshBasicMaterial
-          map={wallLogoTexture ?? graffitiLogoTexture}
-          color="#ffffff"
-          transparent
-          alphaTest={0}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          toneMapped={false}
-        />
-      </mesh>
+      {wallLogoTexture && (
+        <mesh position={[W / 2 - 0.03, 2.25, 0.4]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[wallLogoWidth, wallLogoHeight]} />
+          <meshBasicMaterial
+            map={wallLogoTexture}
+            color="#ffffff"
+            transparent
+            alphaTest={0}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       {/* ── Front wall — cinderblock (no windows) ── */}
       {/* Left panel — full height, covers x=-11 to x=0 */}

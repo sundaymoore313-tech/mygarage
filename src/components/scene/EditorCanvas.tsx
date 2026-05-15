@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { NativeOrbitControls, type NativeOrbitControlsHandle } from './NativeOrbitControls'
+import { GarageRoom } from './GarageRoom'
 import { useModelScene } from './useModelScene'
 import { endPerfSpan, markPerfOnce } from '../../lib/perfDebug'
 import { DEFAULT_TARGET_PAINT, getLockedClassifications, getPaintTargetsForLabel, getResolvedPaintForLabel, PAINT_FINISH_PRESETS, isSystemLockedMesh } from '../../lib/paintTargets'
@@ -17,9 +18,12 @@ import type { CameraViewId, CarObjectPart, DecalLayer, MeshClass, PaintConfig, P
 import type { ExportQuality } from '../../types/exportQuality'
 
 const CAMERA_PRESETS: Record<CameraViewId, { position: [number, number, number]; target: [number, number, number] }> = {
-  side: { position: [-5.4, 0.9, 0.25], target: [0, 0.9, 0] },
+  side: { position: [-8.2, 0.48, 0.25], target: [0, 0.75, 0] },
   front: { position: [0.15, 1.0, 5.1], target: [0, 0.9, 0] },
   back: { position: [0.15, 1.0, -5.1], target: [0, 0.9, 0] },
+}
+
+const CAMERA_VIEW_OVERRIDES_BY_FILE: Record<string, Partial<Record<CameraViewId, CameraViewId>>> = {
 }
 
 const CAMERA_START_POSITION: [number, number, number] = CAMERA_PRESETS.side.position
@@ -202,20 +206,30 @@ const SNAP_MESH_LABELS: Record<string, string[]> = {
   'chrysler_300_srt_hellcat.glb': ['Object_18'],
 }
 
+// Per-car Y-axis rotation overrides (radians) applied before scaling/centering/snap.
+const MODEL_ROTATION_Y_BY_FILE: Record<string, number> = {
+  'dodge_charger_scatpack_widebody.glb': Math.PI / 2,
+}
+
+// Models whose geometry Z-axis is the car's WIDTH (not length), so stripe X/Z axes
+// must be swapped for front-to-back stripe orientation to be correct.
+const STRIPE_AXIS_SWAP_FILES = new Set<string>([
+])
+
 const BASE_PAINT_COLOR_OVERRIDES: Record<string, Record<string, string>> = {
-  '2018_ford_mustang_gt.glb': {
-    Object_161: '#000000',
+  '2017_nissain_aimgain_gtr_r35_type_2.glb': {
+    'Object_48': '#000000',
   },
 }
 
-const STRICT_CLASSIFY_PROJECTION_FILES = new Set([
-  '2018_ford_mustang_gt.glb',
-])
+const STRICT_CLASSIFY_PROJECTION_FILES = new Set<string>([])
 
 const RIM_COLOR_FORCE_ALBEDO_OFF_FILES = new Set([
   '2019_chevrolet_corvette_c8_stingray.glb',
   '2020_dodge_challenger_srt_super_stock.glb',
 ])
+
+const MAX_STRIPE_SHADER_LAYERS = 8
 
 function disposeClonedSceneMaterials(root: THREE.Object3D): void {
   root.traverse((child) => {
@@ -431,24 +445,28 @@ type OrbitControllerHandle = NativeOrbitControlsHandle
 
 function CameraPresetSync({
   cameraView,
+  modelUrl,
   controlsRef,
   onResetCameraReady,
 }: {
   cameraView: CameraViewId
+  modelUrl: string
   controlsRef: MutableRefObject<OrbitControllerHandle | null>
   onResetCameraReady?: (fn: ResetCameraFn) => void
 }) {
   const { camera } = useThree()
 
   const resetToPreset = useCallback((view: CameraViewId = cameraView) => {
-    const p = CAMERA_PRESETS[view]
+    const fileName = (modelUrl ?? '').split('/').pop() ?? ''
+    const effectiveView = CAMERA_VIEW_OVERRIDES_BY_FILE[fileName]?.[view] ?? view
+    const p = CAMERA_PRESETS[effectiveView]
     camera.position.set(...p.position)
     const controls = controlsRef.current
     if (controls) {
       controls.target.set(...p.target)
       controls.update()
     }
-  }, [camera, cameraView, controlsRef])
+  }, [camera, cameraView, controlsRef, modelUrl])
 
   useEffect(() => { resetToPreset() }, [resetToPreset])
 
@@ -623,6 +641,15 @@ function LoadedCarModel({
 
   const prepared = useMemo(() => {
     const clone = scene.clone(true)
+    const fileName = (modelUrl.split('/').pop() ?? '')
+
+    // Apply Y-rotation BEFORE any bounding-box work so scaling/centering/snap
+    // all operate on the correctly-oriented geometry.
+    if (MODEL_ROTATION_Y_BY_FILE[fileName] !== undefined) {
+      clone.rotation.y = MODEL_ROTATION_Y_BY_FILE[fileName]
+      clone.updateMatrixWorld(true)
+    }
+
     const parts: CarObjectPart[] = []
     const meshes: THREE.Mesh[] = []
     const projectionMeshes: THREE.Mesh[] = []
@@ -721,7 +748,6 @@ function LoadedCarModel({
 
     const rebox = new THREE.Box3().setFromObject(clone)
     const recenter = rebox.getCenter(new THREE.Vector3())
-    const fileName = (modelUrl.split('/').pop() ?? '')
     const explicitSnapLabels = SNAP_MESH_LABELS[fileName]
     const snapY = resolveGroundSnapY(clone, explicitSnapLabels)
 
@@ -729,6 +755,7 @@ function LoadedCarModel({
     clone.position.y -= snapY
     clone.position.y += groundOffsetY
     clone.position.z -= recenter.z
+    // Rotation already applied above before bounding-box calculations.
 
     // Re-sync matrices after repositioning before any bounding-box work.
     clone.updateMatrixWorld(true)
@@ -821,17 +848,19 @@ function LoadedCarModel({
     [layers, selectedLayerId],
   )
 
+  const visibleStripeLayers = useMemo(
+    () => layers.filter((layer): layer is StripeLayer => layer.type === 'stripe' && layer.visible),
+    [layers],
+  )
+
   const activeStripeLayer = useMemo(() => {
     const selected = layers.find((layer) => layer.id === selectedLayerId) ?? null
     if (selected?.type === 'stripe') {
       return selected as StripeLayer
     }
 
-    const visibleStripeLayers = layers.filter(
-      (layer): layer is StripeLayer => layer.type === 'stripe' && layer.visible,
-    )
     return visibleStripeLayers.length > 0 ? visibleStripeLayers[visibleStripeLayers.length - 1] : null
-  }, [layers, selectedLayerId])
+  }, [layers, selectedLayerId, visibleStripeLayers])
 
   useEffect(() => {
     setAvailableParts(prepared.parts)
@@ -840,7 +869,19 @@ function LoadedCarModel({
   useEffect(() => {
     const modelFileName = modelUrl.split('/').pop() ?? ''
     const forceRimAlbedoOff = RIM_COLOR_FORCE_ALBEDO_OFF_FILES.has(modelFileName)
-    const stripeConfig = carStripe
+    const stripeConfigs = visibleStripeLayers.length > 0
+      ? visibleStripeLayers.slice(-MAX_STRIPE_SHADER_LAYERS).map((layer) => ({
+          colorHex: layer.colorHex,
+          finish: layer.finish,
+          width: layer.stripeWidth,
+          gap: layer.stripeGap,
+          offsetX: layer.stripeOffsetX,
+          softEdge: layer.softEdge,
+          angle: layer.transform.rotation.z,
+        }))
+      : carStripe.enabled
+        ? [carStripe]
+        : []
 
     const gradientPaint = targetPaints.fullCar
     const gradientAxis = carGradient.axis
@@ -987,16 +1028,39 @@ function LoadedCarModel({
         meshMaterial.opacity = activePrint.opacity
         meshMaterial.transparent = activePrint.opacity < 1
         const printFinish = PAINT_FINISH_PRESETS[activePrint.finish]
+        // Clear PBR maps baked into the GLB so our scalar finish values are
+        // not multiplied down by the original roughness/metalness textures.
+        if (!meshMaterial.userData._printOrigMapsStored) {
+          meshMaterial.userData._printOrigRoughnessMap = (meshMaterial as THREE.MeshStandardMaterial).roughnessMap ?? null
+          meshMaterial.userData._printOrigMetalnessMap = (meshMaterial as THREE.MeshStandardMaterial).metalnessMap ?? null
+          if (meshMaterial instanceof THREE.MeshPhysicalMaterial) {
+            meshMaterial.userData._printOrigClearcoatRoughnessMap = meshMaterial.clearcoatRoughnessMap ?? null
+          }
+          meshMaterial.userData._printOrigMapsStored = true
+        }
+        ;(meshMaterial as THREE.MeshStandardMaterial).roughnessMap = null
+        ;(meshMaterial as THREE.MeshStandardMaterial).metalnessMap = null
         meshMaterial.metalness = printFinish.metallic
         meshMaterial.roughness = printFinish.roughness
         if (meshMaterial instanceof THREE.MeshPhysicalMaterial) {
           meshMaterial.clearcoat = printFinish.clearcoat
+          meshMaterial.clearcoatRoughness = printFinish.roughness * 0.5
+          meshMaterial.clearcoatRoughnessMap = null
         }
         meshMaterial.needsUpdate = true
-      } else if (meshMaterial.map && meshMaterial.userData.isPrintMap) {
-        // Always clear a previously applied print texture when classify says
-        // this mesh should not receive prints, or when no print is resolved.
-        meshMaterial.map = null
+      } else if (meshMaterial.userData.isPrintMap) {
+        // Restore original PBR maps and clear the print texture.
+        if (meshMaterial.userData._printOrigMapsStored) {
+          ;(meshMaterial as THREE.MeshStandardMaterial).roughnessMap = meshMaterial.userData._printOrigRoughnessMap ?? null
+          ;(meshMaterial as THREE.MeshStandardMaterial).metalnessMap = meshMaterial.userData._printOrigMetalnessMap ?? null
+          if (meshMaterial instanceof THREE.MeshPhysicalMaterial) {
+            meshMaterial.clearcoatRoughnessMap = meshMaterial.userData._printOrigClearcoatRoughnessMap ?? null
+          }
+          meshMaterial.userData._printOrigMapsStored = false
+        }
+        if (meshMaterial.map) {
+          meshMaterial.map = null
+        }
         meshMaterial.needsUpdate = true
       }
       if (activePrint && printTexture) {
@@ -1024,7 +1088,7 @@ function LoadedCarModel({
         (!gradientPaint || paint === gradientPaint)
       )
       const useStripe = Boolean(
-        stripeConfig.enabled &&
+        stripeConfigs.length > 0 &&
         gradientAllowedByClass &&
         stripeAllowedByMesh
       )
@@ -1052,7 +1116,7 @@ function LoadedCarModel({
         ? `grad-${gradientAxisIndex}-${carGradient.fromHex}-${carGradient.toHex}-${carGradient.balance}`
         : 'none'
       const stripeShaderKey = useStripe
-        ? `stripe-${stripeConfig.colorHex}-${stripeConfig.finish}-${stripeConfig.width.toFixed(3)}-${stripeConfig.gap.toFixed(3)}-${stripeConfig.offsetX.toFixed(3)}-${stripeConfig.softEdge.toFixed(3)}-${stripeConfig.angle.toFixed(3)}`
+        ? `stripe-${stripeConfigs.map((stripe) => `${stripe.colorHex}-${stripe.finish}-${stripe.width.toFixed(3)}-${stripe.gap.toFixed(3)}-${stripe.offsetX.toFixed(3)}-${stripe.softEdge.toFixed(3)}-${stripe.angle.toFixed(3)}`).join('|')}`
         : 'none'
       if (
         meshMaterial.userData.gradientShaderKey !== gradientShaderKey ||
@@ -1084,15 +1148,37 @@ function LoadedCarModel({
           }
 
           if (useStripe) {
-            const stripeFinish = PAINT_FINISH_PRESETS[stripeConfig.finish]
-            shader.uniforms.uStripeColor = { value: new THREE.Color(stripeConfig.colorHex) }
-            shader.uniforms.uStripeWidth = { value: Math.max(0.001, stripeConfig.width) }
-            shader.uniforms.uStripeGap = { value: Math.max(0, stripeConfig.gap) }
-            shader.uniforms.uStripeOffset = { value: stripeConfig.offsetX }
-            shader.uniforms.uStripeSoft = { value: Math.max(0.0005, stripeConfig.softEdge) }
-            shader.uniforms.uStripeAngle = { value: stripeConfig.angle }
-            shader.uniforms.uStripeRoughness = { value: stripeFinish.roughness }
-            shader.uniforms.uStripeMetallic = { value: stripeFinish.metallic }
+            shader.uniforms.uStripeAxisSwap = { value: STRIPE_AXIS_SWAP_FILES.has(modelFileName) ? 1 : 0 }
+            const stripePrimaryBounds = new THREE.Box3().setFromObject(prepared.scene)
+            const stripePrimaryMin = STRIPE_AXIS_SWAP_FILES.has(modelFileName) ? stripePrimaryBounds.min.z : stripePrimaryBounds.min.x
+            const stripePrimaryMax = STRIPE_AXIS_SWAP_FILES.has(modelFileName) ? stripePrimaryBounds.max.z : stripePrimaryBounds.max.x
+            shader.uniforms.uStripePrimaryMin = { value: stripePrimaryMin }
+            shader.uniforms.uStripePrimaryMax = { value: stripePrimaryMax }
+            shader.uniforms.uStripeCount = { value: stripeConfigs.length }
+            shader.uniforms.uStripeColors = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => new THREE.Color(stripeConfigs[index]?.colorHex ?? '#000000')),
+            }
+            shader.uniforms.uStripeWidths = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0.0001, stripeConfigs[index]?.width ?? 0.0001)),
+            }
+            shader.uniforms.uStripeGaps = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0, stripeConfigs[index]?.gap ?? 0)),
+            }
+            shader.uniforms.uStripeOffsets = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => stripeConfigs[index]?.offsetX ?? 0),
+            }
+            shader.uniforms.uStripeSofts = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0.0005, stripeConfigs[index]?.softEdge ?? 0.0005)),
+            }
+            shader.uniforms.uStripeAngles = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => stripeConfigs[index]?.angle ?? 0),
+            }
+            shader.uniforms.uStripeRoughnesses = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => PAINT_FINISH_PRESETS[stripeConfigs[index]?.finish ?? 'gloss'].roughness),
+            }
+            shader.uniforms.uStripeMetallics = {
+              value: Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => PAINT_FINISH_PRESETS[stripeConfigs[index]?.finish ?? 'gloss'].metallic),
+            }
           }
 
           if (useWorldPos) {
@@ -1100,6 +1186,13 @@ function LoadedCarModel({
             shader.vertexShader = shader.vertexShader.replace(
               '#include <worldpos_vertex>',
               '#include <worldpos_vertex>\n  vWorldPos = worldPosition.xyz;'
+            )
+          }
+          if (useStripe) {
+            shader.vertexShader = `varying vec3 vWorldNormal;\n${shader.vertexShader}`
+            shader.vertexShader = shader.vertexShader.replace(
+              '#include <defaultnormal_vertex>',
+              '#include <defaultnormal_vertex>\n  vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);'
             )
           }
 
@@ -1125,14 +1218,19 @@ function LoadedCarModel({
             declarations.push('uniform float uGradBalance;')
           }
           if (useStripe) {
-            declarations.push('uniform vec3 uStripeColor;')
-            declarations.push('uniform float uStripeWidth;')
-            declarations.push('uniform float uStripeGap;')
-            declarations.push('uniform float uStripeOffset;')
-            declarations.push('uniform float uStripeSoft;')
-            declarations.push('uniform float uStripeAngle;')
-            declarations.push('uniform float uStripeRoughness;')
-            declarations.push('uniform float uStripeMetallic;')
+            declarations.push('varying vec3 vWorldNormal;')
+            declarations.push('uniform float uStripeAxisSwap;')
+            declarations.push('uniform float uStripePrimaryMin;')
+            declarations.push('uniform float uStripePrimaryMax;')
+            declarations.push('uniform int uStripeCount;')
+            declarations.push(`uniform vec3 uStripeColors[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeWidths[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeGaps[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeOffsets[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeSofts[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeAngles[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeRoughnesses[${MAX_STRIPE_SHADER_LAYERS}];`)
+            declarations.push(`uniform float uStripeMetallics[${MAX_STRIPE_SHADER_LAYERS}];`)
           }
 
           if (declarations.length > 0) {
@@ -1160,14 +1258,25 @@ function LoadedCarModel({
 
           if (useStripe) {
             colorFragmentChunk += `
-              float stripeCa = cos(uStripeAngle);
-              float stripeSa = sin(uStripeAngle);
-              vec2 stripeP = vec2(vWorldPos.x - uStripeOffset, vWorldPos.z);
-              float stripeAxis = stripeP.x * stripeCa - stripeP.y * stripeSa;
-              float stripeHalfGap = max(0.0, uStripeGap * 0.5);
-              float stripeDist = abs(abs(stripeAxis) - stripeHalfGap);
-              float stripeAlpha = 1.0 - smoothstep(uStripeWidth, uStripeWidth + uStripeSoft, stripeDist);
-              diffuseColor.rgb = mix(diffuseColor.rgb, uStripeColor, stripeAlpha);`
+              for (int i = 0; i < ${MAX_STRIPE_SHADER_LAYERS}; i++) {
+                if (i >= uStripeCount) { break; }
+                float stripeCa = cos(uStripeAngles[i]);
+                float stripeSa = sin(uStripeAngles[i]);
+                float stripePrimary = uStripeAxisSwap > 0.5 ? vWorldPos.z : vWorldPos.x;
+                float stripeDepth   = uStripeAxisSwap > 0.5 ? vWorldPos.x : vWorldPos.z;
+                vec2 stripeP = vec2(stripePrimary - uStripeOffsets[i], stripeDepth);
+                float stripeAxis = stripeP.x * stripeCa - stripeP.y * stripeSa;
+                float stripeHalfGap = max(0.0, uStripeGaps[i] * 0.5);
+                float stripeDist = abs(abs(stripeAxis) - stripeHalfGap);
+                float stripeAlpha = 1.0 - smoothstep(uStripeWidths[i], uStripeWidths[i] + uStripeSofts[i], stripeDist);
+                // Paint top surfaces and the front/rear bumper caps, but keep the middle side panels out.
+                float stripeTopMask = smoothstep(0.0, 0.45, vWorldNormal.y);
+                float stripePrimaryRange = max(0.0001, uStripePrimaryMax - uStripePrimaryMin);
+                float stripePrimaryT = clamp((stripePrimary - uStripePrimaryMin) / stripePrimaryRange, 0.0, 1.0);
+                float stripeEndMask = smoothstep(0.78, 1.0, max(stripePrimaryT, 1.0 - stripePrimaryT));
+                stripeAlpha *= max(stripeTopMask, stripeEndMask);
+                diffuseColor.rgb = mix(diffuseColor.rgb, uStripeColors[i], stripeAlpha);
+              }`
           }
 
           shader.fragmentShader = shader.fragmentShader.replace(
@@ -1188,15 +1297,16 @@ function LoadedCarModel({
             }
             if (useStripe) {
               roughnessChunk += `
-  {
-    float _srCa = cos(uStripeAngle);
-    float _srSa = sin(uStripeAngle);
-    vec2 _srP = vec2(vWorldPos.x - uStripeOffset, vWorldPos.z);
+  for (int i = 0; i < ${MAX_STRIPE_SHADER_LAYERS}; i++) {
+    if (i >= uStripeCount) { break; }
+    float _srCa = cos(uStripeAngles[i]);
+    float _srSa = sin(uStripeAngles[i]);
+    vec2 _srP = vec2(vWorldPos.x - uStripeOffsets[i], vWorldPos.z);
     float _srAxis = _srP.x * _srCa - _srP.y * _srSa;
-    float _srHg = max(0.0, uStripeGap * 0.5);
+    float _srHg = max(0.0, uStripeGaps[i] * 0.5);
     float _srDist = abs(abs(_srAxis) - _srHg);
-    float _srAlpha = 1.0 - smoothstep(uStripeWidth, uStripeWidth + uStripeSoft, _srDist);
-    roughnessFactor = mix(roughnessFactor, uStripeRoughness, _srAlpha);
+    float _srAlpha = 1.0 - smoothstep(uStripeWidths[i], uStripeWidths[i] + uStripeSofts[i], _srDist);
+    roughnessFactor = mix(roughnessFactor, uStripeRoughnesses[i], _srAlpha);
   }`
             }
             shader.fragmentShader = shader.fragmentShader.replace(
@@ -1215,15 +1325,16 @@ function LoadedCarModel({
             }
             if (useStripe) {
               metalnessChunk += `
-  {
-    float _smCa = cos(uStripeAngle);
-    float _smSa = sin(uStripeAngle);
-    vec2 _smP = vec2(vWorldPos.x - uStripeOffset, vWorldPos.z);
+  for (int i = 0; i < ${MAX_STRIPE_SHADER_LAYERS}; i++) {
+    if (i >= uStripeCount) { break; }
+    float _smCa = cos(uStripeAngles[i]);
+    float _smSa = sin(uStripeAngles[i]);
+    vec2 _smP = vec2(vWorldPos.x - uStripeOffsets[i], vWorldPos.z);
     float _smAxis = _smP.x * _smCa - _smP.y * _smSa;
-    float _smHg = max(0.0, uStripeGap * 0.5);
+    float _smHg = max(0.0, uStripeGaps[i] * 0.5);
     float _smDist = abs(abs(_smAxis) - _smHg);
-    float _smAlpha = 1.0 - smoothstep(uStripeWidth, uStripeWidth + uStripeSoft, _smDist);
-    metalnessFactor = mix(metalnessFactor, uStripeMetallic, _smAlpha);
+    float _smAlpha = 1.0 - smoothstep(uStripeWidths[i], uStripeWidths[i] + uStripeSofts[i], _smDist);
+    metalnessFactor = mix(metalnessFactor, uStripeMetallics[i], _smAlpha);
   }`
             }
             shader.fragmentShader = shader.fragmentShader.replace(
@@ -1245,29 +1356,32 @@ function LoadedCarModel({
         uniforms?: Record<string, { value: unknown }>
       } | undefined
       if (compiledShader?.uniforms) {
-        if (compiledShader.uniforms.uStripeColor && useStripe) {
-          compiledShader.uniforms.uStripeColor.value = new THREE.Color(stripeConfig.colorHex)
+        if (compiledShader.uniforms.uStripeCount && useStripe) {
+          compiledShader.uniforms.uStripeCount.value = stripeConfigs.length
         }
-        if (compiledShader.uniforms.uStripeWidth && useStripe) {
-          compiledShader.uniforms.uStripeWidth.value = Math.max(0.001, stripeConfig.width)
+        if (compiledShader.uniforms.uStripeColors && useStripe) {
+          compiledShader.uniforms.uStripeColors.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => new THREE.Color(stripeConfigs[index]?.colorHex ?? '#000000'))
         }
-        if (compiledShader.uniforms.uStripeGap && useStripe) {
-          compiledShader.uniforms.uStripeGap.value = Math.max(0, stripeConfig.gap)
+        if (compiledShader.uniforms.uStripeWidths && useStripe) {
+          compiledShader.uniforms.uStripeWidths.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0.001, stripeConfigs[index]?.width ?? 0.001))
         }
-        if (compiledShader.uniforms.uStripeOffset && useStripe) {
-          compiledShader.uniforms.uStripeOffset.value = stripeConfig.offsetX
+        if (compiledShader.uniforms.uStripeGaps && useStripe) {
+          compiledShader.uniforms.uStripeGaps.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0, stripeConfigs[index]?.gap ?? 0))
         }
-        if (compiledShader.uniforms.uStripeSoft && useStripe) {
-          compiledShader.uniforms.uStripeSoft.value = Math.max(0.0005, stripeConfig.softEdge)
+        if (compiledShader.uniforms.uStripeOffsets && useStripe) {
+          compiledShader.uniforms.uStripeOffsets.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => stripeConfigs[index]?.offsetX ?? 0)
         }
-        if (compiledShader.uniforms.uStripeAngle && useStripe) {
-          compiledShader.uniforms.uStripeAngle.value = stripeConfig.angle
+        if (compiledShader.uniforms.uStripeSofts && useStripe) {
+          compiledShader.uniforms.uStripeSofts.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => Math.max(0.0005, stripeConfigs[index]?.softEdge ?? 0.0005))
         }
-        if (compiledShader.uniforms.uStripeRoughness && useStripe) {
-          compiledShader.uniforms.uStripeRoughness.value = PAINT_FINISH_PRESETS[stripeConfig.finish].roughness
+        if (compiledShader.uniforms.uStripeAngles && useStripe) {
+          compiledShader.uniforms.uStripeAngles.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => stripeConfigs[index]?.angle ?? 0)
         }
-        if (compiledShader.uniforms.uStripeMetallic && useStripe) {
-          compiledShader.uniforms.uStripeMetallic.value = PAINT_FINISH_PRESETS[stripeConfig.finish].metallic
+        if (compiledShader.uniforms.uStripeRoughnesses && useStripe) {
+          compiledShader.uniforms.uStripeRoughnesses.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => PAINT_FINISH_PRESETS[stripeConfigs[index]?.finish ?? 'gloss'].roughness)
+        }
+        if (compiledShader.uniforms.uStripeMetallics && useStripe) {
+          compiledShader.uniforms.uStripeMetallics.value = Array.from({ length: MAX_STRIPE_SHADER_LAYERS }, (_, index) => PAINT_FINISH_PRESETS[stripeConfigs[index]?.finish ?? 'gloss'].metallic)
         }
       }
 
@@ -1295,7 +1409,7 @@ function LoadedCarModel({
         meshMaterial.roughness = Math.min(1, Math.max(meshMaterial.roughness, 0.24))
       }
     })
-  }, [prepared.scene, targetPaints, targetPrints, printTextures, meshClassifications, windowTint, carGradient, carSplit, carStripe, activeStripeLayer])
+  }, [prepared.scene, targetPaints, targetPrints, printTextures, meshClassifications, windowTint, carGradient, carSplit, carStripe, visibleStripeLayers, activeStripeLayer])
 
   useEffect(() => {
     if (!selectedLayer || selectedLayer.targetPartId) {
@@ -2122,12 +2236,13 @@ function ProjectedImageDecalLayer({
     tex.colorSpace = THREE.SRGBColorSpace
     tex.flipY = false
     tex.wrapS = THREE.RepeatWrapping
-    // Invert on mirrored side
-    tex.repeat.x = layer.mirrorX ? -1 : 1
-    tex.offset.x = layer.mirrorX ? 1 : 0
+    // Invert on mirrored side, then apply mirrorMirrorX for additional flip if needed
+    const shouldFlip = (layer.mirrorX && !layer.mirrorMirrorX) || (!layer.mirrorX && layer.mirrorMirrorX)
+    tex.repeat.x = shouldFlip ? -1 : 1
+    tex.offset.x = shouldFlip ? 1 : 0
     tex.needsUpdate = true
     return tex
-  }, [mirrorToOtherSide, layer.mirrorX, sourceTexture])
+  }, [mirrorToOtherSide, layer.mirrorX, layer.mirrorMirrorX, sourceTexture])
 
   useEffect(() => {
     return () => {
@@ -2520,14 +2635,16 @@ function ProjectedTextLayer({
     tex.flipY = false
     tex.wrapS = THREE.RepeatWrapping
     const mirroredTextReadable = layer.mirroredTextReadable ?? true
+    // Apply mirrorMirrorX: when true, flip the mirrored side independently
+    const effectiveFlip = (layer.mirrorX && !layer.mirrorMirrorX) || (!layer.mirrorX && layer.mirrorMirrorX)
     if (mirroredTextReadable) {
-      // Invert on mirrored side so text stays readable after projection.
-      tex.repeat.x = layer.mirrorX ? -1 : 1
-      tex.offset.x = layer.mirrorX ? 1 : 0
+      // Invert on mirrored side so text stays readable, then apply mirrorMirrorX for additional flip if needed.
+      tex.repeat.x = effectiveFlip ? -1 : 1
+      tex.offset.x = effectiveFlip ? 1 : 0
     } else {
-      // Match the front-side texture orientation.
-      tex.repeat.x = layer.mirrorX ? 1 : -1
-      tex.offset.x = layer.mirrorX ? 0 : 1
+      // Match the front-side texture orientation, but apply mirrorMirrorX for additional flip if needed.
+      tex.repeat.x = effectiveFlip ? 1 : -1
+      tex.offset.x = effectiveFlip ? 0 : 1
     }
     tex.generateMipmaps = true
     tex.minFilter = THREE.LinearMipmapLinearFilter
@@ -2535,7 +2652,7 @@ function ProjectedTextLayer({
     tex.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     return tex
-  }, [gl, mirrorToOtherSide, layer.mirrorX, layer.mirroredTextReadable, textCanvas])
+  }, [gl, mirrorToOtherSide, layer.mirrorX, layer.mirrorMirrorX, layer.mirroredTextReadable, textCanvas])
 
   useEffect(() => {
     return () => {
@@ -2639,7 +2756,7 @@ export type GlbExportResult = {
   fileName: string
 }
 
-export type LightPresetId = 'studio' | 'sunset' | 'night' | 'showroom'
+export type LightPresetId = 'studio' | 'sunset' | 'night' | 'showroom' | 'garage'
 export type ResetCameraFn = () => void
 
 const LIGHT_PRESETS: Record<LightPresetId, {
@@ -2677,6 +2794,18 @@ const LIGHT_PRESETS: Record<LightPresetId, {
       { position: [4, 5, -4], intensity: 0.8, color: '#ffffff' },
     ],
   },
+  garage: {
+    ambient: 0.5,
+    dirIntensity: 0.4,
+    dirPosition: [3, 7, 4],
+    extraLights: [
+      { position: [-4.5, 5.2, -4], intensity: 0.7, color: '#eef4ff' },
+      { position: [4.5, 5.2, -4], intensity: 0.7, color: '#eef4ff' },
+      { position: [-4.5, 5.2, 2], intensity: 0.6, color: '#eef4ff' },
+      { position: [4.5, 5.2, 2], intensity: 0.6, color: '#eef4ff' },
+      { position: [0, 5.2, -1], intensity: 0.5, color: '#f4f8ff' },
+    ],
+  },
 }
 
 type EditorCanvasProps = {
@@ -2710,11 +2839,16 @@ function RendererExposer({
   onVideoRecorderReady?: (fn: (quality?: ExportQuality) => MediaStream) => void
   onFirstInteraction?: () => void
 }) {
+  const layers = useEditorStore((state) => state.project.layers)
   const { gl, scene, camera } = useThree()
   const meshClassifications = useEditorStore((state) => state.project.meshClassifications)
   const carGradient = useEditorStore((state) => state.project.carGradient)
   const carSplit = useEditorStore((state) => state.project.carSplit)
   const carStripe = useEditorStore((state) => state.project.carStripe)
+  const visibleStripeLayers = useMemo(
+    () => layers.filter((layer): layer is StripeLayer => layer.type === 'stripe' && layer.visible),
+    [layers],
+  )
 
   const PNG_LONG_EDGE_BY_QUALITY: Record<ExportQuality, number> = {
     standard: 1920,
@@ -2788,8 +2922,19 @@ function RendererExposer({
 
     const useSplit = Boolean(carSplit.enabled && splitAllowed)
     const useGradient = Boolean(!useSplit && carGradient.enabled && gradientAllowed)
-    const stripeConfig = carStripe
-    const useStripe = Boolean(stripeConfig.enabled && stripeAllowed)
+    const stripeConfigs = visibleStripeLayers.length > 0
+      ? visibleStripeLayers.slice(-MAX_STRIPE_SHADER_LAYERS).map((layer) => ({
+          colorHex: layer.colorHex,
+          width: layer.stripeWidth,
+          gap: layer.stripeGap,
+          offsetX: layer.stripeOffsetX,
+          softEdge: layer.softEdge,
+          angle: layer.transform.rotation.z,
+        }))
+      : carStripe.enabled
+        ? [carStripe]
+        : []
+    const useStripe = Boolean(stripeConfigs.length > 0 && stripeAllowed)
     if (!useSplit && !useGradient && !useStripe) return
 
     const sourceGeometry = mesh.geometry
@@ -2820,7 +2965,6 @@ function RendererExposer({
     const splitB = new THREE.Color(carSplit.sideBHex)
     const gradFrom = new THREE.Color(carGradient.fromHex)
     const gradTo = new THREE.Color(carGradient.toHex)
-    const stripeColor = new THREE.Color(stripeConfig.colorHex)
 
     const baseMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
     const baseColor = (baseMaterial as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial)?.color?.clone() ?? new THREE.Color('#ffffff')
@@ -2849,15 +2993,18 @@ function RendererExposer({
       }
 
       if (useStripe) {
-        const stripeCa = Math.cos(stripeConfig.angle)
-        const stripeSa = Math.sin(stripeConfig.angle)
-        const x = v.x - stripeConfig.offsetX
-        const z = v.z
-        const stripeAxis = x * stripeCa - z * stripeSa
-        const stripeHalfGap = Math.max(0, stripeConfig.gap * 0.5)
-        const stripeDist = Math.abs(Math.abs(stripeAxis) - stripeHalfGap)
-        const stripeAlpha = 1 - smoothstep(stripeConfig.width, stripeConfig.width + Math.max(0.0005, stripeConfig.softEdge), stripeDist)
-        color.lerp(stripeColor, stripeAlpha)
+        stripeConfigs.forEach((stripeConfig) => {
+          const stripeColor = new THREE.Color(stripeConfig.colorHex)
+          const stripeCa = Math.cos(stripeConfig.angle)
+          const stripeSa = Math.sin(stripeConfig.angle)
+          const x = v.x - stripeConfig.offsetX
+          const z = v.z
+          const stripeAxis = x * stripeCa - z * stripeSa
+          const stripeHalfGap = Math.max(0, stripeConfig.gap * 0.5)
+          const stripeDist = Math.abs(Math.abs(stripeAxis) - stripeHalfGap)
+          const stripeAlpha = 1 - smoothstep(stripeConfig.width, stripeConfig.width + Math.max(0.0005, stripeConfig.softEdge), stripeDist)
+          color.lerp(stripeColor, stripeAlpha)
+        })
       }
 
       const idx = i * 3
@@ -3238,7 +3385,7 @@ function SmoothAutoRotator({
   return null
 }
 
-export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, classifyBodyClickThrough = false, classifyShowMeshNames = false, orbitEnabled = true, lightPreset = 'studio', isRecording = false, recordingQuality = 'high', onRendererReady, onGlbExportReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady, onFirstInteraction }: EditorCanvasProps) {
+export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickThrough = false, classifyBodyClickThrough = false, classifyShowMeshNames = false, orbitEnabled = true, lightPreset = 'garage', isRecording = false, recordingQuality = 'high', onRendererReady, onGlbExportReady, onPrintCaptureReady, onResetCameraReady, onVideoRecorderReady, onFirstInteraction }: EditorCanvasProps) {
   const preset = LIGHT_PRESETS[lightPreset]
   const resetCameraRef = useRef<ResetCameraFn | null>(null)
   const cameraView = useEditorStore((state) => state.cameraView)
@@ -3327,13 +3474,13 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
       }}
     >
       <RendererExposer onReady={onRendererReady} onGlbExportReady={onGlbExportReady} onPrintCaptureReady={onPrintCaptureReady} onVideoRecorderReady={onVideoRecorderReady} onFirstInteraction={onFirstInteraction} />
-      <CameraPresetSync cameraView={cameraView} controlsRef={controlsRef} onResetCameraReady={(fn) => {
+      <CameraPresetSync cameraView={cameraView} modelUrl={modelUrl} controlsRef={controlsRef} onResetCameraReady={(fn) => {
         resetCameraRef.current = fn
         onResetCameraReady?.(fn)
       }} />
 
-      <color attach="background" args={['#101927']} />
-      <fog attach="fog" args={['#101927', 10, 26]} />
+      <color attach="background" args={[lightPreset === 'garage' ? '#1a1410' : '#101927']} />
+      <fog attach="fog" args={[lightPreset === 'garage' ? '#1a1410' : '#101927', lightPreset === 'garage' ? 14 : 10, lightPreset === 'garage' ? 30 : 26]} />
       <ambientLight intensity={preset.ambient + 0.1} />
       <hemisphereLight
         args={['#dbe8f8', '#2f4358', 0.75]}
@@ -3358,20 +3505,21 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         <Environment preset="city" />
       </Suspense>
 
-      {/* Studio backdrop — large dark cylinder surrounds the scene */}
-      <mesh userData={{ isFloor: true }}>
-        <cylinderGeometry args={[14, 14, 12, 32, 1, true]} />
-        <meshStandardMaterial color="#101927" roughness={1} metalness={0} side={2} />
-      </mesh>
-
-      <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow userData={{ isFloor: true }}>
-        <planeGeometry args={[30, 30]} />
-        <meshStandardMaterial
-          color="#182434"
-          roughness={0.62}
-          metalness={0.0}
-        />
-      </mesh>
+      {lightPreset === 'garage' ? (
+        <GarageRoom />
+      ) : (
+        <>
+          {/* Studio backdrop — large dark cylinder surrounds the scene */}
+          <mesh userData={{ isFloor: true }}>
+            <cylinderGeometry args={[14, 14, 12, 32, 1, true]} />
+            <meshStandardMaterial color="#101927" roughness={1} metalness={0} side={2} />
+          </mesh>
+          <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow userData={{ isFloor: true }}>
+            <planeGeometry args={[30, 30]} />
+            <meshStandardMaterial color="#182434" roughness={0.62} metalness={0.0} />
+          </mesh>
+        </>
+      )}
 
       <Suspense fallback={<CarBody />}>
         <LoadedCarModel

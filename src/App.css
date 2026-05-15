@@ -3513,6 +3513,40 @@
   position: relative;
 }
 
+.scene-tab-rail {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 16;
+  pointer-events: auto;
+}
+
+.scene-tab-rail .bottom-dock-tab {
+  flex: 0 0 auto;
+  width: 144px;
+  min-height: 50px;
+  padding: 10px 12px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.scene-tab-rail .bottom-dock-tab span {
+  text-align: left;
+}
+
+.scene-tab-rail .bottom-dock-tab svg {
+  width: 22px;
+  height: 22px;
+}
+
 .fab-group {
   position: absolute;
   left: 14px;
@@ -6694,6 +6728,51 @@ hr {
 
   .inspector-toolbar .hint {
     min-width: 180px;
+  }
+
+  .app-root.app-root-landscape-desktop {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar {
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar-left,
+  .app-root.app-root-landscape-desktop .top-bar-center,
+  .app-root.app-root-landscape-desktop .top-bar-right {
+    width: auto;
+    min-width: 0;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .app-root.app-root-landscape-desktop .top-bar-right {
+    justify-content: flex-end;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace-main,
+  .app-root.app-root-landscape-desktop .scene-panel {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .app-root.app-root-landscape-desktop .workspace-main {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
+    overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .layer-panel-wrap {
+    display: block;
   }
 }
 
