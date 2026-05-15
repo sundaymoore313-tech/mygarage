@@ -193,9 +193,9 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
   })
   const discordCommunityUrl = (
     (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
-    (import.meta.env.VITE_DISCORD_INVITE_URL as string | undefined)?.trim() ||
     DEFAULT_DISCORD_URL
   )
+  const hasDiscordFeedbackWebhook = Boolean(DISCORD_FEEDBACK_WEBHOOK_URL)
   const drawerRef = useRef<HTMLDivElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const heroCtaRef = useRef<HTMLDivElement | null>(null)
@@ -509,6 +509,11 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     }
   }
 
+  function openDiscordFeedback() {
+    if (typeof window === 'undefined') return
+    window.open(discordCommunityUrl, '_blank', 'noopener,noreferrer')
+  }
+
   async function handleLogout() {
     const result = await supabaseSignOut()
     if (!result.ok) {
@@ -632,9 +637,16 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
                 <button
                   type="button"
                   className="home-feedback-trigger"
-                  onClick={() => { setFeedbackOpen(true); setFeedbackStatus('idle') }}
-                  aria-label="Send feedback"
-                  title="Send anonymous feedback"
+                  onClick={() => {
+                    if (hasDiscordFeedbackWebhook) {
+                      setFeedbackOpen(true)
+                      setFeedbackStatus('idle')
+                    } else {
+                      openDiscordFeedback()
+                    }
+                  }}
+                  aria-label={hasDiscordFeedbackWebhook ? 'Send feedback' : 'Open Discord feedback'}
+                  title={hasDiscordFeedbackWebhook ? 'Send anonymous feedback' : 'Open Discord feedback'}
                 >
                   💬 Feedback
                 </button>
@@ -653,9 +665,16 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
             <button
               type="button"
               className="home-feedback-trigger"
-              onClick={() => { setFeedbackOpen(true); setFeedbackStatus('idle') }}
-              aria-label="Send feedback"
-              title="Send anonymous feedback"
+              onClick={() => {
+                if (hasDiscordFeedbackWebhook) {
+                  setFeedbackOpen(true)
+                  setFeedbackStatus('idle')
+                } else {
+                  openDiscordFeedback()
+                }
+              }}
+              aria-label={hasDiscordFeedbackWebhook ? 'Send feedback' : 'Open Discord feedback'}
+              title={hasDiscordFeedbackWebhook ? 'Send anonymous feedback' : 'Open Discord feedback'}
             >
               💬 Feedback
             </button>
@@ -898,7 +917,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
         onClose={() => setLegalOpen(false)}
       />
 
-      {feedbackOpen && (
+      {feedbackOpen && hasDiscordFeedbackWebhook && (
         <div
           className="feedback-backdrop"
           role="dialog"
@@ -925,13 +944,10 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
             {feedbackStatus === 'error' && (
               <p className="feedback-error">Failed to send. Please try again.</p>
             )}
-            {!DISCORD_FEEDBACK_WEBHOOK_URL && (
-              <p className="feedback-error">Feedback webhook not configured (VITE_DISCORD_FEEDBACK_WEBHOOK_URL).</p>
-            )}
             <button
               type="button"
               className="feedback-submit"
-              disabled={!feedbackText.trim() || feedbackStatus === 'sending' || feedbackStatus === 'sent' || !DISCORD_FEEDBACK_WEBHOOK_URL}
+              disabled={!feedbackText.trim() || feedbackStatus === 'sending' || feedbackStatus === 'sent'}
               onClick={handleSendFeedback}
             >
               {feedbackStatus === 'sending' ? 'Sending…' : feedbackStatus === 'sent' ? '✓ Sent!' : 'Send Feedback'}

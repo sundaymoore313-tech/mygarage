@@ -33,6 +33,8 @@ const CAMERA_START_POSITION: [number, number, number] = CAMERA_PRESETS.side.posi
 const CAMERA_START_TARGET: [number, number, number] = CAMERA_PRESETS.side.target
 const DECAL_UPRIGHT_ROLL = Math.PI
 
+let lastAppliedCameraPreset: { view: CameraViewId; modelUrl: string } | null = null
+
 const PROJECTABLE_EXCLUDE_TOKENS = [
   'wheel',
   'rim',
@@ -458,6 +460,7 @@ function CameraPresetSync({
   onResetCameraReady?: (fn: ResetCameraFn) => void
 }) {
   const { camera, size } = useThree()
+  const lastAppliedPresetRef = useRef<{ view: CameraViewId; modelUrl: string } | null>(null)
 
   const getResponsivePreset = useCallback((view: CameraViewId, preset: { position: [number, number, number]; target: [number, number, number] }) => {
     const aspect = size.width / Math.max(1, size.height)
@@ -525,7 +528,19 @@ function CameraPresetSync({
     }
   }, [camera, cameraView, controlsRef, getResponsivePreset, modelUrl])
 
-  useEffect(() => { resetToPreset() }, [resetToPreset])
+  useEffect(() => {
+    const lastApplied = lastAppliedPresetRef.current
+    const matchesLocal = Boolean(lastApplied && lastApplied.view === cameraView && lastApplied.modelUrl === modelUrl)
+    const matchesGlobal = Boolean(lastAppliedCameraPreset && lastAppliedCameraPreset.view === cameraView && lastAppliedCameraPreset.modelUrl === modelUrl)
+    if (matchesLocal || matchesGlobal) {
+      return
+    }
+
+    resetToPreset(cameraView)
+    const appliedPreset = { view: cameraView, modelUrl }
+    lastAppliedPresetRef.current = appliedPreset
+    lastAppliedCameraPreset = appliedPreset
+  }, [cameraView, modelUrl, resetToPreset])
 
   useEffect(() => {
     onResetCameraReady?.(() => resetToPreset('side'))
