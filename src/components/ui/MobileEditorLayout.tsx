@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Layers, Type, Palette } from 'lucide-react'
+import { Layers, Type, Palette, Printer } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
 import { cleanFontDisplayName } from '../../lib/fontNames'
 import type { PaintTargetId } from '../../lib/paintTargets'
 import { WRAP_COLOR_SWATCHES } from '../../lib/wrapColorPalette'
+import type { PrintConfig } from '../../types/editor'
 
-type TabId = 'car' | 'text' | 'elements' | 'stripes' | 'split' | 'tint' | 'layers'
+type TabId = 'car' | 'text' | 'elements' | 'prints' | 'stripes' | 'split' | 'tint' | 'layers'
 
 interface MobileEditorLayoutProps {
   editorCanvas: React.ReactNode
@@ -212,6 +213,7 @@ const POSITION_NUDGE_STEP = 0.04
 // ── Types ───────────────────────────────────────────────────────
 type FontItem = { label: string; family: string; url?: string }
 type DecalItem = { name: string; url: string; fileName: string }
+type PrintItem = { name: string; url: string; fileName: string }
 
 // ── Component ──────────────────────────────────────────────────
 type LayerScaleMode = 'uniform' | 'horl' | 'vert' | 'rotate'
@@ -332,6 +334,16 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
   const [decalsLoading, setDecalsLoading] = useState(false)
   const elementsImportInputRef = useRef<HTMLInputElement>(null)
 
+  // Prints
+  const targetPrints = useEditorStore((s) => s.targetPrints)
+  const setTargetPrint = useEditorStore((s) => s.setTargetPrint)
+  const clearTargetPrint = useEditorStore((s) => s.clearTargetPrint)
+  const [prints, setPrints] = useState<PrintItem[]>([])
+  const [printsLoading, setPrintsLoading] = useState(false)
+  const [printLoadError, setPrintLoadError] = useState<string | null>(null)
+  const [disabledPrintCache, setDisabledPrintCache] = useState<PrintConfig | null>(null)
+  const printsImportInputRef = useRef<HTMLInputElement>(null)
+
   // Gradient color slot
   const [gradColorSlot, setGradColorSlot] = useState<1 | 2>(1)
   const visibleWrapColors = CAR_COLORS
@@ -433,7 +445,37 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
       .catch(() => setDecalsLoading(false))
   }, [activeTab, decals.length])
 
+  useEffect(() => {
+    if (activeTab !== 'prints' || prints.length > 0) return
+    setPrintsLoading(true)
+    setPrintLoadError(null)
+    fetch('/prints/manifest.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json: { items?: PrintItem[] } | null) => {
+        setPrints(json?.items ?? [])
+        setPrintsLoading(false)
+        if (!json?.items) {
+          setPrintLoadError('No print manifest found yet.')
+        }
+      })
+      .catch(() => {
+        setPrintLoadError('No print manifest found yet.')
+        setPrintsLoading(false)
+      })
+  }, [activeTab, prints.length])
+
   const handleDecalsRowWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    if (el.scrollWidth > el.clientWidth) {
+      const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+      if (delta !== 0) {
+        el.scrollLeft += delta
+        e.preventDefault()
+      }
+    }
+  }
+
+  const handlePrintsRowWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const el = e.currentTarget
     if (el.scrollWidth > el.clientWidth) {
       const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
@@ -501,6 +543,50 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
     if (textImportInputRef.current) textImportInputRef.current.value = ''
   }
 
+  const activePrint: PrintConfig | null = targetPrints.fullCar ?? null
+
+  const applyPrint = (imageUrl: string) => {
+    const existing = targetPrints.fullCar
+    setTargetPrint('fullCar', {
+      imageUrl,
+      tileScale: existing?.tileScale ?? 4,
+      opacity: existing?.opacity ?? 1,
+      finish: existing?.finish ?? 'gloss',
+      tintHex: existing?.tintHex ?? '#ffffff',
+    })
+  }
+
+  const togglePrintEnabled = () => {
+    if (activePrint) {
+      setDisabledPrintCache(activePrint)
+      clearTargetPrint('fullCar')
+      return
+    }
+    if (disabledPrintCache) {
+      setTargetPrint('fullCar', disabledPrintCache)
+    }
+  }
+
+  const handlePrintImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isGuest) {
+      onGuestSignIn()
+      if (printsImportInputRef.current) printsImportInputRef.current.value = ''
+      return
+    }
+
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      applyPrint(dataUrl)
+    }
+    reader.readAsDataURL(file)
+
+    if (printsImportInputRef.current) printsImportInputRef.current.value = ''
+  }
+
   const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
     { id: 'car',      label: 'Wrap Color',      icon: <Palette size={22} /> },
     { id: 'text',     label: 'Text',     icon: <Type size={22} /> },
@@ -510,6 +596,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
         <rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>
       </svg>
     )},
+    { id: 'prints',   label: 'Prints',   icon: <Printer size={22} /> },
     { id: 'stripes',  label: 'Stripes',  icon: (
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
         <rect x="4" y="3" width="4" height="18" rx="1.4" />
@@ -739,7 +826,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
             </div>
           </div>
           {/* Add text + color row */}
-          <div className="mobile-swatches-row">
+          <div className="mobile-text-actions-row">
             <button type="button" className="mobile-add-btn"
               onClick={async () => {
                 if (isGuest) { onGuestSignIn(); return }
@@ -750,7 +837,8 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                 setTool('text')
               }}
             >+ Add Text</button>
-            <span className="mobile-chips-sep" />
+          </div>
+          <div className="mobile-swatches-row mobile-swatches-row--text-colors">
             {visibleWrapColors.map(c => (
               <button key={c.id} type="button" className="mobile-color-swatch"
                 style={{ backgroundColor: c.hex, boxShadow: textLayer?.colorHex === c.hex ? `0 0 0 2px #fff` : undefined }}
@@ -1289,6 +1377,69 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
         </div>
         )
       }
+
+      // ── PRINTS ───────────────────────────────────────────────
+      case 'prints': return (
+        <div className="mobile-car-controls">
+          <div className="mobile-chips-row">
+            <button
+              type="button"
+              className={`mobile-chip${activePrint ? ' active' : ''}`}
+              style={{ minWidth: 56, fontWeight: 700 }}
+              onClick={togglePrintEnabled}
+              disabled={!activePrint && !disabledPrintCache}
+            >
+              {activePrint ? 'ON' : 'OFF'}
+            </button>
+            <span className="mobile-chips-sep" />
+            <button
+              type="button"
+              className="mobile-chip"
+              onClick={() => {
+                if (isGuest) {
+                  onGuestSignIn()
+                  return
+                }
+                printsImportInputRef.current?.click()
+              }}
+            >
+              Import Print
+            </button>
+            <input
+              ref={printsImportInputRef}
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+              onChange={handlePrintImport}
+              style={{ display: 'none' }}
+            />
+            <span className="mobile-chips-sep" />
+            <span className="mobile-strip-label">Target: Full Car</span>
+          </div>
+
+          <div
+            className="mobile-decals-row"
+            onWheelCapture={handlePrintsRowWheel}
+            onWheel={handlePrintsRowWheel}
+          >
+            {printsLoading && <span className="mobile-strip-label">Loading…</span>}
+            {!printsLoading && printLoadError && <span className="mobile-strip-label">{printLoadError}</span>}
+            {!printsLoading && !printLoadError && prints.length === 0 && (
+              <span className="mobile-strip-label">No prints yet</span>
+            )}
+            {prints.map((item) => (
+              <button
+                key={`print-${item.fileName}`}
+                type="button"
+                className={`mobile-decal-thumb${activePrint?.imageUrl === item.url ? ' mobile-decal-thumb--active' : ''}`}
+                onClick={() => applyPrint(item.url)}
+                title={item.name}
+              >
+                <img src={item.url} alt={item.name} loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )
 
       // ── STRIPES ──────────────────────────────────────────────
       case 'stripes': return (

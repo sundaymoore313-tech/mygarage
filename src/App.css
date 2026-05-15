@@ -560,6 +560,20 @@
   flex-shrink: 0;
 }
 
+.mobile-text-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  border-top: 1px solid rgba(62, 201, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.mobile-swatches-row--text-colors {
+  border-top: none;
+  padding-top: 6px;
+}
+
 /* ── Decals row ──────────────────────────────────────────── */
 .mobile-decals-row {
   display: flex;
@@ -571,8 +585,9 @@
   -webkit-overflow-scrolling: touch;
   flex-shrink: 0;
   border-top: 1px solid rgba(62, 201, 255, 0.08);
-  touch-action: none;
+  touch-action: pan-x;
   scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
   scrollbar-color: #4db8ff #1e1e1e;
 }
@@ -613,6 +628,10 @@
 }
 .mobile-decal-thumb:active { transform: scale(0.93); border-color: #3ec9ff; }
 .mobile-decal-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.mobile-decal-thumb--active {
+  border-color: #3ec9ff;
+  box-shadow: 0 0 0 2px rgba(62, 201, 255, 0.4);
+}
 
 /* ── Preset visual chips (stripes/split) ─────────────────── */
 .mobile-preset-chip {

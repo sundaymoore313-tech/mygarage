@@ -29,6 +29,7 @@ const CAMERA_VIEW_OVERRIDES_BY_FILE: Record<string, Partial<Record<CameraViewId,
 
 const MOBILE_LANDSCAPE_MAX_DISTANCE = 9.5
 const MOBILE_LANDSCAPE_START_DISTANCE = MOBILE_LANDSCAPE_MAX_DISTANCE
+const MOBILE_PORTRAIT_MAX_DISTANCE = 7.25
 
 const CAMERA_START_POSITION: [number, number, number] = CAMERA_PRESETS.side.position
 const CAMERA_START_TARGET: [number, number, number] = CAMERA_PRESETS.side.target
@@ -1655,7 +1656,12 @@ function LoadedCarModel({
       transform: {
         ...layer.transform,
         position: { x: point.x, y: point.y, z: point.z },
-        rotation: { x: nextRotation.x, y: nextRotation.y, z: nextRotation.z },
+        rotation: {
+          x: nextRotation.x,
+          y: nextRotation.y,
+          // Keep text upright while dragging across side/front/rear panels.
+          z: layer.type === 'text' ? 0 : nextRotation.z,
+        },
       },
     })
   }
@@ -2150,53 +2156,102 @@ function MeshClassifyOverlay({
 }
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
-  // Enforce opposite front/back behavior by placement position first.
-  // This avoids mesh-normal winding inconsistencies that can flip logic.
-  const frontBackEpsilon = 0.02
-  let rollCorrection = layer.transform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+  const isTextLayer = layer.type === 'text'
 
-  // Near the car centerline, fall back to nearest vertex normal at placement point.
-  if (Math.abs(layer.transform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
-    const positionAttr = targetMesh.geometry.getAttribute('position')
-    const normalAttr = targetMesh.geometry.getAttribute('normal')
+  let projectorRotation: THREE.Euler
 
-    if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
-      const layerWorldPos = new THREE.Vector3(
-        layer.transform.position.x,
-        layer.transform.position.y,
-        layer.transform.position.z,
-      )
-      const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
+  if (isTextLayer) {
+    // For text layers, always build an "upright" projector orientation so text
+    // never appears upside-down regardless of which panel it sits on.
+    //
+    // The stored rotation.x / rotation.y encode the surface normal direction
+    // (from setFromUnitVectors(Z, normal) during placement/drag).
+    // rotation.z is the user's manual spin — we preserve that on top.
+    //
+    // Problem with using stored Euler directly: when the normal points backward
+    // (rear panel), setFromUnitVectors rotates 180° around X, flipping Y to -Y
+    // and making text appear upside-down.  We instead build a fresh basis where
+    // Y is always as close to world-up as possible.
 
-      let nearestIndex = 0
-      let nearestDistSq = Number.POSITIVE_INFINITY
-      for (let i = 0; i < positionAttr.count; i++) {
-        const dx = positionAttr.getX(i) - layerLocalPos.x
-        const dy = positionAttr.getY(i) - layerLocalPos.y
-        const dz = positionAttr.getZ(i) - layerLocalPos.z
-        const distSq = dx * dx + dy * dy + dz * dz
-        if (distSq < nearestDistSq) {
-          nearestDistSq = distSq
-          nearestIndex = i
-        }
-      }
+    // 1. Reconstruct surface normal (ignore user's z-spin when getting the normal)
+    const storedQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(layer.transform.rotation.x, layer.transform.rotation.y, 0, 'XYZ'),
+    )
+    const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
 
-      const nearestNormal = new THREE.Vector3(
-        normalAttr.getX(nearestIndex),
-        normalAttr.getY(nearestIndex),
-        normalAttr.getZ(nearestIndex),
-      )
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
-      nearestNormal.applyMatrix3(normalMatrix).normalize()
-      rollCorrection = nearestNormal.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+    // 2. X axis: horizontal on the car surface, perpendicular to world-up and normal
+    const worldUp = new THREE.Vector3(0, 1, 0)
+    const xAxis = new THREE.Vector3().crossVectors(worldUp, surfaceNormal)
+    if (xAxis.lengthSq() < 1e-6) {
+      // Normal is nearly straight up/down — fall back to world X
+      xAxis.set(1, 0, 0)
     }
+    xAxis.normalize()
+
+    // 3. Y axis: "up" direction on the car surface
+    const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
+
+    // 4. Build rotation from this upright basis
+    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
+    const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
+
+    // 5. Apply user's manual spin (rotation.z) around the surface normal
+    if (layer.transform.rotation.z !== 0) {
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
+      baseQ.premultiply(spinQ)
+    }
+
+    projectorRotation = new THREE.Euler().setFromQuaternion(baseQ, 'XYZ')
+  } else {
+    // Decal layers: position-based front/back roll correction (unchanged).
+    const frontBackEpsilon = 0.02
+    let rollCorrection = layer.transform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+
+    // Near the car centerline, fall back to nearest vertex normal at placement point.
+    if (Math.abs(layer.transform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
+      const positionAttr = targetMesh.geometry.getAttribute('position')
+      const normalAttr = targetMesh.geometry.getAttribute('normal')
+
+      if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
+        const layerWorldPos = new THREE.Vector3(
+          layer.transform.position.x,
+          layer.transform.position.y,
+          layer.transform.position.z,
+        )
+        const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
+
+        let nearestIndex = 0
+        let nearestDistSq = Number.POSITIVE_INFINITY
+        for (let i = 0; i < positionAttr.count; i++) {
+          const dx = positionAttr.getX(i) - layerLocalPos.x
+          const dy = positionAttr.getY(i) - layerLocalPos.y
+          const dz = positionAttr.getZ(i) - layerLocalPos.z
+          const distSq = dx * dx + dy * dy + dz * dz
+          if (distSq < nearestDistSq) {
+            nearestDistSq = distSq
+            nearestIndex = i
+          }
+        }
+
+        const nearestNormal = new THREE.Vector3(
+          normalAttr.getX(nearestIndex),
+          normalAttr.getY(nearestIndex),
+          normalAttr.getZ(nearestIndex),
+        )
+        const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
+        nearestNormal.applyMatrix3(normalMatrix).normalize()
+        rollCorrection = nearestNormal.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+      }
+    }
+
+    projectorRotation = new THREE.Euler(
+      layer.transform.rotation.x,
+      layer.transform.rotation.y,
+      layer.transform.rotation.z + rollCorrection,
+      'XYZ',
+    )
   }
-  const projectorRotation = new THREE.Euler(
-    layer.transform.rotation.x,
-    layer.transform.rotation.y,
-    layer.transform.rotation.z + rollCorrection,
-    'XYZ',
-  )
+
   const depth = Math.max(0.04, layer.transform.scale.z)
 
   return new DecalGeometry(
@@ -3595,7 +3650,8 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
     if (typeof window === 'undefined') return 5
     const isLandscape = window.matchMedia('(orientation: landscape)').matches
     const isTouchDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-    return isLandscape && isTouchDevice ? MOBILE_LANDSCAPE_MAX_DISTANCE : 5
+    if (!isTouchDevice) return 5
+    return isLandscape ? MOBILE_LANDSCAPE_MAX_DISTANCE : MOBILE_PORTRAIT_MAX_DISTANCE
   }, [])
 
   return (
