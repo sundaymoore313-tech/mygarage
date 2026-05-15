@@ -3618,7 +3618,7 @@ export function EditorCanvas({ modelUrl, groundOffsetY = 0, classifyWindowClickT
         resetCameraRef.current = fn
         onResetCameraReady?.(fn)
       }} />
-      {!isRecording && <AdaptivePerformanceMonitor minDpr={1} maxDpr={renderProfile.maxIdleDpr ?? 1.5} degradationThreshold={50} recoveryThreshold={58} />}
+      {!isRecording && <AdaptivePerformanceMonitor minDpr={1} maxDpr={Array.isArray(renderProfile.idleDpr) ? renderProfile.idleDpr[1] : 1.5} degradationThreshold={50} recoveryThreshold={58} />}
 
       <color attach="background" args={[lightPreset === 'garage' ? '#1a1410' : '#101927']} />
       <fog attach="fog" args={[lightPreset === 'garage' ? '#1a1410' : '#101927', lightPreset === 'garage' ? 14 : 10, lightPreset === 'garage' ? 30 : 26]} />
