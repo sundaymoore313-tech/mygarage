@@ -2161,41 +2161,71 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
   let projectorRotation: THREE.Euler
 
   if (isTextLayer) {
-    // For text layers, always build an "upright" projector orientation so text
-    // never appears upside-down regardless of which panel it sits on.
+    // For text: find the surface normal from the mesh geometry at the text position,
+    // then build an upright projector orientation.
     //
-    // The stored rotation.x / rotation.y encode the surface normal direction
-    // (from setFromUnitVectors(Z, normal) during placement/drag).
-    // rotation.z is the user's manual spin — we preserve that on top.
+    // We look up the nearest vertex normal rather than reconstructing from the stored
+    // Euler angles, because the stored rotation has rz zeroed (for drag reasons) which
+    // corrupts the encoded normal for diagonal surfaces (e.g. front-corner panels).
     //
-    // Problem with using stored Euler directly: when the normal points backward
-    // (rear panel), setFromUnitVectors rotates 180° around X, flipping Y to -Y
-    // and making text appear upside-down.  We instead build a fresh basis where
-    // Y is always as close to world-up as possible.
+    // This runs inside useMemo (only on layer/mesh changes) so the O(N) vertex scan
+    // is acceptable.
+    let surfaceNormal = new THREE.Vector3(0, 0, 1) // default: face forward
 
-    // 1. Reconstruct surface normal (ignore user's z-spin when getting the normal)
-    const storedQ = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(layer.transform.rotation.x, layer.transform.rotation.y, 0, 'XYZ'),
-    )
-    const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
+    if (targetMesh.geometry instanceof THREE.BufferGeometry) {
+      const positionAttr = targetMesh.geometry.getAttribute('position')
+      const normalAttr = targetMesh.geometry.getAttribute('normal')
 
-    // 2. X axis: horizontal on the car surface, perpendicular to world-up and normal
-    const worldUp = new THREE.Vector3(0, 1, 0)
-    const xAxis = new THREE.Vector3().crossVectors(worldUp, surfaceNormal)
+      if (positionAttr && normalAttr && positionAttr.count > 0) {
+        const layerWorldPos = new THREE.Vector3(
+          layer.transform.position.x,
+          layer.transform.position.y,
+          layer.transform.position.z,
+        )
+        const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
+
+        let nearestIndex = 0
+        let nearestDistSq = Number.POSITIVE_INFINITY
+        for (let i = 0; i < positionAttr.count; i++) {
+          const dx = positionAttr.getX(i) - layerLocalPos.x
+          const dy = positionAttr.getY(i) - layerLocalPos.y
+          const dz = positionAttr.getZ(i) - layerLocalPos.z
+          const distSq = dx * dx + dy * dy + dz * dz
+          if (distSq < nearestDistSq) {
+            nearestDistSq = distSq
+            nearestIndex = i
+          }
+        }
+
+        const nearestNormal = new THREE.Vector3(
+          normalAttr.getX(nearestIndex),
+          normalAttr.getY(nearestIndex),
+          normalAttr.getZ(nearestIndex),
+        )
+        const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
+        surfaceNormal = nearestNormal.applyMatrix3(normalMatrix).normalize()
+      }
+    }
+
+    // Build upright projector basis.
+    // Use world-DOWN as the cross-product reference so projector Y ends up pointing
+    // world-down.  With tex.flipY=false, canvas-top (V≈0) corresponds to higher
+    // world-Y — which is only correct when projector Y is (0,-1,0).
+    // Using world-down in the cross product consistently gives Y=(0,-1,0) on all
+    // cardinal panels and interpolates smoothly on diagonals.
+    const worldDown = new THREE.Vector3(0, -1, 0)
+    const xAxis = new THREE.Vector3().crossVectors(worldDown, surfaceNormal)
     if (xAxis.lengthSq() < 1e-6) {
-      // Normal is nearly straight up/down — fall back to world X
+      // Normal is nearly straight up or down — fall back to world X
       xAxis.set(1, 0, 0)
     }
     xAxis.normalize()
-
-    // 3. Y axis: "up" direction on the car surface
     const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
 
-    // 4. Build rotation from this upright basis
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
-    // 5. Apply user's manual spin (rotation.z) around the surface normal
+    // Apply user's manual spin (rotation.z) around the surface normal
     if (layer.transform.rotation.z !== 0) {
       const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
       baseQ.premultiply(spinQ)
