@@ -6731,8 +6731,15 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop {
-    height: 100dvh;
-    min-height: 100dvh;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 1440px;
+    height: 900px;
+    min-height: 900px;
+    max-height: none;
+    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
+    transform-origin: center center;
     overflow: hidden;
   }
 
@@ -6740,6 +6747,7 @@ hr {
     grid-template-columns: 1fr auto 1fr;
     gap: 8px;
     padding: 6px 10px;
+    position: relative;
   }
 
   .app-root.app-root-landscape-desktop .top-bar-left,
@@ -6758,6 +6766,7 @@ hr {
   .app-root.app-root-landscape-desktop .workspace {
     min-height: 0;
     height: 100%;
+    align-content: stretch;
   }
 
   .app-root.app-root-landscape-desktop .workspace-main,
@@ -6773,6 +6782,26 @@ hr {
 
   .app-root.app-root-landscape-desktop .layer-panel-wrap {
     display: block;
+  }
+
+  .app-root.app-root-landscape-desktop .top-plain-btn {
+    padding: 7px 9px;
+    font-size: 0.82rem;
+  }
+
+  .app-root.app-root-landscape-desktop .top-card-btn {
+    padding: 7px 10px;
+    font-size: 0.82rem;
+  }
+
+  .app-root.app-root-landscape-desktop .top-icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .app-root.app-root-landscape-desktop .top-profile-bubble {
+    width: 30px;
+    height: 30px;
   }
 }
 
