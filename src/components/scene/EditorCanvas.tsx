@@ -458,7 +458,7 @@ function CameraPresetSync({
 
   const getResponsivePreset = useCallback((view: CameraViewId, preset: { position: [number, number, number]; target: [number, number, number] }) => {
     const aspect = size.width / Math.max(1, size.height)
-    if (aspect <= 1.9) {
+    if (aspect <= 1.7) {
       return preset
     }
 
@@ -469,9 +469,9 @@ function CameraPresetSync({
     const ty = preset.target[1]
     const tz = preset.target[2]
 
-    const distanceScale = view === 'side' ? 0.5 : 0.6
-    const yTargetOffset = view === 'side' ? -0.2 : -0.1
-    const yCameraOffset = view === 'side' ? 0.14 : 0.08
+    const distanceScale = view === 'side' ? 0.36 : 0.48
+    const yTargetOffset = view === 'side' ? -0.22 : -0.12
+    const yCameraOffset = view === 'side' ? 0.16 : 0.1
 
     const nx = tx + (px - tx) * distanceScale
     const ny = ty + (py - ty) * distanceScale + yCameraOffset
