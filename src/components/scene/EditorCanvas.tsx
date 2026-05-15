@@ -2157,73 +2157,49 @@ function MeshClassifyOverlay({
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
   const isTextLayer = layer.type === 'text'
-  const textProjectionPadding = isTextLayer ? 0.18 : 0
-  const textProjectionLift = isTextLayer ? 0.04 : 0
+  const TEXT_UPRIGHT_SPIN = Math.PI
 
   let projectorRotation: THREE.Euler
 
   if (isTextLayer) {
-    // For text: find the surface normal from the mesh geometry at the text position,
-    // then build an upright projector orientation.
+    // For text layers, always build an "upright" projector orientation so text
+    // never appears upside-down regardless of which panel it sits on.
     //
-    // We look up the nearest vertex normal rather than reconstructing from the stored
-    // Euler angles, because the stored rotation has rz zeroed (for drag reasons) which
-    // corrupts the encoded normal for diagonal surfaces (e.g. front-corner panels).
+    // The stored rotation.x / rotation.y encode the surface normal direction
+    // (from setFromUnitVectors(Z, normal) during placement/drag).
+    // rotation.z is the user's manual spin — we preserve that on top.
     //
-    // This runs inside useMemo (only on layer/mesh changes) so the O(N) vertex scan
-    // is acceptable.
-    let surfaceNormal = new THREE.Vector3(0, 0, 1) // default: face forward
+    // Problem with using stored Euler directly: when the normal points backward
+    // (rear panel), setFromUnitVectors rotates 180° around X, flipping Y to -Y
+    // and making text appear upside-down.  We instead build a fresh basis where
+    // Y is always as close to world-up as possible.
 
-    if (targetMesh.geometry instanceof THREE.BufferGeometry) {
-      const positionAttr = targetMesh.geometry.getAttribute('position')
-      const normalAttr = targetMesh.geometry.getAttribute('normal')
+    // 1. Reconstruct surface normal (ignore user's z-spin when getting the normal)
+    const storedQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(layer.transform.rotation.x, layer.transform.rotation.y, 0, 'XYZ'),
+    )
+    const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
 
-      if (positionAttr && normalAttr && positionAttr.count > 0) {
-        const layerWorldPos = new THREE.Vector3(
-          layer.transform.position.x,
-          layer.transform.position.y,
-          layer.transform.position.z,
-        )
-        const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
-
-        let nearestIndex = 0
-        let nearestDistSq = Number.POSITIVE_INFINITY
-        for (let i = 0; i < positionAttr.count; i++) {
-          const dx = positionAttr.getX(i) - layerLocalPos.x
-          const dy = positionAttr.getY(i) - layerLocalPos.y
-          const dz = positionAttr.getZ(i) - layerLocalPos.z
-          const distSq = dx * dx + dy * dy + dz * dz
-          if (distSq < nearestDistSq) {
-            nearestDistSq = distSq
-            nearestIndex = i
-          }
-        }
-
-        const nearestNormal = new THREE.Vector3(
-          normalAttr.getX(nearestIndex),
-          normalAttr.getY(nearestIndex),
-          normalAttr.getZ(nearestIndex),
-        )
-        const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
-        surfaceNormal = nearestNormal.applyMatrix3(normalMatrix).normalize()
-      }
+    // 2. X axis: horizontal on the car surface, perpendicular to world-up and normal
+    const worldUp = new THREE.Vector3(0, 1, 0)
+    const xAxis = new THREE.Vector3().crossVectors(surfaceNormal, worldUp)
+    if (xAxis.lengthSq() < 1e-6) {
+      // Normal is nearly straight up/down — fall back to world X
+      xAxis.set(1, 0, 0)
     }
+    xAxis.normalize()
 
-    // Build an upright projector basis.
-    // Snap the horizontal axis to the dominant body direction so text stays
-    // stable across panel seams instead of inheriting diagonal panel normals.
-    const xAxis = new THREE.Vector3()
-    if (Math.abs(surfaceNormal.x) >= Math.abs(surfaceNormal.z)) {
-      xAxis.set(0, 0, surfaceNormal.x >= 0 ? 1 : -1)
-    } else {
-      xAxis.set(surfaceNormal.z >= 0 ? -1 : 1, 0, 0)
-    }
-    const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
+    // 3. Y axis: "up" direction on the car surface
+    const yAxis = new THREE.Vector3().crossVectors(xAxis, surfaceNormal).normalize()
 
+    // 4. Build rotation from this upright basis
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
-    // Apply user's manual spin (rotation.z) around the surface normal
+    // 5. Apply user's manual spin (rotation.z) around the surface normal
+    const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, TEXT_UPRIGHT_SPIN)
+    baseQ.premultiply(uprightQ)
+
     if (layer.transform.rotation.z !== 0) {
       const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
       baseQ.premultiply(spinQ)
@@ -2281,21 +2257,19 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
   }
 
   const depth = Math.max(0.04, layer.transform.scale.z)
-  const projectorNormal = new THREE.Vector3(0, 0, 1).applyEuler(projectorRotation)
-  const projectorPosition = new THREE.Vector3(
-    layer.transform.position.x,
-    layer.transform.position.y,
-    layer.transform.position.z,
-  ).addScaledVector(projectorNormal, textProjectionLift)
 
   return new DecalGeometry(
     targetMesh,
-    projectorPosition,
+    new THREE.Vector3(
+      layer.transform.position.x,
+      layer.transform.position.y,
+      layer.transform.position.z,
+    ),
     projectorRotation,
     new THREE.Vector3(
-      Math.max(0.08, layer.transform.scale.x) + textProjectionPadding,
-      Math.max(0.08, layer.transform.scale.y) + textProjectionPadding,
-      isTextLayer ? Math.max(0.12, depth + 0.08) : depth,
+      Math.max(0.08, layer.transform.scale.x),
+      Math.max(0.08, layer.transform.scale.y),
+      depth,
     ),
   )
 }
@@ -2378,32 +2352,7 @@ function useProjectedGeometries(
   // properties like colorHex, text, or mirrorX change.
   const { position, rotation, scale } = layer.transform
   const geometries = useMemo(
-    () => {
-      if (layer.type === 'text') {
-        const preferredMesh = layer.targetPartId
-          ? targetMeshes.find((mesh) => (mesh.userData.partId as string | undefined) === layer.targetPartId)
-          : null
-
-        const bestMesh = preferredMesh ?? targetMeshes.reduce<THREE.Mesh | null>((closest, mesh) => {
-          if (!closest) {
-            return mesh
-          }
-
-          const meshCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3())
-          const closestCenter = new THREE.Box3().setFromObject(closest).getCenter(new THREE.Vector3())
-          const layerPosition = new THREE.Vector3(position.x, position.y, position.z)
-
-          const meshDistance = meshCenter.distanceToSquared(layerPosition)
-          const closestDistance = closestCenter.distanceToSquared(layerPosition)
-
-          return meshDistance < closestDistance ? mesh : closest
-        }, null)
-
-        return bestMesh ? [makeDecalGeometry(bestMesh, layer)] : []
-      }
-
-      return targetMeshes.map((mesh) => makeDecalGeometry(mesh, layer))
-    },
+    () => targetMeshes.map((mesh) => makeDecalGeometry(mesh, layer)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       targetMeshes,
@@ -2919,10 +2868,8 @@ function ProjectedTextLayer({
             transparent
             opacity={Math.max(0.1, layer.transform.opacity)}
             depthWrite={false}
-            depthTest={false}
             polygonOffset
-            polygonOffsetFactor={-16}
-            polygonOffsetUnits={-16}
+            polygonOffsetFactor={-4}
             metalness={getLayerFinishMaterialProps(layer.finish).metalness}
             roughness={getLayerFinishMaterialProps(layer.finish).roughness}
             envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}
@@ -2944,10 +2891,8 @@ function ProjectedTextLayer({
                 transparent
                 opacity={Math.max(0.1, layer.transform.opacity)}
                 depthWrite={false}
-                depthTest={false}
                 polygonOffset
-                polygonOffsetFactor={-16}
-                polygonOffsetUnits={-16}
+                polygonOffsetFactor={-4}
                 metalness={getLayerFinishMaterialProps(layer.finish).metalness}
                 roughness={getLayerFinishMaterialProps(layer.finish).roughness}
                 envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}

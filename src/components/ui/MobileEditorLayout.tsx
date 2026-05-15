@@ -407,7 +407,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
   // Commit text to undo history when leaving the text tab
   useEffect(() => {
     if (activeTab === 'text') return
-    if (textLayer && textLayer.text !== editingTextContent) {
+    if (textLayer) {
       updateLayer(textLayer.id, { text: editingTextContent } as any)
     }
   }, [activeTab, editingTextContent, textLayer, updateLayer])
