@@ -380,6 +380,7 @@ function App() {
   const lastRealtimeUpdateMsRef = useRef<number>(0)
   const lastSaveMsRef = useRef<number>(lastSaveMs)
   const accountPlan = isGuest ? 'guest' : userPlan
+  const isTouchDevice = typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0
 
   // Log mobile lock status on mount
   useEffect(() => {
@@ -850,7 +851,7 @@ function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  const orbitEnabled = isMobileLandscapeViewport || !orbitLockToScenePanel || sceneHovered
+  const orbitEnabled = isTouchDevice || isMobileLandscapeViewport || !orbitLockToScenePanel || sceneHovered
 
   const runCloudSync = useCallback(async () => {
     if (!isSupabaseConfigured) {
