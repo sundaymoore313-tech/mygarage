@@ -2158,6 +2158,25 @@ function MeshClassifyOverlay({
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
   const isTextLayer = layer.type === 'text'
 
+  const finiteOr = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback)
+  const safeTransform = {
+    position: {
+      x: finiteOr(layer.transform.position.x, 0),
+      y: finiteOr(layer.transform.position.y, 0),
+      z: finiteOr(layer.transform.position.z, 0),
+    },
+    rotation: {
+      x: finiteOr(layer.transform.rotation.x, 0),
+      y: finiteOr(layer.transform.rotation.y, 0),
+      z: finiteOr(layer.transform.rotation.z, 0),
+    },
+    scale: {
+      x: Math.max(0.08, finiteOr(layer.transform.scale.x, 1)),
+      y: Math.max(0.08, finiteOr(layer.transform.scale.y, 1)),
+      z: Math.max(0.04, finiteOr(layer.transform.scale.z, 0.12)),
+    },
+  }
+
   let projectorRotation: THREE.Euler
 
   if (isTextLayer) {
@@ -2175,7 +2194,7 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
 
     // 1. Reconstruct surface normal (ignore user's z-spin when getting the normal)
     const storedQ = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(layer.transform.rotation.x, layer.transform.rotation.y, 0, 'XYZ'),
+      new THREE.Euler(safeTransform.rotation.x, safeTransform.rotation.y, 0, 'XYZ'),
     )
     const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
 
@@ -2196,8 +2215,8 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
     // 5. Apply user's manual spin (rotation.z) around the surface normal
-    if (layer.transform.rotation.z !== 0) {
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
+    if (safeTransform.rotation.z !== 0) {
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, safeTransform.rotation.z)
       baseQ.premultiply(spinQ)
     }
 
@@ -2220,18 +2239,18 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
   } else {
     // Decal layers: position-based front/back roll correction (unchanged).
     const frontBackEpsilon = 0.02
-    let rollCorrection = layer.transform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+    let rollCorrection = safeTransform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
 
     // Near the car centerline, fall back to nearest vertex normal at placement point.
-    if (Math.abs(layer.transform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
+    if (Math.abs(safeTransform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
       const positionAttr = targetMesh.geometry.getAttribute('position')
       const normalAttr = targetMesh.geometry.getAttribute('normal')
 
       if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
         const layerWorldPos = new THREE.Vector3(
-          layer.transform.position.x,
-          layer.transform.position.y,
-          layer.transform.position.z,
+          safeTransform.position.x,
+          safeTransform.position.y,
+          safeTransform.position.z,
         )
         const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
 
@@ -2260,29 +2279,33 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     }
 
     projectorRotation = new THREE.Euler(
-      layer.transform.rotation.x,
-      layer.transform.rotation.y,
-      layer.transform.rotation.z + rollCorrection,
+      safeTransform.rotation.x,
+      safeTransform.rotation.y,
+      safeTransform.rotation.z + rollCorrection,
       'XYZ',
     )
   }
 
-  const depth = Math.max(0.04, layer.transform.scale.z)
-
-  return new DecalGeometry(
-    targetMesh,
-    new THREE.Vector3(
-      layer.transform.position.x,
-      layer.transform.position.y,
-      layer.transform.position.z,
-    ),
-    projectorRotation,
-    new THREE.Vector3(
-      Math.max(0.08, layer.transform.scale.x),
-      Math.max(0.08, layer.transform.scale.y),
-      depth,
-    ),
-  )
+  try {
+    return new DecalGeometry(
+      targetMesh,
+      new THREE.Vector3(
+        safeTransform.position.x,
+        safeTransform.position.y,
+        safeTransform.position.z,
+      ),
+      projectorRotation,
+      new THREE.Vector3(
+        safeTransform.scale.x,
+        safeTransform.scale.y,
+        safeTransform.scale.z,
+      ),
+    )
+  } catch {
+    // Prevent full-scene crashes during touch drag if a single frame produces
+    // invalid projection input; the layer recovers on the next valid frame.
+    return new THREE.BufferGeometry()
+  }
 }
 
 function createMirroredLayer<T extends DecalLayer | TextLayer>(layer: T): T {
