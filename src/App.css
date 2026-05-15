@@ -6907,6 +6907,13 @@ hr {
     overflow: hidden;
   }
 
+  .app-root.app-root-landscape-desktop .scene-panel {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .app-root.app-root-landscape-desktop .scene-panel > div,
   .app-root.app-root-landscape-desktop .scene-panel > canvas {
     width: 100% !important;
     height: 100% !important;
@@ -6914,16 +6921,24 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop .bottom-dock {
-    max-height: 34%;
+    min-height: 170px;
+    max-height: 40%;
   }
 
   .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile {
-    min-height: 110px;
-    max-height: 165px;
+    min-height: 130px;
+    max-height: 210px;
+    overflow-y: auto;
   }
 
   .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile.is-tab-open {
-    max-height: 210px;
+    max-height: 250px;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector .mobile-controls-strip--embedded,
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile .mobile-controls-strip--embedded {
+    overflow-y: auto;
+    padding-bottom: 8px;
   }
 
   .app-root.app-root-landscape-desktop .bottom-dock-tab {
