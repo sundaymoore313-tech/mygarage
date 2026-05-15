@@ -1,15 +1,21 @@
 {
-  "generatedAt": "2026-05-09T21:36:31.954Z",
+  "generatedAt": "2026-05-15T03:22:56.799Z",
   "items": [
+    {
+      "name": "2003 Chevrolet Express Cargo Van",
+      "fileName": "2003_chevrolet_express_gmc_savana_2500_cargo_van.glb",
+      "modelUrl": "/models/2003_chevrolet_express_gmc_savana_2500_cargo_van.glb",
+      "groundOffsetY": 0.1
+    },
     {
       "name": "2012 dodge charger rt sedan 4d (1)",
       "fileName": "2012_dodge_charger_rt_sedan_4d (1).glb",
       "modelUrl": "/models/2012_dodge_charger_rt_sedan_4d%20(1).glb"
     },
     {
-      "name": "2018 ford mustang gt",
-      "fileName": "2018_ford_mustang_gt.glb",
-      "modelUrl": "/models/2018_ford_mustang_gt.glb"
+      "name": "2017 nissain aimgain gtr r35 type 2",
+      "fileName": "2017_nissain_aimgain_gtr_r35_type_2.glb",
+      "modelUrl": "/models/2017_nissain_aimgain_gtr_r35_type_2.glb"
     },
     {
       "name": "2019 Chevrolet Corvette C8 Stingray",
@@ -35,6 +41,12 @@
       "name": "Chrysler 300 SRT Hellcat",
       "fileName": "chrysler_300_srt_hellcat.glb",
       "modelUrl": "/models/chrysler_300_srt_hellcat.glb"
+    },
+    {
+      "name": "Dodge Charger Scatpack Widebody",
+      "fileName": "dodge_charger_scatpack_widebody.glb",
+      "modelUrl": "/models/dodge_charger_scatpack_widebody.glb",
+      "groundOffsetY": 0.14
     },
     {
       "name": "Dodge Charger SRT Hellcat",

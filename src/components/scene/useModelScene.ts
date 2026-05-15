@@ -6,27 +6,25 @@ export type ModelSceneResult = {
   scene: GLTF['scene']
 }
 
-let lastModelUrl: string | null = null
+const cachedModelUrls = new Set<string>()
 
 export function preloadModelScene(modelUrl: string): void {
+  cachedModelUrls.add(modelUrl)
   useGLTF.preload(modelUrl)
 }
 
 export function clearModelSceneCache(): void {
-  if (!lastModelUrl) return
-  useGLTF.clear(lastModelUrl)
-  lastModelUrl = null
+  for (const modelUrl of cachedModelUrls) {
+    useGLTF.clear(modelUrl)
+  }
+  cachedModelUrls.clear()
 }
 
 export function useModelScene(modelUrl: string): ModelSceneResult {
   const gltf = useGLTF(modelUrl) as GLTF
 
   useEffect(() => {
-    if (lastModelUrl && lastModelUrl !== modelUrl) {
-      // Keep GLTF cache bounded while users hop between models on mobile.
-      useGLTF.clear(lastModelUrl)
-    }
-    lastModelUrl = modelUrl
+    cachedModelUrls.add(modelUrl)
   }, [modelUrl])
 
   return { scene: gltf.scene }

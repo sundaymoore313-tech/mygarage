@@ -6,6 +6,10 @@ const modelsDir = path.join(projectRoot, 'public', 'models')
 const manifestPath = path.join(modelsDir, 'manifest.json')
 
 const SUPPORTED_EXT = new Set(['.glb', '.gltf'])
+const EXCLUDED_MODEL_PATTERNS = [
+  /gt500/i,
+  /ford[_\s-]*mustang/i,
+]
 const MODEL_OVERRIDES = {
   'bmw_m3_g80_2025.glb': {
     name: 'BMW M3 G80 2025',
@@ -25,11 +29,23 @@ const MODEL_OVERRIDES = {
   'jeep_grand_cherokee_trackhawk.glb': {
     name: 'Jeep Grand Cherokee Trackhawk',
   },
+  '2003_chevrolet_express_gmc_savana_2500_cargo_van.glb': {
+    name: '2003 Chevrolet Express Cargo Van',
+    groundOffsetY: 0.10,
+  },
+  'dodge_charger_scatpack_widebody.glb': {
+    name: 'Dodge Charger Scatpack Widebody',
+    groundOffsetY: 0.14,
+  },
 }
 
 function isSupportedModel(fileName) {
   const ext = path.extname(fileName).toLowerCase()
   return SUPPORTED_EXT.has(ext)
+}
+
+function isExcludedModel(fileName) {
+  return EXCLUDED_MODEL_PATTERNS.some((pattern) => pattern.test(fileName))
 }
 
 function toDisplayName(fileName) {
@@ -57,6 +73,7 @@ async function buildManifest() {
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .filter((name) => isSupportedModel(name))
+    .filter((name) => !isExcludedModel(name))
     .sort((a, b) => a.localeCompare(b))
     .map((name) => {
       const override = MODEL_OVERRIDES[name]

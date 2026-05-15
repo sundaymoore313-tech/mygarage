@@ -1,6 +1,46 @@
 {
-  "generatedAt": "2026-05-09T21:36:31.867Z",
+  "generatedAt": "2026-05-15T03:22:56.708Z",
   "items": [
+    {
+      "name": "cartoon bomb face",
+      "fileName": "cartoon-bomb-face.svg",
+      "url": "/decals/cartoon-bomb-face.svg"
+    },
+    {
+      "name": "cartoon demon eye",
+      "fileName": "cartoon-demon-eye.svg",
+      "url": "/decals/cartoon-demon-eye.svg"
+    },
+    {
+      "name": "cartoon drip skull",
+      "fileName": "cartoon-drip-skull.svg",
+      "url": "/decals/cartoon-drip-skull.svg"
+    },
+    {
+      "name": "cartoon ghost racer",
+      "fileName": "cartoon-ghost-racer.svg",
+      "url": "/decals/cartoon-ghost-racer.svg"
+    },
+    {
+      "name": "cartoon lightning smile",
+      "fileName": "cartoon-lightning-smile.svg",
+      "url": "/decals/cartoon-lightning-smile.svg"
+    },
+    {
+      "name": "cartoon rocket rabbit",
+      "fileName": "cartoon-rocket-rabbit.svg",
+      "url": "/decals/cartoon-rocket-rabbit.svg"
+    },
+    {
+      "name": "cartoon shark bite",
+      "fileName": "cartoon-shark-bite.svg",
+      "url": "/decals/cartoon-shark-bite.svg"
+    },
+    {
+      "name": "cartoon starburst boom",
+      "fileName": "cartoon-starburst-boom.svg",
+      "url": "/decals/cartoon-starburst-boom.svg"
+    },
     {
       "name": "checkered band",
       "fileName": "checkered-band.svg",
@@ -10,6 +50,186 @@
       "name": "Dodge TRX Logo Vector.svg",
       "fileName": "Dodge TRX Logo Vector.svg .png",
       "url": "/decals/Dodge%20TRX%20Logo%20Vector.svg%20.png"
+    },
+    {
+      "name": "freepack astonmartin",
+      "fileName": "freepack-astonmartin.svg",
+      "url": "/decals/freepack-astonmartin.svg"
+    },
+    {
+      "name": "freepack audi",
+      "fileName": "freepack-audi.svg",
+      "url": "/decals/freepack-audi.svg"
+    },
+    {
+      "name": "freepack bentley",
+      "fileName": "freepack-bentley.svg",
+      "url": "/decals/freepack-bentley.svg"
+    },
+    {
+      "name": "freepack bmw",
+      "fileName": "freepack-bmw.svg",
+      "url": "/decals/freepack-bmw.svg"
+    },
+    {
+      "name": "freepack bugatti",
+      "fileName": "freepack-bugatti.svg",
+      "url": "/decals/freepack-bugatti.svg"
+    },
+    {
+      "name": "freepack cadillac",
+      "fileName": "freepack-cadillac.svg",
+      "url": "/decals/freepack-cadillac.svg"
+    },
+    {
+      "name": "freepack chevrolet",
+      "fileName": "freepack-chevrolet.svg",
+      "url": "/decals/freepack-chevrolet.svg"
+    },
+    {
+      "name": "freepack ferrari",
+      "fileName": "freepack-ferrari.svg",
+      "url": "/decals/freepack-ferrari.svg"
+    },
+    {
+      "name": "freepack fiat",
+      "fileName": "freepack-fiat.svg",
+      "url": "/decals/freepack-fiat.svg"
+    },
+    {
+      "name": "freepack ford",
+      "fileName": "freepack-ford.svg",
+      "url": "/decals/freepack-ford.svg"
+    },
+    {
+      "name": "freepack honda",
+      "fileName": "freepack-honda.svg",
+      "url": "/decals/freepack-honda.svg"
+    },
+    {
+      "name": "freepack hyundai",
+      "fileName": "freepack-hyundai.svg",
+      "url": "/decals/freepack-hyundai.svg"
+    },
+    {
+      "name": "freepack infiniti",
+      "fileName": "freepack-infiniti.svg",
+      "url": "/decals/freepack-infiniti.svg"
+    },
+    {
+      "name": "freepack jeep",
+      "fileName": "freepack-jeep.svg",
+      "url": "/decals/freepack-jeep.svg"
+    },
+    {
+      "name": "freepack kia",
+      "fileName": "freepack-kia.svg",
+      "url": "/decals/freepack-kia.svg"
+    },
+    {
+      "name": "freepack koenigsegg",
+      "fileName": "freepack-koenigsegg.svg",
+      "url": "/decals/freepack-koenigsegg.svg"
+    },
+    {
+      "name": "freepack lamborghini",
+      "fileName": "freepack-lamborghini.svg",
+      "url": "/decals/freepack-lamborghini.svg"
+    },
+    {
+      "name": "freepack maserati",
+      "fileName": "freepack-maserati.svg",
+      "url": "/decals/freepack-maserati.svg"
+    },
+    {
+      "name": "freepack mazda",
+      "fileName": "freepack-mazda.svg",
+      "url": "/decals/freepack-mazda.svg"
+    },
+    {
+      "name": "freepack mclaren",
+      "fileName": "freepack-mclaren.svg",
+      "url": "/decals/freepack-mclaren.svg"
+    },
+    {
+      "name": "freepack mini",
+      "fileName": "freepack-mini.svg",
+      "url": "/decals/freepack-mini.svg"
+    },
+    {
+      "name": "freepack nissan",
+      "fileName": "freepack-nissan.svg",
+      "url": "/decals/freepack-nissan.svg"
+    },
+    {
+      "name": "freepack polestar",
+      "fileName": "freepack-polestar.svg",
+      "url": "/decals/freepack-polestar.svg"
+    },
+    {
+      "name": "freepack porsche",
+      "fileName": "freepack-porsche.svg",
+      "url": "/decals/freepack-porsche.svg"
+    },
+    {
+      "name": "freepack ram",
+      "fileName": "freepack-ram.svg",
+      "url": "/decals/freepack-ram.svg"
+    },
+    {
+      "name": "freepack rollsroyce",
+      "fileName": "freepack-rollsroyce.svg",
+      "url": "/decals/freepack-rollsroyce.svg"
+    },
+    {
+      "name": "freepack subaru",
+      "fileName": "freepack-subaru.svg",
+      "url": "/decals/freepack-subaru.svg"
+    },
+    {
+      "name": "freepack tesla",
+      "fileName": "freepack-tesla.svg",
+      "url": "/decals/freepack-tesla.svg"
+    },
+    {
+      "name": "freepack toyota",
+      "fileName": "freepack-toyota.svg",
+      "url": "/decals/freepack-toyota.svg"
+    },
+    {
+      "name": "freepack volkswagen",
+      "fileName": "freepack-volkswagen.svg",
+      "url": "/decals/freepack-volkswagen.svg"
+    },
+    {
+      "name": "mopar hellcat text",
+      "fileName": "mopar-hellcat-text.svg",
+      "url": "/decals/mopar-hellcat-text.svg"
+    },
+    {
+      "name": "mopar hemi 392",
+      "fileName": "mopar-hemi-392.svg",
+      "url": "/decals/mopar-hemi-392.svg"
+    },
+    {
+      "name": "mopar redeye text",
+      "fileName": "mopar-redeye-text.svg",
+      "url": "/decals/mopar-redeye-text.svg"
+    },
+    {
+      "name": "mopar scatpack text",
+      "fileName": "mopar-scatpack-text.svg",
+      "url": "/decals/mopar-scatpack-text.svg"
+    },
+    {
+      "name": "mopar srt performance",
+      "fileName": "mopar-srt-performance.svg",
+      "url": "/decals/mopar-srt-performance.svg"
+    },
+    {
+      "name": "mopar trackhawk text",
+      "fileName": "mopar-trackhawk-text.svg",
+      "url": "/decals/mopar-trackhawk-text.svg"
     },
     {
       "name": "pngegg",
