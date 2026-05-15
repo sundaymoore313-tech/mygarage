@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Layers, Type, Car, Paintbrush, Download, Pen, Star, Undo2, Image, Printer, SunDim, Columns2 } from 'lucide-react'
 import { isSupabaseConfigured, supabaseSignIn, supabaseSignOut, supabaseSignUp, supabase } from '../../lib/supabase'
+import { isDiscordConfigured, sendDiscordFeedback } from '../../lib/discord'
 import { LegalDocsModal } from './LegalDocsModal'
 
 type HomePageProps = {
@@ -131,7 +132,6 @@ const LEGAL_NOTICE_ITEMS = [
 ]
 
 const DEFAULT_DISCORD_URL = 'https://discord.gg/mygaragewrapstudio'
-const DISCORD_FEEDBACK_WEBHOOK_URL = (import.meta.env.VITE_DISCORD_FEEDBACK_WEBHOOK_URL as string | undefined)?.trim() ?? ''
 const FEEDBACK_MAX_CHARS = 1000
 
 function cacheAuthLocally(user: AuthUser, remember: boolean) {
@@ -195,7 +195,7 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
     (import.meta.env.VITE_DISCORD_PERMANENT_INVITE_URL as string | undefined)?.trim() ||
     DEFAULT_DISCORD_URL
   )
-  const hasDiscordFeedbackWebhook = Boolean(DISCORD_FEEDBACK_WEBHOOK_URL)
+  const hasDiscordFeedbackWebhook = isDiscordConfigured
   const drawerRef = useRef<HTMLDivElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const heroCtaRef = useRef<HTMLDivElement | null>(null)
@@ -483,18 +483,11 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
 
   async function handleSendFeedback() {
     const trimmed = feedbackText.trim()
-    if (!trimmed || !DISCORD_FEEDBACK_WEBHOOK_URL) return
+    if (!trimmed) return
     setFeedbackStatus('sending')
     try {
-      const res = await fetch(DISCORD_FEEDBACK_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'MyGarage Feedback',
-          content: `**Anonymous Feedback**\n${trimmed}`,
-        }),
-      })
-      if (res.ok || res.status === 204) {
+      const result = await sendDiscordFeedback(trimmed, currentUser?.email)
+      if (result.success) {
         setFeedbackStatus('sent')
         setFeedbackText('')
         setTimeout(() => {
@@ -502,9 +495,11 @@ export function HomePage({ onEnter, onOpenProfile, onContinueAsGuest, onLikelyEd
           setFeedbackOpen(false)
         }, 2000)
       } else {
+        console.error('Feedback error:', result.error)
         setFeedbackStatus('error')
       }
-    } catch {
+    } catch (error) {
+      console.error('Feedback error:', error)
       setFeedbackStatus('error')
     }
   }
