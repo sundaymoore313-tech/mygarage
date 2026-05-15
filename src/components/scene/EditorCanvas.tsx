@@ -2149,23 +2149,20 @@ function MeshClassifyOverlay({
 }
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
-  // For back-facing surfaces (normals pointing toward negative Z), don't apply roll correction
-  // For front-facing surfaces (normals pointing toward positive Z), apply Math.PI roll correction
+  // Apply roll correction ONLY for back-facing surfaces (negative Z normals)
+  // Front-facing surfaces don't need roll correction
   let rollCorrection = 0
   if (targetMesh.geometry instanceof THREE.BufferGeometry && targetMesh.geometry.attributes.normal) {
     const normals = targetMesh.geometry.attributes.normal.array as Float32Array
     if (normals.length > 0) {
       // Use first vertex normal as representative
       const firstNormal = new THREE.Vector3(normals[0], normals[1], normals[2])
-      // Don't transform, check local Z directly - simpler and more reliable
-      // Positive Z = front-facing (needs roll correction), Negative Z = back-facing (no roll correction)
-      if (firstNormal.z > 0.3) {
+      // Check local Z: negative = back-facing (rear window), positive = front-facing
+      if (firstNormal.z < -0.3) {
+        // Back-facing surface needs the roll correction
         rollCorrection = DECAL_UPRIGHT_ROLL
       }
     }
-  } else {
-    // Fallback: apply roll correction by default
-    rollCorrection = DECAL_UPRIGHT_ROLL
   }
   const projectorRotation = new THREE.Euler(
     layer.transform.rotation.x,
