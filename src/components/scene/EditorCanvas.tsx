@@ -2149,17 +2149,48 @@ function MeshClassifyOverlay({
 }
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
-  // Apply roll correction ONLY for back-facing surfaces (negative Z normals)
-  // Front-facing surfaces don't need roll correction
-  let rollCorrection = 0
-  if (targetMesh.geometry instanceof THREE.BufferGeometry && targetMesh.geometry.attributes.normal) {
-    const normals = targetMesh.geometry.attributes.normal.array as Float32Array
-    if (normals.length > 0) {
-      // Use first vertex normal as representative
-      const firstNormal = new THREE.Vector3(normals[0], normals[1], normals[2])
-      // Check local Z: negative = back-facing (rear window), positive = front-facing
-      if (firstNormal.z < -0.3) {
-        // Back-facing surface needs the roll correction
+  // Front and back must be opposite. Determine orientation from the vertex normal
+  // nearest the current layer position (not the first vertex of the whole mesh).
+  let rollCorrection = DECAL_UPRIGHT_ROLL
+  if (targetMesh.geometry instanceof THREE.BufferGeometry) {
+    const positionAttr = targetMesh.geometry.getAttribute('position')
+    const normalAttr = targetMesh.geometry.getAttribute('normal')
+
+    if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
+      const layerWorldPos = new THREE.Vector3(
+        layer.transform.position.x,
+        layer.transform.position.y,
+        layer.transform.position.z,
+      )
+      const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
+
+      let nearestIndex = 0
+      let nearestDistSq = Number.POSITIVE_INFINITY
+      for (let i = 0; i < positionAttr.count; i++) {
+        const dx = positionAttr.getX(i) - layerLocalPos.x
+        const dy = positionAttr.getY(i) - layerLocalPos.y
+        const dz = positionAttr.getZ(i) - layerLocalPos.z
+        const distSq = dx * dx + dy * dy + dz * dz
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq
+          nearestIndex = i
+        }
+      }
+
+      const nearestNormal = new THREE.Vector3(
+        normalAttr.getX(nearestIndex),
+        normalAttr.getY(nearestIndex),
+        normalAttr.getZ(nearestIndex),
+      )
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
+      nearestNormal.applyMatrix3(normalMatrix).normalize()
+
+      // Opposite behavior for front/back:
+      // front-facing (positive world Z) => apply upright roll,
+      // back-facing (negative world Z) => no extra roll.
+      if (nearestNormal.z < -0.05) {
+        rollCorrection = 0
+      } else if (nearestNormal.z > 0.05) {
         rollCorrection = DECAL_UPRIGHT_ROLL
       }
     }
