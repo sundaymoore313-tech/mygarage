@@ -2201,12 +2201,19 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
       baseQ.premultiply(spinQ)
     }
 
-    // 6. Keep text upright: if projected up points downward in world space,
-    // rotate 180 degrees in-plane around the surface normal.
-    const projectedUp = new THREE.Vector3(0, 1, 0).applyQuaternion(baseQ)
-    if (projectedUp.dot(worldUp) < 0) {
-      const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, Math.PI)
-      baseQ.premultiply(uprightQ)
+    // 6. Keep text upright across side->rear transitions by selecting the
+    // orientation (0 deg vs 180 deg in-plane) whose text-up points higher.
+    // Decal text maps with canvas Y-down, so local text-up is -Y.
+    const textUpLocal = new THREE.Vector3(0, -1, 0)
+    const upScoreCurrent = textUpLocal.clone().applyQuaternion(baseQ).dot(worldUp)
+
+    const flippedQ = baseQ.clone()
+    const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, Math.PI)
+    flippedQ.premultiply(uprightQ)
+    const upScoreFlipped = textUpLocal.clone().applyQuaternion(flippedQ).dot(worldUp)
+
+    if (upScoreFlipped > upScoreCurrent) {
+      baseQ.copy(flippedQ)
     }
 
     projectorRotation = new THREE.Euler().setFromQuaternion(baseQ, 'XYZ')
