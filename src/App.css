@@ -6734,9 +6734,9 @@ hr {
     position: fixed;
     left: 50%;
     top: 50%;
-    width: 1440px;
-    height: 900px;
-    min-height: 900px;
+    width: var(--mobile-landscape-base-width, 1440px);
+    height: var(--mobile-landscape-base-height, 680px);
+    min-height: var(--mobile-landscape-base-height, 680px);
     max-height: none;
     transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
     transform-origin: center center;
@@ -6778,6 +6778,31 @@ hr {
   .app-root.app-root-landscape-desktop .workspace-main {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
     overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .scene-panel > canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock {
+    max-height: 34%;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile {
+    min-height: 110px;
+    max-height: 165px;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile.is-tab-open {
+    max-height: 210px;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-tab {
+    min-height: 58px;
+    padding: 8px 10px;
+    gap: 4px;
   }
 
   .app-root.app-root-landscape-desktop .layer-panel-wrap {
@@ -6836,9 +6861,9 @@ hr {
     position: fixed;
     left: 50%;
     top: 50%;
-    width: 1440px;
-    height: 900px;
-    min-height: 900px;
+    width: var(--mobile-landscape-base-width, 1440px);
+    height: var(--mobile-landscape-base-height, 680px);
+    min-height: var(--mobile-landscape-base-height, 680px);
     max-height: none;
     transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
     transform-origin: center center;
@@ -6880,6 +6905,31 @@ hr {
   .app-root.app-root-landscape-desktop .workspace-main {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
     overflow: hidden;
+  }
+
+  .app-root.app-root-landscape-desktop .scene-panel > canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock {
+    max-height: 34%;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile {
+    min-height: 110px;
+    max-height: 165px;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-inspector--mobile.is-tab-open {
+    max-height: 210px;
+  }
+
+  .app-root.app-root-landscape-desktop .bottom-dock-tab {
+    min-height: 58px;
+    padding: 8px 10px;
+    gap: 4px;
   }
 
   .app-root.app-root-landscape-desktop .layer-panel-wrap {
