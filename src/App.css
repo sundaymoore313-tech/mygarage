@@ -96,9 +96,6 @@
     opacity: 0.7;
   }
   50% {
-    opacity: 1;
-  }
-}
 
 @keyframes slideInRight {
   from {
@@ -111,11 +108,14 @@
   }
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.6;
-  }
-  50% {
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 0.6;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
     opacity: 1;
   }
 }
@@ -6731,14 +6731,15 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: 100dvh;
-    min-height: 100dvh;
-    max-height: 100dvh;
-    transform: none;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: var(--mobile-landscape-base-width, 1440px);
+    height: var(--mobile-landscape-base-height, 680px);
+    min-height: var(--mobile-landscape-base-height, 680px);
+    max-height: none;
+    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
+    transform-origin: center center;
     overflow: hidden;
   }
 
@@ -6775,7 +6776,7 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop .workspace-main {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
+    grid-template-columns: minmax(0, 1fr) 180px;
     overflow: hidden;
   }
 
@@ -6857,14 +6858,15 @@ hr {
 
 @media (orientation: landscape) and (pointer: coarse) {
   .app-root.app-root-landscape-desktop {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: 100dvh;
-    min-height: 100dvh;
-    max-height: 100dvh;
-    transform: none;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: var(--mobile-landscape-base-width, 1440px);
+    height: var(--mobile-landscape-base-height, 680px);
+    min-height: var(--mobile-landscape-base-height, 680px);
+    max-height: none;
+    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
+    transform-origin: center center;
     overflow: hidden;
   }
 
@@ -6901,41 +6903,28 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop .workspace-main {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
+    grid-template-columns: minmax(0, 1fr) 180px;
     overflow: hidden;
-    align-items: stretch;
   }
 
   .app-root.app-root-landscape-desktop .scene-panel {
     display: flex;
     align-items: stretch;
     justify-content: stretch;
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    height: auto !important;
-    overflow: hidden;
   }
 
   .app-root.app-root-landscape-desktop .scene-panel > div,
   .app-root.app-root-landscape-desktop .scene-panel > canvas {
-    position: relative;
     width: 100% !important;
     height: 100% !important;
     min-height: 0;
     flex: 1 1 auto;
-    max-width: none !important;
-    max-height: none !important;
     display: block;
   }
 
   .app-root.app-root-landscape-desktop .scene-panel > div > canvas {
-    position: absolute !important;
-    inset: 0;
     width: 100% !important;
     height: 100% !important;
-    max-width: none !important;
-    max-height: none !important;
     display: block;
   }
 

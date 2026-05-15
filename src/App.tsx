@@ -841,7 +841,7 @@ function App() {
     document.addEventListener('mouseup', onUp)
   }
 
-  const orbitEnabled = !orbitLockToScenePanel || sceneHovered
+  const orbitEnabled = isMobileLandscapeViewport || !orbitLockToScenePanel || sceneHovered
 
   const runCloudSync = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -1477,7 +1477,7 @@ function App() {
     } as CSSProperties
     : undefined
   const effectiveLayerPanelWidth = isMobileLandscapeViewport
-    ? Math.min(layerPanelWidth, 220)
+    ? Math.min(layerPanelWidth, 180)
     : layerPanelWidth
 
   return (
