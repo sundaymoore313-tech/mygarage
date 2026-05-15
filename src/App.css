@@ -6917,6 +6917,14 @@ hr {
   .app-root.app-root-landscape-desktop .scene-panel > canvas {
     width: 100% !important;
     height: 100% !important;
+    min-height: 0;
+    flex: 1 1 auto;
+    display: block;
+  }
+
+  .app-root.app-root-landscape-desktop .scene-panel > div > canvas {
+    width: 100% !important;
+    height: 100% !important;
     display: block;
   }
 

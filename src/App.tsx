@@ -1733,31 +1733,33 @@ function App() {
           </section>
         </div>
 
-        <section className="bottom-dock" aria-label="Tools and inspector">
-          {floatingPanel === 'prints' && (
-            <div className="bottom-dock-panel-area">
-              <Suspense fallback={<div style={{ padding: 12, color: '#8ea0b4' }}>Loading...</div>}>
-                <PrintLibraryPanel onClose={() => {
-                  setFloatingPanel(null)
-                  fitCarInView()
-                }} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
-              </Suspense>
-            </div>
-          )}
+        {floatingPanel && (
+          <section className="bottom-dock" aria-label="Tools and inspector">
+            {floatingPanel === 'prints' && (
+              <div className="bottom-dock-panel-area">
+                <Suspense fallback={<div style={{ padding: 12, color: '#8ea0b4' }}>Loading...</div>}>
+                  <PrintLibraryPanel onClose={() => {
+                    setFloatingPanel(null)
+                    fitCarInView()
+                  }} isGuest={isGuest} onGuestSignIn={() => setGuestAuthOpen(true)} />
+                </Suspense>
+              </div>
+            )}
 
-          {floatingPanel && floatingPanel !== 'prints' && (
-            <div className="bottom-dock-inspector bottom-dock-inspector--mobile is-tab-open">
-              <MobileEditorLayout
-                embedded
-                embeddedTab={floatingPanel}
-                editorCanvas={null}
-                isGuest={isGuest}
-                onGuestSignIn={handleGuestSignIn}
-              />
-            </div>
-          )}
+            {floatingPanel !== 'prints' && (
+              <div className="bottom-dock-inspector bottom-dock-inspector--mobile is-tab-open">
+                <MobileEditorLayout
+                  embedded
+                  embeddedTab={floatingPanel}
+                  editorCanvas={null}
+                  isGuest={isGuest}
+                  onGuestSignIn={handleGuestSignIn}
+                />
+              </div>
+            )}
 
-        </section>
+          </section>
+        )}
       </main>
 
       {isCarSwitching && isMobileViewport && (
