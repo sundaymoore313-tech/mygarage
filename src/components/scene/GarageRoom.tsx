@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MeshReflectorMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { useEditorStore } from '../../store/editorStore'
@@ -438,15 +438,67 @@ export function GarageRoom() {
   const exitSignTexture = useMemo(() => makeExitSignTexture(), [])
   const customDecals = useEditorStore((state) => state.project.customDecals)
   const latestCustomLogoUrl = customDecals[0]?.imageUrl ?? null
-  const wallLogoTexture = useMemo(() => {
-    // Use custom decal if available, otherwise use default from public folder
-    const logoUrl = latestCustomLogoUrl ?? '/logos/default-garage-logo.png'
-    const tex = new THREE.TextureLoader().load(logoUrl)
-    tex.minFilter = THREE.LinearFilter
-    tex.magFilter = THREE.LinearFilter
-    tex.needsUpdate = true
-    return tex
+  const [wallLogoTexture, setWallLogoTexture] = useState<THREE.Texture | null>(null)
+
+  useEffect(() => {
+    let disposed = false
+    const loader = new THREE.TextureLoader()
+    const fallbackLogoUrl = '/logos/default-garage-logo.svg'
+
+    const configureTexture = (texture: THREE.Texture) => {
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.colorSpace = THREE.SRGBColorSpace
+    }
+
+    const commitTexture = (texture: THREE.Texture | null) => {
+      if (disposed) {
+        texture?.dispose()
+        return
+      }
+      setWallLogoTexture((previous) => {
+        if (previous === texture) return previous
+        previous?.dispose()
+        return texture
+      })
+    }
+
+    const loadTexture = (url: string, onError?: () => void) => {
+      loader.load(
+        url,
+        (texture) => {
+          configureTexture(texture)
+          commitTexture(texture)
+        },
+        undefined,
+        () => {
+          onError?.()
+        },
+      )
+    }
+
+    if (latestCustomLogoUrl) {
+      loadTexture(latestCustomLogoUrl, () => {
+        loadTexture(fallbackLogoUrl, () => commitTexture(null))
+      })
+    } else {
+      loadTexture(fallbackLogoUrl, () => commitTexture(null))
+    }
+
+    return () => {
+      disposed = true
+    }
   }, [latestCustomLogoUrl])
+
+  useEffect(() => {
+    return () => {
+      epoxyTexture.dispose()
+      cinderblockTexture.dispose()
+      ceilingTexture.dispose()
+      exitSignTexture.dispose()
+      wallLogoTexture?.dispose()
+    }
+  }, [ceilingTexture, cinderblockTexture, epoxyTexture, exitSignTexture, wallLogoTexture])
 
   const W = 22   // room width
   const D = 22   // room depth
