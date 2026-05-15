@@ -400,7 +400,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
   // selection shows the current layer font instead of the previous default.
   useEffect(() => {
     if (textLayer) {
-      setSelectedFont(typeof textLayer.fontFamily === 'string' && textLayer.fontFamily.trim().length > 0 ? textLayer.fontFamily : 'Impact')
+      setSelectedFont(textLayer.fontFamily)
     }
   }, [textLayer])
 

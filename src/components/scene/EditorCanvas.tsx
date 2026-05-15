@@ -2157,23 +2157,7 @@ function MeshClassifyOverlay({
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
   const isTextLayer = layer.type === 'text'
-  const finiteOr = (value: unknown, fallback: number) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
-
-  const safePosition: { x: number; y: number; z: number } = {
-    x: finiteOr(layer.transform.position?.x, 0),
-    y: finiteOr(layer.transform.position?.y, 0),
-    z: finiteOr(layer.transform.position?.z, 0),
-  }
-  const safeRotation: { x: number; y: number; z: number } = {
-    x: finiteOr(layer.transform.rotation?.x, 0),
-    y: finiteOr(layer.transform.rotation?.y, 0),
-    z: finiteOr(layer.transform.rotation?.z, 0),
-  }
-  const safeScale: { x: number; y: number; z: number } = {
-    x: Math.max(0.08, finiteOr(layer.transform.scale?.x, 1)),
-    y: Math.max(0.08, finiteOr(layer.transform.scale?.y, 1)),
-    z: Math.max(0.04, finiteOr(layer.transform.scale?.z, 1)),
-  }
+  const TEXT_UPRIGHT_SPIN = Math.PI
 
   let projectorRotation: THREE.Euler
 
@@ -2192,7 +2176,7 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
 
     // 1. Reconstruct surface normal (ignore user's z-spin when getting the normal)
     const storedQ = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(safeRotation.x, safeRotation.y, 0, 'XYZ'),
+      new THREE.Euler(layer.transform.rotation.x, layer.transform.rotation.y, 0, 'XYZ'),
     )
     const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
 
@@ -2208,20 +2192,17 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     // 3. Y axis: "up" direction on the car surface
     const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
 
-    // Keep text upright in world space: if the local up points downward,
-    // flip the in-plane axes to preserve the same surface normal.
-    if (yAxis.y < 0) {
-      xAxis.multiplyScalar(-1)
-      yAxis.multiplyScalar(-1)
-    }
-
     // 4. Build rotation from this upright basis
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
-    // 5. Apply user's manual spin (rotation.z) around the surface normal
-    if (safeRotation.z !== 0) {
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, safeRotation.z)
+    // 5. Apply fixed in-plane correction for text orientation.
+    const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, TEXT_UPRIGHT_SPIN)
+    baseQ.premultiply(uprightQ)
+
+    // 6. Apply user's manual spin (rotation.z) around the surface normal
+    if (layer.transform.rotation.z !== 0) {
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
       baseQ.premultiply(spinQ)
     }
 
@@ -2229,18 +2210,18 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
   } else {
     // Decal layers: position-based front/back roll correction (unchanged).
     const frontBackEpsilon = 0.02
-    let rollCorrection = safePosition.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+    let rollCorrection = layer.transform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
 
     // Near the car centerline, fall back to nearest vertex normal at placement point.
-    if (Math.abs(safePosition.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
+    if (Math.abs(layer.transform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
       const positionAttr = targetMesh.geometry.getAttribute('position')
       const normalAttr = targetMesh.geometry.getAttribute('normal')
 
       if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
         const layerWorldPos = new THREE.Vector3(
-          safePosition.x,
-          safePosition.y,
-          safePosition.z,
+          layer.transform.position.x,
+          layer.transform.position.y,
+          layer.transform.position.z,
         )
         const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
 
@@ -2269,24 +2250,29 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     }
 
     projectorRotation = new THREE.Euler(
-      safeRotation.x,
-      safeRotation.y,
-      safeRotation.z + rollCorrection,
+      layer.transform.rotation.x,
+      layer.transform.rotation.y,
+      layer.transform.rotation.z + rollCorrection,
       'XYZ',
     )
   }
 
-  try {
-    return new DecalGeometry(
-      targetMesh,
-      new THREE.Vector3(safePosition.x, safePosition.y, safePosition.z),
-      projectorRotation,
-      new THREE.Vector3(safeScale.x, safeScale.y, safeScale.z),
-    )
-  } catch {
-    // Keep the app responsive when a transient invalid transform appears.
-    return new THREE.BufferGeometry()
-  }
+  const depth = Math.max(0.04, layer.transform.scale.z)
+
+  return new DecalGeometry(
+    targetMesh,
+    new THREE.Vector3(
+      layer.transform.position.x,
+      layer.transform.position.y,
+      layer.transform.position.z,
+    ),
+    projectorRotation,
+    new THREE.Vector3(
+      Math.max(0.08, layer.transform.scale.x),
+      Math.max(0.08, layer.transform.scale.y),
+      depth,
+    ),
+  )
 }
 
 function createMirroredLayer<T extends DecalLayer | TextLayer>(layer: T): T {
