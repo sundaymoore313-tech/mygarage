@@ -454,19 +454,46 @@ function CameraPresetSync({
   controlsRef: MutableRefObject<OrbitControllerHandle | null>
   onResetCameraReady?: (fn: ResetCameraFn) => void
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
+
+  const getResponsivePreset = useCallback((view: CameraViewId, preset: { position: [number, number, number]; target: [number, number, number] }) => {
+    const aspect = size.width / Math.max(1, size.height)
+    if (aspect <= 1.9) {
+      return preset
+    }
+
+    const px = preset.position[0]
+    const py = preset.position[1]
+    const pz = preset.position[2]
+    const tx = preset.target[0]
+    const ty = preset.target[1]
+    const tz = preset.target[2]
+
+    const distanceScale = view === 'side' ? 0.68 : 0.76
+    const yTargetOffset = view === 'side' ? -0.18 : -0.08
+    const yCameraOffset = view === 'side' ? 0.12 : 0.06
+
+    const nx = tx + (px - tx) * distanceScale
+    const ny = ty + (py - ty) * distanceScale + yCameraOffset
+    const nz = tz + (pz - tz) * distanceScale
+
+    return {
+      position: [nx, ny, nz] as [number, number, number],
+      target: [tx, ty + yTargetOffset, tz] as [number, number, number],
+    }
+  }, [size.height, size.width])
 
   const resetToPreset = useCallback((view: CameraViewId = cameraView) => {
     const fileName = (modelUrl ?? '').split('/').pop() ?? ''
     const effectiveView = CAMERA_VIEW_OVERRIDES_BY_FILE[fileName]?.[view] ?? view
-    const p = CAMERA_PRESETS[effectiveView]
+    const p = getResponsivePreset(effectiveView, CAMERA_PRESETS[effectiveView])
     camera.position.set(...p.position)
     const controls = controlsRef.current
     if (controls) {
       controls.target.set(...p.target)
       controls.update()
     }
-  }, [camera, cameraView, controlsRef, modelUrl])
+  }, [camera, cameraView, controlsRef, getResponsivePreset, modelUrl])
 
   useEffect(() => { resetToPreset() }, [resetToPreset])
 
