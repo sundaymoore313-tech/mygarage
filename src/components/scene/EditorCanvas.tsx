@@ -2149,7 +2149,21 @@ function MeshClassifyOverlay({
 }
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
-  const rollCorrection = DECAL_UPRIGHT_ROLL
+  // Detect back-facing surfaces and skip roll correction for them
+  // Back-facing surfaces have normals pointing away (significantly negative Z)
+  let rollCorrection = DECAL_UPRIGHT_ROLL
+  if (targetMesh.geometry instanceof THREE.BufferGeometry && targetMesh.geometry.attributes.normal) {
+    const normals = targetMesh.geometry.attributes.normal.array as Float32Array
+    if (normals.length > 0) {
+      // Use first vertex normal as representative (most text/decals are on flat surfaces)
+      const firstNormal = new THREE.Vector3(normals[0], normals[1], normals[2])
+      firstNormal.applyMatrix4(targetMesh.matrixWorld).normalize()
+      // If normal points significantly toward negative Z (back-facing), skip roll correction
+      if (firstNormal.z < -0.3) {
+        rollCorrection = 0
+      }
+    }
+  }
   const projectorRotation = new THREE.Euler(
     layer.transform.rotation.x,
     layer.transform.rotation.y,
