@@ -1,0 +1,4 @@
+Source: Custom generated in-project
+License: Internal project use
+Notes: Mopar-inspired text decals (not official OEM vector logos)
+Created: 2026-05-13 UTC

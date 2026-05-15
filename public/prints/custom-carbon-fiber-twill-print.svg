@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <pattern id="twill" width="48" height="48" patternUnits="userSpaceOnUse">
+      <rect width="48" height="48" fill="#0e1116"/>
+      <path d="M0 0h24v24H0z" fill="#1b212a"/>
+      <path d="M24 24h24v24H24z" fill="#1b212a"/>
+      <path d="M24 0h24v24H24z" fill="#0a0d12"/>
+      <path d="M0 24h24v24H0z" fill="#0a0d12"/>
+      <path d="M-24 24L24 -24M0 48L48 0M24 72L72 24" stroke="#2f3641" stroke-opacity="0.35" stroke-width="2"/>
+    </pattern>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#twill)"/>
+</svg>

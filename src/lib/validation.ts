@@ -78,7 +78,7 @@ export function clampStripeOffset(value: unknown): number {
  * Validate and clamp stripe width
  */
 export function clampStripeWidth(value: unknown): number {
-  return clampNumber(value, { min: 0.02, max: 1.5 })
+  return clampNumber(value, { min: 0.0001, max: 1.5 })
 }
 
 /**

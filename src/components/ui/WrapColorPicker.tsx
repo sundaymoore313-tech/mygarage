@@ -12,9 +12,17 @@ type WrapColorPickerProps = {
 
 export function WrapColorPicker({ value, onChange, disabled, label, className }: WrapColorPickerProps) {
   const [open, setOpen] = useState(false)
+  const [brandFilter, setBrandFilter] = useState<'all' | '3M' | 'Avery Dennison' | 'Oracal' | 'KPMF'>('all')
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const btnRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
+
+  const filteredSwatches =
+    brandFilter === 'all'
+      ? WRAP_COLOR_SWATCHES
+      : WRAP_COLOR_SWATCHES.filter((swatch) => swatch.brand === brandFilter)
+
+  const activeSwatch = WRAP_COLOR_SWATCHES.find((swatch) => swatch.colorHex.toLowerCase() === value.toLowerCase())
 
   function openPopover() {
     if (disabled) return
@@ -86,8 +94,23 @@ export function WrapColorPicker({ value, onChange, disabled, label, className }:
             >✕</button>
           </div>
 
+          <div className="swatch-popover-custom" style={{ marginTop: 0 }}>
+            <label>Brand</label>
+            <select
+              value={brandFilter}
+              onChange={(e) => setBrandFilter(e.target.value as 'all' | '3M' | 'Avery Dennison' | 'Oracal' | 'KPMF')}
+              aria-label="Filter by wrap brand"
+            >
+              <option value="all">All Brands</option>
+              <option value="3M">3M</option>
+              <option value="Avery Dennison">Avery Dennison</option>
+              <option value="Oracal">Oracal</option>
+              <option value="KPMF">KPMF</option>
+            </select>
+          </div>
+
           <div className="swatch-popover-grid" role="listbox" aria-label="Wrap color swatches">
-            {WRAP_COLOR_SWATCHES.map((swatch) => {
+            {filteredSwatches.map((swatch) => {
               const active = swatch.colorHex.toLowerCase() === value.toLowerCase()
               return (
                 <button
@@ -103,15 +126,14 @@ export function WrapColorPicker({ value, onChange, disabled, label, className }:
             })}
           </div>
 
-          <div className="swatch-popover-custom">
-            <label>Custom</label>
-            <input
-              type="color"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              aria-label="Custom color"
-            />
-          </div>
+          {activeSwatch && (
+            <div className="swatch-popover-custom" style={{ paddingTop: 8 }}>
+              <label>Selected</label>
+              <span className="hint" style={{ fontSize: 12 }}>
+                {activeSwatch.brand} {activeSwatch.code} - {activeSwatch.name}
+              </span>
+            </div>
+          )}
         </div>,
         document.body
       )}

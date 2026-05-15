@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { WRAP_COLOR_SWATCHES } from '../../lib/wrapColorPalette'
 import '../styles/MobileCarColorsPanel.css'
 
 interface MobileCarColorsPanelProps {
@@ -10,25 +11,7 @@ type Finish = 'gloss' | 'chrome' | 'matte' | 'satin'
 export const MobileCarColorsPanel: React.FC<MobileCarColorsPanelProps> = ({ onClose: _onClose }) => {
   const [selectedFinish, setSelectedFinish] = useState<Finish>('gloss')
 
-  // Example color palette - can be expanded
-  const colors = [
-    { name: 'Red', hex: '#FF0000' },
-    { name: 'Orange', hex: '#FF8800' },
-    { name: 'Yellow', hex: '#FFFF00' },
-    { name: 'Green', hex: '#00FF00' },
-    { name: 'Blue', hex: '#0000FF' },
-    { name: 'Purple', hex: '#8800FF' },
-    { name: 'Pink', hex: '#FF0088' },
-    { name: 'Cyan', hex: '#00FFFF' },
-    { name: 'Brown', hex: '#8B4513' },
-    { name: 'Gray', hex: '#808080' },
-    { name: 'Black', hex: '#000000' },
-    { name: 'White', hex: '#FFFFFF' },
-    { name: 'Gold', hex: '#FFD700' },
-    { name: 'Silver', hex: '#C0C0C0' },
-    { name: 'Maroon', hex: '#800000' },
-    { name: 'Navy', hex: '#000080' },
-  ]
+  const colors = WRAP_COLOR_SWATCHES
 
   const finishes: Array<{ id: Finish; label: string }> = [
     { id: 'gloss', label: 'Gloss' },
@@ -65,12 +48,12 @@ export const MobileCarColorsPanel: React.FC<MobileCarColorsPanelProps> = ({ onCl
         <div className="colors-scroll">
           {colors.map((color) => (
             <button
-              key={color.name}
+              key={color.id}
               className="color-swatch"
-              style={{ backgroundColor: color.hex }}
-              onClick={() => handleColorSelect(color.hex)}
-              title={color.name}
-              aria-label={`${color.name} color`}
+              style={{ backgroundColor: color.colorHex }}
+              onClick={() => handleColorSelect(color.colorHex)}
+              title={`${color.brand} ${color.code} - ${color.name}`}
+              aria-label={`${color.brand} ${color.code} ${color.name}`}
             />
           ))}
         </div>

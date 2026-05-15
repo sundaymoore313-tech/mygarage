@@ -126,7 +126,7 @@ const PROFILE_SNAP_MESH_LABELS: Record<string, string[]> = {
 }
 
 const PROFILE_THUMBNAIL_ROTATION_Y_BY_FILE: Record<string, number> = {
-  '2018_ford_mustang_gt.glb': Math.PI,
+  'dodge_charger_scatpack_widebody.glb': -Math.PI / 2,
 }
 
 function getClassificationForLabel(
@@ -287,6 +287,7 @@ function ProfileCarThumbnail({ modelUrl, fileName, groundOffsetY, paintColorHex 
       camera={{ position: [-2.8, 2.0, 4.8], fov: 34 }}
       shadows="percentage"
       gl={{ antialias: true, alpha: true }}
+      frameloop="demand"
       style={{ width: '100%', height: '100%' }}
     >
       <color attach="background" args={['#141414']} />

@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import type { ChangeEvent } from 'react'
 import * as THREE from 'three'
 import { NativeOrbitControls } from '../scene/NativeOrbitControls'
@@ -39,15 +39,19 @@ type SelectorNotice = {
 
 const MANIFEST_URL = '/models/manifest.json'
 const HIDDEN_SELECTOR_MODELS = new Set(['car.glb', 'dodge_charger_srt8.glb', 'unmarked_police_jeep_track_hawk.glb'])
+const EXCLUDED_SELECTOR_PATTERNS = [/gt500/i, /ford[_\s-]*mustang/i]
 const IMPORTED_CARS_STORAGE_KEY = 'mygarage-imported-cars-v1'
 const AUTH_LOCAL_KEY = 'mygarage-auth-local'
 const AUTH_SESSION_KEY = 'mygarage-auth-session'
 const PROFILE_AVATAR_KEY = 'mygarage-profile-avatar'
 
+function isExcludedSelectorCar(item: { fileName: string; name?: string }): boolean {
+  const haystack = `${item.fileName} ${item.name ?? ''}`
+  return EXCLUDED_SELECTOR_PATTERNS.some((pattern) => pattern.test(haystack))
+}
+
 function shouldUseStaticSelectorThumbnails(): boolean {
-  // Always prefer static thumbnails in the selector to avoid many WebGL contexts
-  // and keep scrolling/tap latency smooth on all devices.
-  return true
+  return false
 }
 
 function hashString(input: string): number {
@@ -188,11 +192,188 @@ const SNAP_MESH_LABELS: Record<string, string[]> = {
 }
 
 const THUMBNAIL_ROTATION_Y_BY_FILE: Record<string, number> = {
-  '2018_ford_mustang_gt.glb': Math.PI,
   '2019_chevrolet_corvette_c8_stingray.glb': Math.PI,
+  'dodge_charger_scatpack_widebody.glb': 0,
+}
+
+const THUMBNAIL_MODEL_SCALE_BY_FILE: Record<string, number> = {
+  'dodge_charger_scatpack_widebody.glb': 3.5,
+}
+
+const THUMBNAIL_MODEL_OFFSET_X_BY_FILE: Record<string, number> = {
+  'dodge_charger_scatpack_widebody.glb': -0.35,
+}
+
+// Overrides groundOffsetY for the selector thumbnail canvas ONLY.
+// Does not affect how the car sits in the 3D editor.
+const THUMBNAIL_GROUND_OFFSET_BY_FILE: Record<string, number> = {
+  'dodge_charger_scatpack_widebody.glb': 0.12,
 }
 
 const THUMBNAIL_MODEL_OFFSET_X = -0.75
+
+// ── Thumbnail auto-generation queue ─────────────────────────────────────────
+// Single hidden Canvas renders one car at a time, caches result in
+// sessionStorage so subsequent page loads show real images instantly.
+
+const THUMB_SESSION_PREFIX = 'mg-thumb-v1-'
+
+type ThumbJob = {
+  modelUrl: string
+  fileName: string
+  groundOffsetY?: number
+  fallbackSrc: string
+}
+
+function getThumbnailModelUrl(fileName: string, modelUrl: string): string {
+  if (fileName === 'dodge_charger_scatpack_widebody.glb') {
+    return '/models/dodge_charger_srt_hellcat__high_quality.glb'
+  }
+  return modelUrl
+}
+
+const thumbJobQueue: ThumbJob[] = []
+const thumbCallbacks = new Map<string, Set<(dataUrl: string) => void>>()
+let thumbQueueNotify: (() => void) | null = null
+
+function readCachedThumb(fileName: string): string | null {
+  try { return sessionStorage.getItem(THUMB_SESSION_PREFIX + fileName) } catch { return null }
+}
+
+function writeCachedThumb(fileName: string, dataUrl: string): void {
+  try { sessionStorage.setItem(THUMB_SESSION_PREFIX + fileName, dataUrl) } catch {
+    // Ignore quota/storage-access failures; thumbnails still work for current render.
+  }
+}
+
+function enqueueThumb(job: ThumbJob, onReady: (dataUrl: string) => void): () => void {
+  let set = thumbCallbacks.get(job.fileName)
+  if (!set) { set = new Set(); thumbCallbacks.set(job.fileName, set) }
+  set.add(onReady)
+  if (!thumbJobQueue.some((j) => j.fileName === job.fileName)) {
+    thumbJobQueue.push(job)
+    thumbQueueNotify?.()
+  }
+  return () => { thumbCallbacks.get(job.fileName)?.delete(onReady) }
+}
+
+function emitThumbReady(fileName: string, dataUrl: string): void {
+  writeCachedThumb(fileName, dataUrl)
+  thumbCallbacks.get(fileName)?.forEach((cb) => cb(dataUrl))
+  thumbCallbacks.delete(fileName)
+}
+
+// ── Thumbnail capture scene (runs inside Canvas context) ──────────────────
+function ThumbnailCaptureScene({
+  job,
+  onCaptured,
+}: {
+  job: ThumbJob
+  onCaptured: (fileName: string, dataUrl: string) => void
+}) {
+  const { gl } = useThree()
+  // useModelScene suspends via React Suspense until loaded — scene is always ready here
+  const { scene } = useModelScene(job.modelUrl)
+  const doneRef = useRef(false)
+
+  const positioned = useMemo(() => {
+    const clone = scene.clone(true)
+    const box = new THREE.Box3().setFromObject(clone)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const scale = THUMBNAIL_MODEL_SCALE_BY_FILE[job.fileName] ?? 3.8
+    if (maxDim > 0) clone.scale.setScalar(scale / maxDim)
+    const rebox = new THREE.Box3().setFromObject(clone)
+    const center = rebox.getCenter(new THREE.Vector3())
+    const explicitSnap = SNAP_MESH_LABELS[job.fileName]
+    const snapY = resolveGroundSnapY(clone, explicitSnap)
+    clone.position.sub(center)
+    clone.position.x += THUMBNAIL_MODEL_OFFSET_X + (THUMBNAIL_MODEL_OFFSET_X_BY_FILE[job.fileName] ?? 0)
+    clone.position.y = -snapY + (THUMBNAIL_GROUND_OFFSET_BY_FILE[job.fileName] ?? job.groundOffsetY ?? 0)
+    clone.rotation.y = THUMBNAIL_ROTATION_Y_BY_FILE[job.fileName] ?? 0
+    return clone
+  }, [scene, job])
+
+  useEffect(() => {
+    if (!positioned || doneRef.current) return
+    doneRef.current = true
+    const id = setTimeout(() => {
+      const dataUrl = (() => {
+        try {
+          return gl.domElement.toDataURL('image/webp', 0.88)
+        } catch {
+          try {
+            return gl.domElement.toDataURL('image/png')
+          } catch {
+            return job.fallbackSrc
+          }
+        }
+      })()
+      onCaptured(job.fileName, dataUrl)
+    }, 600)
+    return () => clearTimeout(id)
+  }, [positioned, gl, job, onCaptured])
+
+  if (!positioned) return null
+  return <primitive object={positioned} />
+}
+
+// ── Thumbnail generator (single hidden Canvas, processes queue) ───────────
+function ThumbnailGenerator() {
+  const [currentJob, setCurrentJob] = useState<ThumbJob | null>(null)
+  const processingRef = useRef(false)
+
+  const advance = useCallback(() => {
+    processingRef.current = false
+    const next = thumbJobQueue.find((j) => readCachedThumb(j.fileName) === null)
+    if (next) {
+      processingRef.current = true
+      setCurrentJob({ ...next })
+    } else {
+      setCurrentJob(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    thumbQueueNotify = () => {
+      if (processingRef.current) return
+      advance()
+    }
+    thumbQueueNotify()
+    return () => { thumbQueueNotify = null }
+  }, [advance])
+
+  const handleCaptured = useCallback((fileName: string, dataUrl: string) => {
+    emitThumbReady(fileName, dataUrl)
+    const idx = thumbJobQueue.findIndex((j) => j.fileName === fileName)
+    if (idx >= 0) thumbJobQueue.splice(idx, 1)
+    advance()
+  }, [advance])
+
+  if (!currentJob) return null
+
+  return (
+    <div style={{ position: 'fixed', left: '-1200px', top: 0, width: 512, height: 512, pointerEvents: 'none' }}>
+      <Canvas
+        key={currentJob.fileName}
+        camera={{ position: [-2.2, 1.6, 3.8], fov: 36 }}
+        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
+        style={{ width: 512, height: 512 }}
+      >
+        <color attach="background" args={['#111111']} />
+        <ambientLight intensity={3.0} color="#dde8ff" />
+        <spotLight intensity={14} position={[-5, 8, 5]} angle={0.36} penumbra={0.2} distance={40} color="#ffffff" />
+        <spotLight intensity={7} position={[6, 5, 3]} angle={0.55} penumbra={0.5} distance={32} color="#fff6e8" />
+        <spotLight intensity={9} position={[0, 7, -9]} angle={0.4} penumbra={0.35} distance={36} color="#eef4ff" />
+        <pointLight intensity={2.2} position={[0, -0.5, 1.5]} color="#7ab0dd" distance={12} />
+        <Suspense fallback={null}>
+          <ThumbnailCaptureScene job={currentJob} onCaptured={handleCaptured} />
+        </Suspense>
+        <NativeOrbitControls enabled={false} enableRotate={false} enableZoom={false} enablePan={false} target={[0.7, 0.55, 0]} />
+      </Canvas>
+    </div>
+  )
+}
 
 function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[]): number {
   let globalMinY = Number.POSITIVE_INFINITY
@@ -280,8 +461,9 @@ function resolveGroundSnapY(root: THREE.Object3D, explicitSnapLabels?: string[])
   return 0
 }
 
-function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string; fileName: string; groundOffsetY?: number }) {
-  const { scene } = useModelScene(modelUrl)
+function CarModel({ modelUrl, thumbnailModelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string; thumbnailModelUrl?: string; fileName: string; groundOffsetY?: number }) {
+  const effectiveModelUrl = thumbnailModelUrl ?? modelUrl
+  const { scene } = useModelScene(effectiveModelUrl)
   const cloned = useMemo(() => {
     const clone = scene.clone(true)
 
@@ -294,13 +476,14 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
     const box = new THREE.Box3().setFromObject(clone)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z)
-    if (maxDim > 0) clone.scale.setScalar(3.8 / maxDim)
+    const scale = THUMBNAIL_MODEL_SCALE_BY_FILE[fileName] ?? 3.8
+    if (maxDim > 0) clone.scale.setScalar(scale / maxDim)
     const rebox = new THREE.Box3().setFromObject(clone)
     const center = rebox.getCenter(new THREE.Vector3())
     const explicitSnapLabels = SNAP_MESH_LABELS[fileName]
     const snapY = resolveGroundSnapY(clone, explicitSnapLabels)
     clone.position.sub(center)
-    clone.position.x += THUMBNAIL_MODEL_OFFSET_X
+    clone.position.x += THUMBNAIL_MODEL_OFFSET_X + (THUMBNAIL_MODEL_OFFSET_X_BY_FILE[fileName] ?? 0)
     clone.position.y = -snapY
     clone.position.y += groundOffsetY
     clone.rotation.y = THUMBNAIL_ROTATION_Y_BY_FILE[fileName] ?? 0
@@ -311,19 +494,45 @@ function CarModel({ modelUrl, fileName, groundOffsetY = 0 }: { modelUrl: string;
 
 function CarThumbnail({
   modelUrl,
+  thumbnailModelUrl,
   fileName,
   groundOffsetY,
   carName,
   staticMode,
 }: {
   modelUrl: string
+  thumbnailModelUrl?: string
   fileName: string
   groundOffsetY?: number
   carName: string
   staticMode: boolean
 }) {
+  const effectiveModelUrl = thumbnailModelUrl ?? modelUrl
+  const generatedPreviewSrc = useMemo(
+    () => buildStaticCarThumbnailDataUrl(carName, fileName),
+    [carName, fileName],
+  )
+  // Always start with the SVG immediately — avoids 404 cascade from missing static files
+  const [imageSrc, setImageSrc] = useState<string>(() => {
+    if (staticMode) {
+      const cached = readCachedThumb(fileName)
+      if (cached) return cached
+    }
+    return generatedPreviewSrc
+  })
+
+  // In static mode: check sessionStorage, subscribe to generator for real car image
+  useEffect(() => {
+    if (!staticMode) return
+    const cached = readCachedThumb(fileName)
+    if (cached) return
+    const unsub = enqueueThumb({ modelUrl: effectiveModelUrl, fileName, groundOffsetY, fallbackSrc: generatedPreviewSrc }, (dataUrl) => {
+      setImageSrc(dataUrl)
+    })
+    return unsub
+  }, [staticMode, fileName, effectiveModelUrl, groundOffsetY, generatedPreviewSrc])
+
   if (staticMode) {
-    const imageSrc = buildStaticCarThumbnailDataUrl(carName, fileName)
     return (
       <div className="car-thumbnail-fallback" aria-hidden="true">
         <img
@@ -334,7 +543,6 @@ function CarThumbnail({
           decoding="async"
           draggable={false}
         />
-        <span className="car-thumbnail-fallback-badge">Fast Preview</span>
       </div>
     )
   }
@@ -380,7 +588,12 @@ function CarThumbnail({
       <pointLight intensity={2.2} position={[0, -0.5, 1.5]} color="#7ab0dd" distance={12} />
 
       <Suspense fallback={null}>
-        <CarModel modelUrl={modelUrl} fileName={fileName} groundOffsetY={groundOffsetY} />
+        <CarModel
+          modelUrl={modelUrl}
+          thumbnailModelUrl={thumbnailModelUrl}
+          fileName={fileName}
+          groundOffsetY={THUMBNAIL_GROUND_OFFSET_BY_FILE[fileName] ?? groundOffsetY}
+        />
       </Suspense>
       <NativeOrbitControls
         enabled={false}
@@ -450,7 +663,9 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
         }
 
         const visibleItems = Array.isArray(json.items)
-          ? json.items.filter((item) => !HIDDEN_SELECTOR_MODELS.has(item.fileName.toLowerCase()))
+          ? json.items
+            .filter((item) => !HIDDEN_SELECTOR_MODELS.has(item.fileName.toLowerCase()))
+            .filter((item) => !isExcludedSelectorCar(item))
           : []
         setPreloadedItems(visibleItems)
 
@@ -460,7 +675,15 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
           fileName: item.fileName,
           modelUrl: item.modelUrl,
         }))
-        setImportedItems(importedMapped)
+        const visibleImported = importedMapped.filter((item) => !isExcludedSelectorCar(item))
+        if (visibleImported.length !== importedMapped.length) {
+          void saveImportedCarsToStorage(visibleImported.map((item) => ({
+            name: item.name,
+            fileName: item.fileName,
+            modelUrl: item.modelUrl,
+          })))
+        }
+        setImportedItems(visibleImported)
 
       } catch {
         if (mounted) {
@@ -536,7 +759,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
           return false
         }
         seenInBatch.add(key)
-        return !importedItems.some((existing) => existing.fileName.toLowerCase() === key)
+        return !importedItems.some((existing) => existing.fileName.toLowerCase() === key) && !isExcludedSelectorCar(item)
       })
 
       const nextImported = [...importedItems, ...deduped]
@@ -665,6 +888,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
 
   return (
     <section className="car-selector-page">
+      {useStaticThumbnails && <ThumbnailGenerator />}
       <div className="car-selector-header">
         <div className="car-selector-header-text">
           {onGoHome ? (
@@ -777,6 +1001,7 @@ export function CarSelectorPage({ onGoHome, onOpenProfile, onEnterEditor, isGues
             <div className="car-visual">
               <CarThumbnail
                 modelUrl={car.modelUrl}
+                thumbnailModelUrl={getThumbnailModelUrl(car.fileName, car.modelUrl)}
                 fileName={car.fileName}
                 groundOffsetY={car.groundOffsetY}
                 carName={car.name}

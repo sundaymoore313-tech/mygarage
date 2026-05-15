@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect } from 'vitest'
 import { useEditorStore } from '../store/editorStore'
-import type { DecalLayer, TextLayer } from '../types/editor'
+import type { DecalLayer, StripeLayer, TextLayer } from '../types/editor'
 
 /**
  * Phase 2 Layer Operation Reliability Tests
@@ -353,6 +353,42 @@ describe('layer operation reliability', () => {
       // Verify all IDs are unique
       const ids = state.project.layers.map(l => l.id)
       expect(new Set(ids).size).toBe(4)
+    })
+  })
+
+  describe('stripe layer updates', () => {
+    it('preserves transform data when updating stripe color and movement', () => {
+      const state = useEditorStore.getState()
+
+      state.addStripeLayer()
+
+      let nextState = useEditorStore.getState()
+      const stripe = nextState.project.layers.find((layer): layer is StripeLayer => layer.type === 'stripe')
+      expect(stripe).toBeDefined()
+
+      const beforeUpdate = stripe!
+
+      nextState.updateLayer(beforeUpdate.id, {
+        colorHex: '#00a3ff',
+        stripeOffsetX: 0.42,
+        transform: {
+          rotation: {
+            z: 0.33,
+          },
+        },
+      })
+
+      nextState = useEditorStore.getState()
+      const updated = nextState.project.layers.find((layer): layer is StripeLayer => layer.id === beforeUpdate.id && layer.type === 'stripe')
+      expect(updated).toBeDefined()
+
+      expect(updated?.colorHex).toBe('#00a3ff')
+      expect(updated?.stripeOffsetX).toBe(0.42)
+      expect(updated?.transform.rotation.z).toBe(0.33)
+      expect(updated?.transform.position).toEqual(beforeUpdate.transform.position)
+      expect(updated?.transform.scale).toEqual(beforeUpdate.transform.scale)
+      expect(updated?.transform.skew).toEqual(beforeUpdate.transform.skew)
+      expect(updated?.transform.opacity).toBe(beforeUpdate.transform.opacity)
     })
   })
 

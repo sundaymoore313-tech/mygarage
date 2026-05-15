@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300">
+  <title>Mopar Redeye Style Text</title>
+  <g transform="translate(85,194) skewX(-11)">
+    <text x="0" y="0" font-family="Impact, Arial Black, sans-serif" font-size="170" letter-spacing="7" fill="#111111">REDEYE</text>
+    <circle cx="920" cy="-78" r="40" fill="#d71920" />
+    <circle cx="920" cy="-78" r="18" fill="#111111" />
+  </g>
+</svg>

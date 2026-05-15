@@ -1,0 +1,4 @@
+Source: Custom generated in-project
+License: Internal project use
+Notes: Cartoon-style livery textures (non-branded)
+Created: 2026-05-13 UTC

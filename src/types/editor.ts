@@ -51,6 +51,7 @@ export type LayerBase = {
   mirrorX: boolean
   mirrorToOtherSide: boolean
   mirrorColorHex: string | null
+  mirrorMirrorX: boolean
   visible: boolean
   locked: boolean
   groupId: string | null

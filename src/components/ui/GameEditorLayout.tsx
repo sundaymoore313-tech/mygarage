@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Car, Type, Layers, ChevronUp } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
@@ -62,37 +62,47 @@ export function GameEditorLayout({ editorCanvas, topBar }: GameEditorLayoutProps
 
   const sidebarWidth = sidebarCollapsed ? 50 : 300
 
+  const mainLayoutStyle = useMemo(() => ({ display: 'flex', flex: 1, overflow: 'hidden' } as const), [])
+  const sidebarStyle = useMemo(() => ({
+    width: `${sidebarWidth}px`,
+    backgroundColor: '#0f172a',
+    borderRight: '1px solid #1e293b',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    transition: 'width 0.2s ease-out',
+    overflow: 'hidden',
+  }), [sidebarWidth])
+  const sidebarHeaderStyle = useMemo(() => ({
+    padding: '12px 8px',
+    borderBottom: '1px solid #1e293b',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+    flexShrink: 0,
+  }), [sidebarCollapsed])
+  const toolSectionStyle = useMemo(() => ({
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    padding: sidebarCollapsed ? '8px 4px' : '12px',
+    borderBottom: '1px solid #1e293b',
+    flexShrink: 0,
+  }), [sidebarCollapsed])
+
   return (
     <div className="app-root game-editor-root">
       {/* Top Bar */}
       {topBar}
 
       {/* Main Layout */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={mainLayoutStyle}>
         {/* Left Sidebar */}
         <aside
           className="game-editor-sidebar"
-          style={{
-            width: `${sidebarWidth}px`,
-            backgroundColor: '#0f172a',
-            borderRight: '1px solid #1e293b',
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.2s ease-out',
-            overflow: 'hidden',
-          }}
+          style={sidebarStyle}
         >
           {/* Sidebar Header */}
-          <div
-            style={{
-              padding: '12px 8px',
-              borderBottom: '1px solid #1e293b',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: sidebarCollapsed ? 'center' : 'space-between',
-              flexShrink: 0,
-            }}
-          >
+          <div style={sidebarHeaderStyle}>
             {!sidebarCollapsed && (
               <span
                 style={{
@@ -126,16 +136,7 @@ export function GameEditorLayout({ editorCanvas, topBar }: GameEditorLayoutProps
           </div>
 
           {/* Tool Buttons */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              padding: sidebarCollapsed ? '8px 4px' : '12px',
-              borderBottom: '1px solid #1e293b',
-              flexShrink: 0,
-            }}
-          >
+          <div style={toolSectionStyle}>
             {toolButtons.map((tool) => (
               <button
                 key={tool.id}

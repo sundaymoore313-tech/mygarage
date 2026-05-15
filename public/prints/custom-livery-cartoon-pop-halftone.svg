@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024" viewBox="0 0 2048 1024">
+  <defs>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="5" fill="#131722" fill-opacity="0.45"/>
+    </pattern>
+  </defs>
+  <rect width="2048" height="1024" fill="#f6e64b"/>
+  <rect width="2048" height="1024" fill="url(#dots)"/>
+  <path d="M0 880L820 200L980 200L160 880Z" fill="#ff4f45"/>
+  <path d="M260 940L1080 260L1230 260L410 940Z" fill="#2aa7ff"/>
+  <path d="M640 1024L1460 340L1610 340L790 1024Z" fill="#111827"/>
+  <text x="1440" y="270" font-family="Impact, Arial Black, sans-serif" font-size="180" fill="#ffffff" transform="rotate(-14 1440 270)">POP</text>
+</svg>

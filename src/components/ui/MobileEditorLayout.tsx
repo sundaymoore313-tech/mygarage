@@ -302,7 +302,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
   // Embedded mode: derive active tab synchronously from prop (no effect delay = no flicker)
   const activeTab: TabId | null = embedded ? (embeddedTab ?? null) : _internalTab
   const [layerScaleMode, setLayerScaleMode] = useState<LayerScaleMode>('uniform')
-  const [textDetailsTab, setTextDetailsTab] = useState<'text' | 'transform'>('text')
+  // textDetailsTab removed — transform controls are always visible
 
   // Car paint
   const setPaint               = useEditorStore(s => s.setPaint)
@@ -383,6 +383,14 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
       setEditingTextContent(textLayer.text || '')
     }
   }, [activeTab, textLayer])
+
+  // Keep the font chips aligned with the selected text layer, so changing
+  // selection shows the current layer font instead of the previous default.
+  useEffect(() => {
+    if (textLayer) {
+      setSelectedFont(textLayer.fontFamily)
+    }
+  }, [textLayer])
 
   // Commit text to undo history when leaving the text tab
   useEffect(() => {
@@ -720,7 +728,12 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                 <button key={f.family} type="button"
                   className={`mobile-font-chip${selectedFont === f.family ? ' active' : ''}`}
                   style={{ fontFamily: f.family }}
-                  onClick={() => setSelectedFont(f.family)}
+                  onClick={() => {
+                    setSelectedFont(f.family)
+                    if (textLayer) {
+                      updateLayer(textLayer.id, { fontFamily: f.family, fontUrl: f.url ?? null } as Parameters<typeof updateLayer>[1])
+                    }
+                  }}
                 >{f.label}</button>
               ))}
             </div>
@@ -802,14 +815,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                     ↔ Flip
                   </button>
                 )}
-                <button
-                  type="button"
-                  className={`mobile-chip${textDetailsTab === 'transform' ? ' active' : ''}`}
-                  onClick={() => setTextDetailsTab((v) => (v === 'transform' ? 'text' : 'transform'))}
-                  title="Transform controls"
-                >
-                  Transform
-                </button>
+
                 <span className="mobile-chips-sep" />
                 <input
                   type="text"
@@ -855,7 +861,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                     </div>
                   </>
                 )}
-                {textDetailsTab === 'transform' && (
+                {(
                   <>
                     <span className="mobile-chips-sep" />
                     {(['uniform', 'horl', 'vert', 'rotate'] as LayerScaleMode[]).map(m => (
@@ -946,7 +952,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                   </>
                 )}
               </div>
-              {textDetailsTab === 'text' && textHsl && (
+              {textHsl && (
                 <div className="mobile-transform-slider-row mobile-transform-slider-row--saturation">
                   <span className="mobile-slider-label">Saturation</span>
                   <input
@@ -969,7 +975,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                 </div>
               )}
 
-              {textDetailsTab === 'transform' && (
+              {
                 <>
                   <div className="mobile-transform-slider-row">
                     {layerScaleMode === 'horl' && (
@@ -1010,7 +1016,7 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                     )}
                   </div>
                 </>
-              )}
+              }
             </>
           )}
         </div>

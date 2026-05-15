@@ -30,3 +30,7 @@ dist-ssr
 
 # Supabase local CLI/cache artifacts
 supabase/.temp/
+
+# Local analysis artifacts
+lint_*.json
+search_results*.txt

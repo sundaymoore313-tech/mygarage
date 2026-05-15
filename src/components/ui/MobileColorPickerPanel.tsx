@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { WRAP_COLOR_SWATCHES } from '../../lib/wrapColorPalette'
 import '../styles/MobileColorPickerPanel.css'
 
 export type PaintPart = 'fullcar' | 'hood' | 'trunk' | 'rims'
@@ -37,16 +38,57 @@ export const MobileColorPickerPanel: React.FC<MobileColorPickerPanelProps> = ({
     onColorChange(hue, saturation, newLight, selectedPart)
   }
 
-  const presetColors = [
-    { name: 'Red', h: 0, s: 100, l: 50 },
-    { name: 'Orange', h: 30, s: 100, l: 50 },
-    { name: 'Yellow', h: 60, s: 100, l: 50 },
-    { name: 'Green', h: 120, s: 100, l: 50 },
-    { name: 'Blue', h: 240, s: 100, l: 50 },
-    { name: 'Purple', h: 280, s: 100, l: 50 },
-    { name: 'Black', h: 0, s: 0, l: 20 },
-    { name: 'White', h: 0, s: 0, l: 100 }
-  ]
+  const hexToHsl = (hex: string) => {
+    const normalized = hex.replace('#', '').trim()
+    const expanded = normalized.length === 3
+      ? normalized.split('').map((char) => char + char).join('')
+      : normalized
+
+    const intValue = Number.parseInt(expanded, 16)
+    if (!Number.isFinite(intValue)) return { h: 0, s: 0, l: 50 }
+
+    const red = ((intValue >> 16) & 255) / 255
+    const green = ((intValue >> 8) & 255) / 255
+    const blue = (intValue & 255) / 255
+
+    const maxChannel = Math.max(red, green, blue)
+    const minChannel = Math.min(red, green, blue)
+    const lightness = (maxChannel + minChannel) / 2
+
+    if (maxChannel === minChannel) {
+      return { h: 0, s: 0, l: Math.round(lightness * 100) }
+    }
+
+    const delta = maxChannel - minChannel
+    const sat = lightness > 0.5
+      ? delta / (2 - maxChannel - minChannel)
+      : delta / (maxChannel + minChannel)
+
+    let hue: number
+    switch (maxChannel) {
+      case red:
+        hue = (green - blue) / delta + (green < blue ? 6 : 0)
+        break
+      case green:
+        hue = (blue - red) / delta + 2
+        break
+      default:
+        hue = (red - green) / delta + 4
+        break
+    }
+
+    return {
+      h: Math.round((hue * 60) % 360),
+      s: Math.round(sat * 100),
+      l: Math.round(lightness * 100),
+    }
+  }
+
+  const presetColors = WRAP_COLOR_SWATCHES.map((swatch) => ({
+    id: swatch.id,
+    name: `${swatch.brand} ${swatch.code} ${swatch.name}`,
+    ...hexToHsl(swatch.colorHex),
+  }))
 
   const currentColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`
 
@@ -99,7 +141,7 @@ export const MobileColorPickerPanel: React.FC<MobileColorPickerPanelProps> = ({
         <div className="preset-colors">
           {presetColors.map((color) => (
             <button
-              key={color.name}
+              key={color.id}
               className="preset-color"
               style={{ backgroundColor: `hsl(${color.h}, ${color.s}%, ${color.l}%)` }}
               onClick={() => {

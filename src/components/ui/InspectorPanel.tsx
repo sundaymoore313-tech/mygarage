@@ -452,7 +452,7 @@ export function InspectorPanel() {
               <div className="field-group compact-field shellless-field">
                 <label>Width</label>
                 <div className="opacity-row">
-                  <input type="range" min="0.02" max="1.5" step="0.01"
+                  <input type="range" min="0.0001" max="1.5" step="0.0001"
                     value={(selected as StripeLayer).stripeWidth}
                     onChange={(e) => updateLayerTransient(selected.id, { stripeWidth: clampStripeWidth(e.target.value) } as Partial<Layer>)}
                     onMouseUp={(e) => updateLayer(selected.id, { stripeWidth: clampStripeWidth((e.target as HTMLInputElement).value) } as Partial<Layer>)}

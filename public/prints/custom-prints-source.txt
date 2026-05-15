@@ -1,0 +1,4 @@
+Source: Custom generated in-project
+License: Internal project use
+Notes: Added seamless SVG print textures for editor library
+Created: 2026-05-13 UTC

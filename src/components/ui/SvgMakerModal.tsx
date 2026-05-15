@@ -2161,6 +2161,10 @@ async function computeFullOffsetAsync(
   if (!worldPaths.length) return null
 
   // Text glyph contours can have mixed winding directions in decorative fonts.
+  // Yield to the event loop before the heavy synchronous Paper.js/Clipper work
+  // so the UI thread stays responsive (avoids UI freeze on multi-layer offset).
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
+
   // For drip/graffiti fonts, offset-each-then-union is usually more stable than union-then-offset.
   // Even-odd fill preserves counters/holes with mixed winding directions.
   if (hasText) {
@@ -2205,6 +2209,51 @@ async function computeFullOffsetAsync(
   // Fallback: offset directly from source world paths (avoids failing hard on edge-case geometry).
   const direct = computeClipperUnionThenOffset(worldPaths, d, cornerStyle, hasText ? 'evenodd' : 'nonzero')
   return direct ? (forPreview ? simplifyPathForPreview(direct) : direct) : null
+}
+
+const OFFSET_COMPUTE_TIMEOUT_MS = 10000
+const OFFSET_PREVIEW_TIMEOUT_MS = 5000
+
+class OffsetComputeTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Offset computation timed out after ${timeoutMs}ms`)
+    this.name = 'OffsetComputeTimeoutError'
+  }
+}
+
+function isOffsetComputeTimeoutError(error: unknown): boolean {
+  return error instanceof OffsetComputeTimeoutError
+}
+
+async function computeFullOffsetWithTimeout(
+  selectionSources: SvgShape[],
+  distance: number,
+  cornerStyle: 'round' | 'sharp',
+  weldOffsets = true,
+  forPreview = false,
+  timeoutMs = OFFSET_COMPUTE_TIMEOUT_MS,
+): Promise<string | null> {
+  if (timeoutMs <= 0) {
+    return computeFullOffsetAsync(selectionSources, distance, cornerStyle, weldOffsets, forPreview)
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new OffsetComputeTimeoutError(timeoutMs))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([
+      computeFullOffsetAsync(selectionSources, distance, cornerStyle, weldOffsets, forPreview),
+      timeoutPromise,
+    ])
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId)
+    }
+  }
 }
 
 function sanitizeOffsetPath(pathData: string, distance: number): string {
@@ -2901,6 +2950,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
   const [printExportOpen, setPrintExportOpen] = useState(false)
   const [printExporting, setPrintExporting] = useState(false)
   const [printExportStatus, setPrintExportStatus] = useState('')
+  const [saveFormat, setSaveFormat] = useState<'svg' | 'png'>('svg')
   const [printSettings, setPrintSettings] = useState<PrintExportSettings>({
     colorSpace: 'RGB',
     dpi: 300,
@@ -3541,8 +3591,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
       const targetIndices = targets.map(s => shapes.findIndex(x => x.id === s.id)).filter(i => i >= 0)
       const insertBeforeIdx = targetIndices.length ? Math.max(0, Math.min(...targetIndices)) : 0
       setOffsetApplying(true)
-      computeFullOffsetAsync(targets, d, effectiveCorner, effectiveWeld).then(worldPath => {
-        setOffsetApplying(false)
+      computeFullOffsetWithTimeout(targets, d, effectiveCorner, effectiveWeld, false, OFFSET_COMPUTE_TIMEOUT_MS).then(worldPath => {
         if (!worldPath) {
           if (targets.length === 1) {
             const fallback = makeOffsetLayer(targets[0], d, cornerStyle)
@@ -3602,6 +3651,16 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
         })
         commitOffsetLayer(unified, insertBeforeIdx)
         setOffsetPopoverOpen(false)
+      }).catch((error: unknown) => {
+        if (isOffsetComputeTimeoutError(error)) {
+          setImportError('Offset took too long and was canceled. Try a smaller distance, disable Weld Offsets, or offset fewer layers at once.')
+          showToast('Offset timed out. Try fewer layers or simpler settings.', 'warning')
+          return
+        }
+        setImportError('Offset failed unexpectedly. Try a smaller distance, disable Weld Offsets, or simplify the selection.')
+        showToast('Offset failed unexpectedly. Please try again with simpler settings.', 'error')
+      }).finally(() => {
+        setOffsetApplying(false)
       })
       return true // indicate async started successfully
     }
@@ -3664,7 +3723,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
     offsetPreviewInFlightRef.current = true
     const seq = ++offsetPreviewJobSeqRef.current
 
-    computeFullOffsetAsync(job.previewSources, job.distance, job.corner, job.weld, job.fastPreview).then(path => {
+    computeFullOffsetWithTimeout(job.previewSources, job.distance, job.corner, job.weld, job.fastPreview, OFFSET_PREVIEW_TIMEOUT_MS).then(path => {
       if (offsetPreviewJobSeqRef.current !== seq) return
       if (path) {
         const singleText = job.previewSources.length === 1 && job.previewSources[0]?.kind === 'text'
@@ -3720,9 +3779,10 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
         setOffsetPreviewText(null)
       }
     }).finally(() => {
-      if (offsetPreviewJobSeqRef.current === seq) {
-        offsetPreviewInFlightRef.current = false
-      }
+      // Always release the in-flight lock so the next queued job can run,
+      // even when this job was superseded by a newer seq — otherwise inFlight
+      // stays true forever and all subsequent previews deadlock.
+      offsetPreviewInFlightRef.current = false
       const pending = offsetPreviewPendingRef.current
       if (pending) {
         offsetPreviewPendingRef.current = null
@@ -3949,8 +4009,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
       const d = selected.offsetDistance ?? 10
       const cornerStyle = (selected.strokeLinejoin === 'miter' ? 'sharp' : 'round') as 'round' | 'sharp'
       setOffsetApplying(true)
-      computeFullOffsetAsync([textSrc], d, cornerStyle, true).then(worldPath => {
-        setOffsetApplying(false)
+      computeFullOffsetWithTimeout([textSrc], d, cornerStyle, true, false, OFFSET_COMPUTE_TIMEOUT_MS).then(worldPath => {
         if (!worldPath) {
           setImportError('This font does not support Contour — glyph paths could not be extracted.')
           return
@@ -3985,6 +4044,16 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
         setSelectionSet([selected.id])
         setContourShapeId(selected.id)
         setContourEditorOpen(true)
+      }).catch((error: unknown) => {
+        if (isOffsetComputeTimeoutError(error)) {
+          setImportError('Contour conversion timed out for this layer. Try reducing complexity or distance first.')
+          showToast('Contour conversion timed out.', 'warning')
+          return
+        }
+        setImportError('Contour conversion failed unexpectedly for this offset layer.')
+        showToast('Contour conversion failed unexpectedly.', 'error')
+      }).finally(() => {
+        setOffsetApplying(false)
       })
       return
     }
@@ -4278,8 +4347,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
     const targets = fromSel.length >= 1 ? fromSel : shapes.filter(s => s.visible && !s.locked)
     if (!targets.length) return
     setOffsetApplying(true)
-    computeFullOffsetAsync(targets, distance, 'round', true).then(worldPath => {
-      setOffsetApplying(false)
+    computeFullOffsetWithTimeout(targets, distance, 'round', true, false, OFFSET_COMPUTE_TIMEOUT_MS).then(worldPath => {
       if (!worldPath) { setImportError('Could not build sticker outline for these shapes.'); return }
       setImportError(null)
       const bbox = pathWorldBbox(worldPath)
@@ -4315,6 +4383,16 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
         return next
       })
       setSelectionSet([stickerLayer.id])
+    }).catch((error: unknown) => {
+      if (isOffsetComputeTimeoutError(error)) {
+        setImportError('Sticker outline timed out. Try selecting fewer layers or simplifying geometry.')
+        showToast('Sticker outline timed out.', 'warning')
+        return
+      }
+      setImportError('Sticker outline failed unexpectedly. Try simplifying the selection.')
+      showToast('Sticker outline failed unexpectedly.', 'error')
+    }).finally(() => {
+      setOffsetApplying(false)
     })
   }
 
@@ -4901,7 +4979,7 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
     }
   }
 
-  function handleSave() {
+  function handleSave(format: 'svg' | 'png' = saveFormat) {
     if (!shapes.length) {
       showToast('Add shapes or text before saving', 'warning')
       return
@@ -4917,15 +4995,25 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
       try {
         const svgMarkup = await buildSvgMarkupForExport(visibleShapes)
         const svgImageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`
-        try {
-          await rasterizeSvgToPngDataUrl(svgMarkup, 2048)
-          // Preserve vector fidelity in the created decal library by storing SVG as the source URL.
+        if (format === 'svg') {
+          // Preserve vector fidelity by storing the SVG data URL as the source.
           onSave({ name: presetName, imageUrl: svgImageUrl, svgMarkup })
           showToast(`✓ Saved "${presetName}" as SVG`, 'success')
+          return
+        }
+
+        try {
+          const pngDataUrl = await rasterizeSvgToPngDataUrl(svgMarkup, 2048)
+          // Keep created presets SVG-based for reliable preview + future SVG edits,
+          // while still providing a PNG file to the user when requested.
+          onSave({ name: presetName, imageUrl: svgImageUrl, svgMarkup })
+          const pngBlob = await (await fetch(pngDataUrl)).blob()
+          triggerBlobDownload(pngBlob, `${presetName.replace(/\s+/g, '-').toLowerCase()}.png`)
+          showToast(`✓ Saved "${presetName}" preset + downloaded PNG`, 'success')
         } catch (err) {
           console.warn('PNG rasterization failed, falling back to SVG:', err)
           onSave({ name: presetName, imageUrl: svgImageUrl, svgMarkup })
-          showToast(`✓ Saved "${presetName}" (SVG fallback)`, 'success')
+          showToast(`✓ Saved "${presetName}" as SVG (PNG fallback)`, 'warning')
         }
       } catch (err) {
         console.error('Export error:', err)
@@ -5270,6 +5358,32 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
 
           {/* ── Right-aligned toolbar utilities ── */}
           <span className="svg-maker-top-props-spacer" />
+          <span className="svg-tb-divider" />
+          <div className="svg-tb-section">
+            <span className="svg-tb-section-label">Save As</span>
+            <div className="svg-tb-row">
+              <select
+                className="svg-tb-select"
+                value={saveFormat}
+                onChange={(e) => setSaveFormat(e.target.value === 'png' ? 'png' : 'svg')}
+                aria-label="Preset save format"
+                title="Choose preset format"
+              >
+                <option value="svg">SVG</option>
+                <option value="png">PNG</option>
+              </select>
+              <button
+                type="button"
+                className="svg-tb-mini-btn"
+                onClick={() => handleSave()}
+                disabled={!shapes.length}
+                title={`Save preset as ${saveFormat.toUpperCase()}`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+
           {selected?.kind === 'path' && (
             <>
               <span className="svg-tb-divider" />
@@ -6550,14 +6664,27 @@ export function SvgMakerPage({ onClose, onSave, saveRef, undoRef, redoRef, expor
           aria-label="Close Create a Logo editor">
           Cancel
         </button>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginRight: '10px', color: '#d8dee8', fontSize: '13px' }}>
+          Save as
+          <select
+            value={saveFormat}
+            onChange={(e) => setSaveFormat(e.target.value === 'png' ? 'png' : 'svg')}
+            className="svg-select"
+            aria-label="Save format"
+            title="Choose preset save format"
+          >
+            <option value="svg">SVG</option>
+            <option value="png">PNG</option>
+          </select>
+        </label>
         <button
           type="button"
           className="svg-maker-btn primary"
-          onClick={handleSave}
+          onClick={() => handleSave()}
           disabled={!shapes.length}
-          aria-label={shapes.length ? 'Save design as preset decal' : 'Add shapes to enable save'}
-          title="Saves the design as a preset decal">
-          Save Preset + Add Decal
+          aria-label={shapes.length ? `Save design as ${saveFormat.toUpperCase()} preset decal` : 'Add shapes to enable save'}
+          title={`Saves the design as a ${saveFormat.toUpperCase()} preset decal`}>
+          {`Save ${saveFormat.toUpperCase()} Preset + Add Decal`}
         </button>
       </footer>
 

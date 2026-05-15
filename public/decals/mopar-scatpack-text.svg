@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300">
+  <title>Mopar Scat Pack Style Text</title>
+  <g transform="translate(60,194) skewX(-10)">
+    <text x="0" y="0" font-family="Impact, Arial Black, sans-serif" font-size="166" letter-spacing="5" fill="#111111">SCAT PACK</text>
+    <path d="M0 28 L1040 28 L1008 44 L0 44 Z" fill="#111111" />
+  </g>
+</svg>

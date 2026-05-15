@@ -88,7 +88,15 @@ function classifyPresetPersistencePlugin() {
 }
 
 // https://vite.dev/config/
+const appBuildId = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12)
+  ?? process.env.VERCEL_GIT_COMMIT_REF
+  ?? process.env.npm_package_version
+  ?? 'dev'
+
 export default defineConfig({
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(appBuildId),
+  },
   resolve: {
     alias: [
       {
@@ -97,13 +105,29 @@ export default defineConfig({
       },
     ],
   },
+  server: {
+    // OneDrive/Windows paths can miss native FS events; polling keeps HMR reliable.
+    watch: {
+      usePolling: true,
+      interval: 180,
+    },
+  },
   plugins: [react(), classifyPresetPersistencePlugin()],
   build: {
+    target: 'esnext',
     chunkSizeWarningLimit: 650,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
+
+          if (id.includes('/@react-three/fiber/') || id.includes('/@react-three/drei/')) {
+            return 'vendor-r3f'
+          }
+
+          if (id.includes('/konva/') || id.includes('/react-konva/')) {
+            return 'vendor-konva'
+          }
 
           if (id.includes('/three/src/renderers/')) {
             return 'vendor-three-renderers'
@@ -125,14 +149,6 @@ export default defineConfig({
             return 'vendor-three-objects-lights'
           }
 
-          if (id.includes('/three/src/') || id.includes('/three/build/')) {
-            return 'vendor-three-misc'
-          }
-
-          if (id.includes('/leva/')) {
-            return 'vendor-leva'
-          }
-
           if (id.includes('/three/examples/jsm/loaders/')) {
             return 'vendor-three-loaders'
           }
@@ -143,6 +159,14 @@ export default defineConfig({
 
           if (id.includes('/three/examples/')) {
             return 'vendor-three-extras'
+          }
+
+          if (id.includes('/three/src/') || id.includes('/three/build/')) {
+            return 'vendor-three-misc'
+          }
+
+          if (id.includes('/leva/')) {
+            return 'vendor-leva'
           }
 
           if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/lucide-react/')) {

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300">
+  <title>Mopar SRT Performance Style Text</title>
+  <g transform="translate(90,195)">
+    <text x="0" y="0" font-family="Impact, Arial Black, sans-serif" font-size="178" letter-spacing="8" fill="#111111">SRT</text>
+    <path d="M460 -130 L525 -130 L390 36 L325 36 Z" fill="#d71920" />
+    <text x="560" y="-10" font-family="Arial, sans-serif" font-size="54" letter-spacing="6" fill="#222222">PERFORMANCE</text>
+  </g>
+</svg>

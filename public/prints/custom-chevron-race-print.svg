@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <pattern id="cv" width="96" height="96" patternUnits="userSpaceOnUse">
+      <rect width="96" height="96" fill="#111214"/>
+      <path d="M0 20L28 48L0 76L16 92L60 48L16 4Z" fill="#d7d9de" fill-opacity="0.78"/>
+      <path d="M48 20L76 48L48 76L64 92L108 48L64 4Z" fill="#7f8794" fill-opacity="0.82"/>
+    </pattern>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#cv)"/>
+</svg>

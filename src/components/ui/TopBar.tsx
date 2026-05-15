@@ -76,6 +76,7 @@ type TopBarProps = {
   onExportQualityChange?: (quality: ExportQuality) => void
   mobileCompact?: boolean
   blockGuestSaveToProfile?: boolean
+  disableExportActions?: boolean
   isSaving?: boolean
   lastSaveMs?: number
 }
@@ -85,9 +86,10 @@ const LIGHT_PRESET_LABELS: { id: LightPresetId; label: string }[] = [
   { id: 'sunset', label: 'Sunset' },
   { id: 'night', label: 'Night' },
   { id: 'showroom', label: 'Showroom' },
+  { id: 'garage', label: 'Garage' },
 ]
 
-function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange, mobileCompact = false, blockGuestSaveToProfile = false }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void; mobileCompact?: boolean; blockGuestSaveToProfile?: boolean }) {
+function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, onPrintExport, isSvgMode = false, onSvgExport, isGuest = false, planTier = 'free', onGuestNudge, onAccessNudge, onCaptureProfilePreview, exportQuality = 'high', onExportQualityChange, mobileCompact = false, blockGuestSaveToProfile = false, disableExportActions = false }: { onScreenshot?: () => void; onExportGlb?: (options?: GlbExportOptions) => Promise<GlbExportResult | void> | void; onSocialExport?: () => void; onVideoRecord?: () => void; onPrintExport?: () => void; isSvgMode?: boolean; onSvgExport?: () => void; isGuest?: boolean; planTier?: PlanTier; onGuestNudge?: (feature: string) => void; onAccessNudge?: (feature: FeatureId) => void; onCaptureProfilePreview?: () => string | null; exportQuality?: ExportQuality; onExportQualityChange?: (quality: ExportQuality) => void; mobileCompact?: boolean; blockGuestSaveToProfile?: boolean; disableExportActions?: boolean }) {
   const [open, setOpen] = useState(false)
   const [glbBakeOverlays, setGlbBakeOverlays] = useState(true)
   const [glbIncludeLightsCamera, setGlbIncludeLightsCamera] = useState(false)
@@ -244,6 +246,11 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
   }
 
   const handlePrintExport = () => {
+    if (disableExportActions) {
+      setOpen(false)
+      return
+    }
+
     if (isSvgMode) {
       if (!isFeatureAllowed(planTier, 'svg-export')) { onAccessNudge?.('svg-export'); return }
       onSvgExport?.()
@@ -287,12 +294,16 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
               <button type="button" className="file-menu-item" onClick={() => { void handleSaveToProfile() }} disabled={profileSaving}>
                 <span className="file-menu-icon">⭐</span> {profileSaving ? 'Saving to Profile...' : 'Save to Profile'}
               </button>
-              <button type="button" className="file-menu-item" onClick={handleExportPng}>
-                <span className="file-menu-icon">🖼</span> Take Screenshot
-              </button>
-              <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
-                <span className="file-menu-icon">🎥</span> Record Video
-              </button>
+              {!disableExportActions && (
+                <>
+                  <button type="button" className="file-menu-item" onClick={handleExportPng}>
+                    <span className="file-menu-icon">🖼</span> Take Screenshot
+                  </button>
+                  <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
+                    <span className="file-menu-icon">🎥</span> Record Video
+                  </button>
+                </>
+              )}
               <button type="button" className="file-menu-mobile-close" onClick={() => setOpen(false)}>
                 Close
               </button>
@@ -313,55 +324,59 @@ function FileMenu({ onScreenshot, onExportGlb, onSocialExport, onVideoRecord, on
                 <button type="button" className="file-menu-item" onClick={handleLoad}>
                   <span className="file-menu-icon">📂</span> Load Project
                 </button>
-                <div className="file-menu-divider" />
-                <div style={{ padding: '8px 10px 6px', fontSize: '0.75rem', color: '#8ea0b4', fontWeight: 700 }}>
-                  Export Quality
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '0 10px 10px' }}>
-                  {EXPORT_QUALITY_ORDER.map((quality) => (
-                    <button
-                      key={quality}
-                      type="button"
-                      className={exportQuality === quality ? 'top-card-btn active' : 'top-card-btn'}
-                      style={{ padding: '6px 0', fontSize: '0.72rem' }}
-                      onClick={() => onExportQualityChange?.(quality)}
-                      title={`${EXPORT_QUALITY_LABELS[quality]} export quality`}
-                    >
-                      {EXPORT_QUALITY_LABELS[quality]}
+                {!disableExportActions && (
+                  <>
+                    <div className="file-menu-divider" />
+                    <div style={{ padding: '8px 10px 6px', fontSize: '0.75rem', color: '#8ea0b4', fontWeight: 700 }}>
+                      Export Quality
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '0 10px 10px' }}>
+                      {EXPORT_QUALITY_ORDER.map((quality) => (
+                        <button
+                          key={quality}
+                          type="button"
+                          className={exportQuality === quality ? 'top-card-btn active' : 'top-card-btn'}
+                          style={{ padding: '6px 0', fontSize: '0.72rem' }}
+                          onClick={() => onExportQualityChange?.(quality)}
+                          title={`${EXPORT_QUALITY_LABELS[quality]} export quality`}
+                        >
+                          {EXPORT_QUALITY_LABELS[quality]}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="file-menu-divider" />
+                    <button type="button" className="file-menu-item" onClick={handleExportPng}>
+                      <span className="file-menu-icon">🖼</span> Export PNG (Screenshot)
                     </button>
-                  ))}
-                </div>
-                <div className="file-menu-divider" />
-                <button type="button" className="file-menu-item" onClick={handleExportPng}>
-                  <span className="file-menu-icon">🖼</span> Export PNG (Screenshot)
-                </button>
-                <button type="button" className="file-menu-item" onClick={() => { void handleExportGlb() }} disabled={glbExporting}>
-                  <span className="file-menu-icon">🧊</span> Export GLB (Baked Layers)
-                </button>
-                <div style={{ padding: '8px 10px 4px', display: 'grid', gap: 6 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
-                    <input type="checkbox" checked={glbBakeOverlays} onChange={(e) => setGlbBakeOverlays(e.target.checked)} />
-                    Bake split/gradient/stripe into export
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
-                    <input type="checkbox" checked={glbIncludeLightsCamera} onChange={(e) => setGlbIncludeLightsCamera(e.target.checked)} />
-                    Include lights + camera rig
-                  </label>
-                  {glbStatus ? (
-                    <span style={{ fontSize: '0.72rem', color: glbStatus.includes('failed') ? '#f87171' : '#8ea0b4' }}>
-                      {glbStatus}
-                    </span>
-                  ) : null}
-                </div>
-                <button type="button" className="file-menu-item" onClick={handleSocialExport}>
-                  <span className="file-menu-icon">📸</span> Share / Socials…
-                </button>
-                <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
-                  <span className="file-menu-icon">🎥</span> Record Video…
-                </button>
-                <button type="button" className="file-menu-item" onClick={handlePrintExport}>
-                  <span className="file-menu-icon">🖨️</span> {isSvgMode ? 'SVG Export…' : 'Print / Wrap Export…'}
-                </button>
+                    <button type="button" className="file-menu-item" onClick={() => { void handleExportGlb() }} disabled={glbExporting}>
+                      <span className="file-menu-icon">🧊</span> Export GLB (Baked Layers)
+                    </button>
+                    <div style={{ padding: '8px 10px 4px', display: 'grid', gap: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
+                        <input type="checkbox" checked={glbBakeOverlays} onChange={(e) => setGlbBakeOverlays(e.target.checked)} />
+                        Bake split/gradient/stripe into export
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#8ea0b4' }}>
+                        <input type="checkbox" checked={glbIncludeLightsCamera} onChange={(e) => setGlbIncludeLightsCamera(e.target.checked)} />
+                        Include lights + camera rig
+                      </label>
+                      {glbStatus ? (
+                        <span style={{ fontSize: '0.72rem', color: glbStatus.includes('failed') ? '#f87171' : '#8ea0b4' }}>
+                          {glbStatus}
+                        </span>
+                      ) : null}
+                    </div>
+                    <button type="button" className="file-menu-item" onClick={handleSocialExport}>
+                      <span className="file-menu-icon">📸</span> Share / Socials…
+                    </button>
+                    <button type="button" className="file-menu-item" onClick={handleVideoRecord}>
+                      <span className="file-menu-icon">🎥</span> Record Video…
+                    </button>
+                    <button type="button" className="file-menu-item" onClick={handlePrintExport}>
+                      <span className="file-menu-icon">🖨️</span> {isSvgMode ? 'SVG Export…' : 'Print / Wrap Export…'}
+                    </button>
+                  </>
+                )}
               
             </div>
           </>
@@ -529,6 +544,7 @@ export function TopBar({
   onExportQualityChange,
   mobileCompact = false,
   blockGuestSaveToProfile = false,
+  disableExportActions = false,
   isSaving = false,
   lastSaveMs,
 }: TopBarProps) {
@@ -607,6 +623,10 @@ export function TopBar({
   }
 
   const handleToggle2DEditor = () => {
+    if (disableExportActions) {
+      return
+    }
+
     if (!is2DOpen && !isFeatureAllowed(planTier, 'editor-2d')) {
       showAccessPrompt('editor-2d')
       return
@@ -619,10 +639,10 @@ export function TopBar({
   }
 
   const handleSvgMakerToggle = () => {
-    if (!isSvgMode && !isFeatureAllowed(planTier, 'svg-maker')) {
-      showAccessPrompt('svg-maker')
+    if (disableExportActions) {
       return
     }
+
     onOpenSvgMaker?.()
   }
 
@@ -659,7 +679,7 @@ export function TopBar({
 
         <div className="top-bar-divider" />
 
-        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} mobileCompact={mobileCompact} blockGuestSaveToProfile={blockGuestSaveToProfile} />
+        <FileMenu onScreenshot={onScreenshot} onExportGlb={onExportGlb} onSocialExport={onSocialExport} onVideoRecord={onVideoRecord} onPrintExport={onPrintExport} isSvgMode={isSvgMode && !mobileCompact} onSvgExport={onSvgExport} isGuest={isGuest} planTier={planTier} onGuestNudge={showGuestPrompt} onAccessNudge={showAccessPrompt} onCaptureProfilePreview={onCaptureProfilePreview} exportQuality={exportQuality} onExportQualityChange={onExportQualityChange} mobileCompact={mobileCompact} blockGuestSaveToProfile={blockGuestSaveToProfile} disableExportActions={disableExportActions} />
 
         <div className="top-bar-divider" />
 
@@ -825,12 +845,12 @@ export function TopBar({
       </div>
 
       <div className="top-bar-right">
-        {!mobileCompact && (
+        {!mobileCompact && !disableExportActions && (
           <button
             type="button"
             className={isSvgMakerOpen ? 'top-card-btn top-svgmaker-btn active' : 'top-card-btn top-svgmaker-btn'}
             onClick={handleSvgMakerToggle}
-            title={isSvgMode ? 'Back to 3D editor' : isFeatureAllowed(planTier, 'svg-maker') ? 'Open Create a Logo — create custom vector decals' : 'Upgrade to Paid to open Create a Logo'}
+            title={isSvgMode ? 'Back to 3D editor' : 'Open Create a Logo — create custom vector decals'}
           >
             {isSvgMode ? '↩ Back to 3D' : '✏ Create a Logo'}
           </button>
@@ -840,16 +860,20 @@ export function TopBar({
           <>
             <div className="top-bar-divider" />
 
-            <button
-              type="button"
-              className={is2DOpen ? 'top-card-btn active' : 'top-card-btn'}
-              onClick={handleToggle2DEditor}
-              title={is2DOpen ? 'Return to 3D editor' : (isGuest ? 'Sign in to open 2D editor' : 'Open 2D editor')}
-            >
-              {is2DOpen ? '3D' : '2D'}
-            </button>
+            {!disableExportActions && (
+              <>
+                <button
+                  type="button"
+                  className={is2DOpen ? 'top-card-btn active' : 'top-card-btn'}
+                  onClick={handleToggle2DEditor}
+                  title={is2DOpen ? 'Return to 3D editor' : (isGuest ? 'Sign in to open 2D editor' : 'Open 2D editor')}
+                >
+                  {is2DOpen ? '3D' : '2D'}
+                </button>
 
-            <div className="top-bar-divider" />
+                <div className="top-bar-divider" />
+              </>
+            )}
 
             <button
               type="button"

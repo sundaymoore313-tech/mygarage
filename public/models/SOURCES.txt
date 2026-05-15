@@ -1,0 +1,14 @@
+Model Sources
+
+Updated 2026-05-13
+
+Status
+- Non-car/sample models downloaded during testing were removed.
+- Active pack is real-car-only.
+
+Added In This Session
+- None.
+
+Recommendation
+- Keep only licensed models you can redistribute.
+- Store vendor/source and license per model when adding new car packs.

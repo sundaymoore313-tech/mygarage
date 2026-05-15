@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300">
+  <title>Mopar Hellcat Style Text</title>
+  <g transform="translate(85,192) skewX(-10)">
+    <text x="0" y="0" font-family="Impact, Arial Black, sans-serif" font-size="170" letter-spacing="5" fill="#111111">HELLCAT</text>
+    <path d="M0 24 L820 24 L780 40 L0 40 Z" fill="#111111" />
+  </g>
+</svg>

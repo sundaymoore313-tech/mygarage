@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024" viewBox="0 0 2048 1024">
+  <rect width="2048" height="1024" fill="#f7f8fc"/>
+  <g stroke="#111" stroke-width="10">
+    <path d="M0 680L1024 512L0 344Z" fill="#ffd84e"/>
+    <path d="M2048 680L1024 512L2048 344Z" fill="#45c3ff"/>
+    <path d="M1024 0L864 512H1184Z" fill="#ff5850"/>
+    <path d="M1024 1024L864 512H1184Z" fill="#8cf4c1"/>
+  </g>
+  <g fill="#111">
+    <circle cx="1024" cy="512" r="120"/>
+  </g>
+  <text x="1024" y="545" text-anchor="middle" font-family="Impact, Arial Black, sans-serif" font-size="128" fill="#fff">BAM</text>
+</svg>

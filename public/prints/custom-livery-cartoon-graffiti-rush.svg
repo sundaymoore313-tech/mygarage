@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024" viewBox="0 0 2048 1024">
+  <rect width="2048" height="1024" fill="#12151d"/>
+  <g opacity="0.9">
+    <path d="M90 820L640 240L760 240L210 820Z" fill="#ff5b45"/>
+    <path d="M290 860L850 280L920 280L360 860Z" fill="#ffd24f"/>
+    <path d="M520 900L1080 320L1160 320L600 900Z" fill="#34b1ff"/>
+    <path d="M760 940L1320 360L1410 360L850 940Z" fill="#6bff9d"/>
+  </g>
+  <g fill="#ffffff" fill-opacity="0.16">
+    <circle cx="420" cy="330" r="34"/>
+    <circle cx="520" cy="400" r="22"/>
+    <circle cx="1460" cy="300" r="28"/>
+    <circle cx="1580" cy="360" r="18"/>
+  </g>
+  <text x="1240" y="220" font-family="Impact, Arial Black, sans-serif" font-size="140" fill="#ffffff" transform="rotate(-8 1240 220)">RUSH</text>
+</svg>

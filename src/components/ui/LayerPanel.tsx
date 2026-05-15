@@ -181,6 +181,7 @@ export function LayerPanel() {
 
   const groupIds = new Set(layers.filter((l) => l.type === 'group').map((l) => l.id))
   const childIds = new Set(layers.filter((l) => l.groupId && groupIds.has(l.groupId)).map((l) => l.id))
+  const hasRealStripeLayers = layers.some((layer) => layer.type === 'stripe')
   const activePrintEntries = (Object.entries(targetPrints) as [PaintTargetId, PrintConfig | null | undefined][])
     .filter(([, config]) => Boolean(config)) as [PaintTargetId, PrintConfig][]
 
@@ -351,7 +352,7 @@ export function LayerPanel() {
         })}
 
         {/* ── Virtual car-tool layers (shown only when active) ── */}
-        {carStripe.enabled && <li className="layer-tree-item">
+        {carStripe.enabled && !hasRealStripeLayers && <li className="layer-tree-item">
           <div
             className={['layer-row', activeCarTool === 'stripes' && 'selected'].filter(Boolean).join(' ')}
             onClick={() => {
