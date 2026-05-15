@@ -2157,6 +2157,8 @@ function MeshClassifyOverlay({
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
   const isTextLayer = layer.type === 'text'
+  const textProjectionPadding = isTextLayer ? 0.18 : 0
+  const textProjectionLift = isTextLayer ? 0.04 : 0
 
   let projectorRotation: THREE.Euler
 
@@ -2207,19 +2209,15 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
       }
     }
 
-    // Build upright projector basis.
-    // Use world-DOWN as the cross-product reference so projector Y ends up pointing
-    // world-down.  With tex.flipY=false, canvas-top (V≈0) corresponds to higher
-    // world-Y — which is only correct when projector Y is (0,-1,0).
-    // Using world-down in the cross product consistently gives Y=(0,-1,0) on all
-    // cardinal panels and interpolates smoothly on diagonals.
-    const worldDown = new THREE.Vector3(0, -1, 0)
-    const xAxis = new THREE.Vector3().crossVectors(worldDown, surfaceNormal)
-    if (xAxis.lengthSq() < 1e-6) {
-      // Normal is nearly straight up or down — fall back to world X
-      xAxis.set(1, 0, 0)
+    // Build an upright projector basis.
+    // Snap the horizontal axis to the dominant body direction so text stays
+    // stable across panel seams instead of inheriting diagonal panel normals.
+    const xAxis = new THREE.Vector3()
+    if (Math.abs(surfaceNormal.x) >= Math.abs(surfaceNormal.z)) {
+      xAxis.set(0, 0, surfaceNormal.x >= 0 ? 1 : -1)
+    } else {
+      xAxis.set(surfaceNormal.z >= 0 ? -1 : 1, 0, 0)
     }
-    xAxis.normalize()
     const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
 
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
@@ -2283,19 +2281,21 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
   }
 
   const depth = Math.max(0.04, layer.transform.scale.z)
+  const projectorNormal = new THREE.Vector3(0, 0, 1).applyEuler(projectorRotation)
+  const projectorPosition = new THREE.Vector3(
+    layer.transform.position.x,
+    layer.transform.position.y,
+    layer.transform.position.z,
+  ).addScaledVector(projectorNormal, textProjectionLift)
 
   return new DecalGeometry(
     targetMesh,
-    new THREE.Vector3(
-      layer.transform.position.x,
-      layer.transform.position.y,
-      layer.transform.position.z,
-    ),
+    projectorPosition,
     projectorRotation,
     new THREE.Vector3(
-      Math.max(0.08, layer.transform.scale.x),
-      Math.max(0.08, layer.transform.scale.y),
-      depth,
+      Math.max(0.08, layer.transform.scale.x) + textProjectionPadding,
+      Math.max(0.08, layer.transform.scale.y) + textProjectionPadding,
+      isTextLayer ? Math.max(0.12, depth + 0.08) : depth,
     ),
   )
 }
@@ -2378,7 +2378,32 @@ function useProjectedGeometries(
   // properties like colorHex, text, or mirrorX change.
   const { position, rotation, scale } = layer.transform
   const geometries = useMemo(
-    () => targetMeshes.map((mesh) => makeDecalGeometry(mesh, layer)),
+    () => {
+      if (layer.type === 'text') {
+        const preferredMesh = layer.targetPartId
+          ? targetMeshes.find((mesh) => (mesh.userData.partId as string | undefined) === layer.targetPartId)
+          : null
+
+        const bestMesh = preferredMesh ?? targetMeshes.reduce<THREE.Mesh | null>((closest, mesh) => {
+          if (!closest) {
+            return mesh
+          }
+
+          const meshCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3())
+          const closestCenter = new THREE.Box3().setFromObject(closest).getCenter(new THREE.Vector3())
+          const layerPosition = new THREE.Vector3(position.x, position.y, position.z)
+
+          const meshDistance = meshCenter.distanceToSquared(layerPosition)
+          const closestDistance = closestCenter.distanceToSquared(layerPosition)
+
+          return meshDistance < closestDistance ? mesh : closest
+        }, null)
+
+        return bestMesh ? [makeDecalGeometry(bestMesh, layer)] : []
+      }
+
+      return targetMeshes.map((mesh) => makeDecalGeometry(mesh, layer))
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       targetMeshes,
@@ -2894,8 +2919,10 @@ function ProjectedTextLayer({
             transparent
             opacity={Math.max(0.1, layer.transform.opacity)}
             depthWrite={false}
+            depthTest={false}
             polygonOffset
-            polygonOffsetFactor={-4}
+            polygonOffsetFactor={-16}
+            polygonOffsetUnits={-16}
             metalness={getLayerFinishMaterialProps(layer.finish).metalness}
             roughness={getLayerFinishMaterialProps(layer.finish).roughness}
             envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}
@@ -2917,8 +2944,10 @@ function ProjectedTextLayer({
                 transparent
                 opacity={Math.max(0.1, layer.transform.opacity)}
                 depthWrite={false}
+                depthTest={false}
                 polygonOffset
-                polygonOffsetFactor={-4}
+                polygonOffsetFactor={-16}
+                polygonOffsetUnits={-16}
                 metalness={getLayerFinishMaterialProps(layer.finish).metalness}
                 roughness={getLayerFinishMaterialProps(layer.finish).roughness}
                 envMapIntensity={getLayerFinishMaterialProps(layer.finish).envMapIntensity}
