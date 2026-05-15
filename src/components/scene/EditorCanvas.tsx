@@ -2157,7 +2157,6 @@ function MeshClassifyOverlay({
 
 function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer) {
   const isTextLayer = layer.type === 'text'
-  const TEXT_UPRIGHT_SPIN = Math.PI
 
   let projectorRotation: THREE.Euler
 
@@ -2196,14 +2195,18 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
     const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
     const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
 
-    // 5. Apply fixed in-plane correction for text orientation.
-    const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, TEXT_UPRIGHT_SPIN)
-    baseQ.premultiply(uprightQ)
-
-    // 6. Apply user's manual spin (rotation.z) around the surface normal
+    // 5. Apply user's manual spin (rotation.z) around the surface normal
     if (layer.transform.rotation.z !== 0) {
       const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, layer.transform.rotation.z)
       baseQ.premultiply(spinQ)
+    }
+
+    // 6. Keep text upright: if projected up points downward in world space,
+    // rotate 180 degrees in-plane around the surface normal.
+    const projectedUp = new THREE.Vector3(0, 1, 0).applyQuaternion(baseQ)
+    if (projectedUp.dot(worldUp) < 0) {
+      const uprightQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, Math.PI)
+      baseQ.premultiply(uprightQ)
     }
 
     projectorRotation = new THREE.Euler().setFromQuaternion(baseQ, 'XYZ')
