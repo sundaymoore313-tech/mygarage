@@ -1,5 +1,4 @@
 ﻿import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { Layers, Type, Palette } from 'lucide-react'
 import { useEditorStore } from './store/editorStore'
 import type { GlbExportOptions, GlbExportResult, LightPresetId } from './components/scene/EditorCanvas'
@@ -21,7 +20,6 @@ const SCREEN_QUERY_KEY = 'screen'
 const PROJECT_ID_QUERY_KEY = 'projectId'
 const DISABLE_EXPORT_QUERY_KEY = 'disableExport'
 const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px) and (orientation: portrait)'
-const MOBILE_LANDSCAPE_BASE_WIDTH = 1280
 const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
 // Lock mobile version - prevents mobile layout from rendering regardless of viewport size
 const LOCK_MOBILE_VERSION = false
@@ -340,8 +338,6 @@ function App() {
   const [isMobileLandscapeViewport, setIsMobileLandscapeViewport] = useState(() => {
     return detectMobileLandscapeViewport()
   })
-  const [mobileLandscapeScale, setMobileLandscapeScale] = useState(1)
-  const [mobileLandscapeBaseHeight, setMobileLandscapeBaseHeight] = useState(620)
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId)
   const [sceneHovered, setSceneHovered] = useState(false)
   const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(false)
@@ -708,25 +704,6 @@ function App() {
       const mobileLandscapeViewport = detectMobileLandscapeViewport()
       setIsMobileViewport(mobileViewport)
       setIsMobileLandscapeViewport(mobileLandscapeViewport)
-
-      if (mobileLandscapeViewport) {
-        const viewportW = Math.max(1, window.innerWidth - 12)
-        const viewportH = Math.max(1, window.innerHeight - 10)
-        const targetBaseHeight = Math.max(
-          540,
-          Math.round((MOBILE_LANDSCAPE_BASE_WIDTH * viewportH) / viewportW),
-        )
-        setMobileLandscapeBaseHeight(targetBaseHeight)
-
-        const fitScale = Math.min(
-          viewportW / MOBILE_LANDSCAPE_BASE_WIDTH,
-          viewportH / targetBaseHeight,
-        )
-        setMobileLandscapeScale(Math.max(0.5, Math.min(1, fitScale)))
-      } else {
-        setMobileLandscapeScale(1)
-        setMobileLandscapeBaseHeight(620)
-      }
     }
 
     updateMobileViewport()
@@ -1469,16 +1446,8 @@ function App() {
     fitCarInView()
   }
 
-  const landscapeRootStyle: CSSProperties | undefined = isMobileLandscapeViewport
-    ? {
-      '--mobile-landscape-scale': String(mobileLandscapeScale),
-      '--mobile-landscape-base-width': `${MOBILE_LANDSCAPE_BASE_WIDTH}px`,
-      '--mobile-landscape-base-height': `${mobileLandscapeBaseHeight}px`,
-    } as CSSProperties
-    : undefined
-
   return (
-    <div className={isMobileLandscapeViewport ? 'app-root app-root-landscape-desktop' : 'app-root'} style={landscapeRootStyle}>
+    <div className={isMobileLandscapeViewport ? 'app-root app-root-landscape-desktop' : 'app-root'}>
       <TopBar
         onScreenshot={handleScreenshot}
         onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}

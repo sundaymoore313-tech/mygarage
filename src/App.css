@@ -6731,15 +6731,14 @@ hr {
   }
 
   .app-root.app-root-landscape-desktop {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    width: var(--mobile-landscape-base-width, 1440px);
-    height: var(--mobile-landscape-base-height, 680px);
-    min-height: var(--mobile-landscape-base-height, 680px);
-    max-height: none;
-    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
-    transform-origin: center center;
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    transform: none;
     overflow: hidden;
   }
 
@@ -6858,15 +6857,14 @@ hr {
 
 @media (orientation: landscape) and (pointer: coarse) {
   .app-root.app-root-landscape-desktop {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    width: var(--mobile-landscape-base-width, 1440px);
-    height: var(--mobile-landscape-base-height, 680px);
-    min-height: var(--mobile-landscape-base-height, 680px);
-    max-height: none;
-    transform: translate(-50%, -50%) scale(var(--mobile-landscape-scale, 1));
-    transform-origin: center center;
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    transform: none;
     overflow: hidden;
   }
 
