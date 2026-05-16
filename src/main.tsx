@@ -4,6 +4,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 import './index.css'
 import App from './App.tsx'
 import { startPerfSpan } from './lib/perfDebug'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 
 // Dev-only preview capture tool — excluded from production builds
 const CarPreviewCapturePage = import.meta.env.DEV
@@ -70,7 +71,9 @@ async function bootstrap() {
         </Suspense>
       ) : (
         <>
-          <App />
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
           <SpeedInsights />
         </>
       )}

@@ -597,6 +597,7 @@ function LoadedCarModel({
   const setSelectedLayer = useEditorStore((state) => state.setSelectedLayer)
   const setTool = useEditorStore((state) => state.setTool)
   const updateLayer = useEditorStore((state) => state.updateLayer)
+  const updateLayerTransient = useEditorStore((state) => state.updateLayerTransient)
   const activeTool = useEditorStore((state) => state.activeTool)
   const meshClassifications = useEditorStore((state) => state.project.meshClassifications)
   const windowTint = useEditorStore((state) => state.project.windowTint)
@@ -1651,7 +1652,9 @@ function LoadedCarModel({
       normal,
     )
     const nextRotation = new THREE.Euler().setFromQuaternion(rotationQ, 'XYZ')
-    updateLayer(layer.id, {
+    // Use transient update during drag to avoid flooding the undo history.
+    // A single updateLayer (with history) is committed on pointer-up.
+    updateLayerTransient(layer.id, {
       targetPartId: partId,
       transform: {
         ...layer.transform,
@@ -1668,11 +1671,20 @@ function LoadedCarModel({
 
   const handleScenePointerUp = () => {
     if (!decalDragRef.current) return
+    const layerId = decalDragRef.current.layerId
     decalDragRef.current = null
     onLayerDragStateChange?.(false)
     // Re-enable orbit controls after drag ends
     if (controlsRef?.current) {
       ;(controlsRef.current as unknown as { enabled: boolean }).enabled = true
+    }
+    // Commit the final position to undo history (single step for the whole drag).
+    const layer = useEditorStore.getState().project.layers.find((l) => l.id === layerId)
+    if (layer && (layer.type === 'decal' || layer.type === 'text')) {
+      updateLayer(layer.id, {
+        targetPartId: layer.targetPartId,
+        transform: layer.transform,
+      })
     }
   }
 
