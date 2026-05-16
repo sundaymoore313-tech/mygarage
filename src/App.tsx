@@ -1538,9 +1538,98 @@ function App() {
       '--mobile-landscape-base-height': `${mobileLandscapeBaseHeight}px`,
     } as CSSProperties
     : undefined
+  const useBottomDockTabBar = isMobileViewport && !isMobileLandscapeViewport
+  const showBottomDock = useBottomDockTabBar || Boolean(floatingPanel)
   const effectiveLayerPanelWidth = isMobileLandscapeViewport
     ? Math.min(layerPanelWidth, 180)
     : layerPanelWidth
+
+  const renderDockTabButtons = () => (
+    <>
+      <button
+        type="button"
+        className={floatingPanel === 'car' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('car')}
+        title="Wrap Color"
+      >
+        <Palette size={22} />
+        <span>Wrap Color</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'text' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('text')}
+        title="Text"
+      >
+        <Type size={22} />
+        <span>Text</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'elements' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('elements')}
+        title="Elements / Decals"
+      >
+        <Layers size={22} />
+        <span>Elements</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'stripes' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('stripes')}
+        title="Racing Stripes"
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+          <rect x="4" y="3" width="4" height="18" rx="1.4" />
+          <rect x="10" y="3" width="4" height="18" rx="1.4" />
+          <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
+        </svg>
+        <span>Stripes</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'split' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('split')}
+        title="Split paint"
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
+          <path d="M12 4v16" />
+          <path d="M6.5 8.5h5.5" opacity="0.8" />
+          <path d="M12 15.5h5.5" opacity="0.8" />
+        </svg>
+        <span>Split</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'prints' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('prints')}
+        title="Prints"
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M7 8V4h10v4" />
+          <rect x="5" y="9" width="14" height="8" rx="2.3" />
+          <rect x="7" y="14" width="10" height="6" rx="1.2" />
+          <circle cx="16.8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
+        </svg>
+        <span>Print</span>
+      </button>
+      <button
+        type="button"
+        className={floatingPanel === 'tint' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
+        onClick={() => toggleDockPanel('tint')}
+        title="Window tint"
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
+          <path d="M3.7 14h16.6" opacity="0.9" />
+          <path d="M12 6v8" opacity="0.45" />
+          <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
+        </svg>
+        <span>Tint</span>
+      </button>
+    </>
+  )
 
   return (
     <div className={isMobileLandscapeViewport ? 'app-root app-root-landscape-desktop' : 'app-root'} style={landscapeRootStyle}>
@@ -1649,7 +1738,7 @@ function App() {
       </Suspense>
 
       <main className="workspace" style={{ display: (printExportOpen || svgMakerOpen) ? 'none' : undefined }}>
-        <div className={floatingPanel ? 'workspace-main' : 'workspace-main workspace-main-no-dock'}>
+        <div className={showBottomDock ? 'workspace-main' : 'workspace-main workspace-main-no-dock'}>
           <section
             className="scene-panel"
             aria-label="3D car viewport"
@@ -1690,90 +1779,11 @@ function App() {
               setClassifyShowMeshNames={setClassifyShowMeshNames}
             />
 
-            <div className="scene-tab-rail" aria-label="Tools and inspector tabs">
-              <button
-                type="button"
-                className={floatingPanel === 'car' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('car')}
-                title="Wrap Color"
-              >
-                <Palette size={22} />
-                <span>Wrap Color</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'text' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('text')}
-                title="Text"
-              >
-                <Type size={22} />
-                <span>Text</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'elements' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('elements')}
-                title="Elements / Decals"
-              >
-                <Layers size={22} />
-                <span>Elements</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'stripes' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('stripes')}
-                title="Racing Stripes"
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                  <rect x="4" y="3" width="4" height="18" rx="1.4" />
-                  <rect x="10" y="3" width="4" height="18" rx="1.4" />
-                  <rect x="16" y="3" width="4" height="18" rx="1.4" opacity="0.45" />
-                </svg>
-                <span>Stripes</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'split' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('split')}
-                title="Split paint"
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <rect x="3.5" y="4" width="17" height="16" rx="2.6" />
-                  <path d="M12 4v16" />
-                  <path d="M6.5 8.5h5.5" opacity="0.8" />
-                  <path d="M12 15.5h5.5" opacity="0.8" />
-                </svg>
-                <span>Split</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'prints' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('prints')}
-                title="Prints"
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M7 8V4h10v4" />
-                  <rect x="5" y="9" width="14" height="8" rx="2.3" />
-                  <rect x="7" y="14" width="10" height="6" rx="1.2" />
-                  <circle cx="16.8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
-                </svg>
-                <span>Print</span>
-              </button>
-              <button
-                type="button"
-                className={floatingPanel === 'tint' ? 'bottom-dock-tab active' : 'bottom-dock-tab'}
-                onClick={() => toggleDockPanel('tint')}
-                title="Window tint"
-              >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M3 17 5 8c.3-1.4 1.4-2 3-2h8c1.6 0 2.7.6 3 2l2 9c.3 1.2-.5 2-1.9 2H4.9C3.5 19 2.7 18.2 3 17Z" />
-                  <path d="M3.7 14h16.6" opacity="0.9" />
-                  <path d="M12 6v8" opacity="0.45" />
-                  <rect x="4" y="14" width="16" height="5" rx="1.6" fill="currentColor" opacity="0.22" stroke="none" />
-                </svg>
-                <span>Tint</span>
-              </button>
-            </div>
+            {!useBottomDockTabBar && (
+              <div className="scene-tab-rail" aria-label="Tools and inspector tabs">
+                {renderDockTabButtons()}
+              </div>
+            )}
           </section>
 
           <section
@@ -1799,7 +1809,7 @@ function App() {
           </section>
         </div>
 
-        {floatingPanel && (
+        {showBottomDock && (
           <section className="bottom-dock" aria-label="Tools and inspector">
             {floatingPanel === 'prints' && (
               <div className="bottom-dock-panel-area">
@@ -1816,11 +1826,17 @@ function App() {
               <div className="bottom-dock-inspector bottom-dock-inspector--mobile is-tab-open">
                 <MobileEditorLayout
                   embedded
-                  embeddedTab={floatingPanel}
+                  embeddedTab={floatingPanel ?? undefined}
                   editorCanvas={null}
                   isGuest={isGuest}
                   onGuestSignIn={handleGuestSignIn}
                 />
+              </div>
+            )}
+
+            {useBottomDockTabBar && (
+              <div className="bottom-dock-tab-bar" aria-label="Tool tabs">
+                {renderDockTabButtons()}
               </div>
             )}
 

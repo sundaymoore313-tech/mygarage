@@ -2043,31 +2043,36 @@
 
 /* Inspector area — shown when no tab is open */
 .bottom-dock-inspector {
-  overflow: auto hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   min-height: 60px;
   max-height: 160px;
   padding: 0;
   background: linear-gradient(180deg, #121212 0%, #151515 100%);
+  -webkit-overflow-scrolling: touch;
 }
 
 .bottom-dock-inspector--mobile {
   min-height: 150px;
-  max-height: 210px;
+  max-height: min(46dvh, 360px);
   transition: max-height 0.22s ease;
 }
 
 .bottom-dock-inspector--mobile.is-tab-open {
-  max-height: 360px;
+  max-height: min(58dvh, 520px);
 }
 
 .bottom-dock-inspector .mobile-controls-strip--embedded {
-  max-height: 160px;
-  overflow: hidden auto;
+  max-height: none;
+  min-height: 100%;
+  overflow: visible;
 }
 
 .bottom-dock-inspector--mobile .mobile-controls-strip--embedded {
-  max-height: 100%;
-  overflow: hidden;
+  max-height: none;
+  min-height: 100%;
+  overflow: visible;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   animation: bottomDockSlideUp 0.2s ease-out;
 }
 
@@ -3563,7 +3568,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 16;
+  z-index: 12;
   pointer-events: auto;
 }
 
@@ -6538,6 +6543,22 @@ hr {
 
   .scene-panel {
     min-height: min(340px, 62dvh);
+  }
+
+  .scene-tab-rail {
+    top: 10px;
+    bottom: auto;
+    max-height: calc(100% - 20px);
+    overflow-y: auto;
+    overflow-x: visible;
+    padding-right: 4px;
+    padding-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .scene-tab-rail::-webkit-scrollbar {
+    display: none;
   }
 
   .fab-group {
