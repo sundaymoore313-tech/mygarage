@@ -1,4 +1,4 @@
-﻿import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Layers, Type, Palette } from 'lucide-react'
 import { useEditorStore } from './store/editorStore'
@@ -364,7 +364,7 @@ function App() {
   const [mobileLandscapeBaseHeight, setMobileLandscapeBaseHeight] = useState(MOBILE_LANDSCAPE_BASE_HEIGHT)
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId)
   const [sceneHovered, setSceneHovered] = useState(false)
-  const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(false)
+  const [layerPanelCollapsed, setLayerPanelCollapsed] = useState(() => detectMobileEditorViewport())
   const [layerPanelWidth, setLayerPanelWidth] = useState(320)
   const [lightPreset, setLightPreset] = useState<LightPresetId>('garage')
   const screenshotRef = useRef<((quality?: ExportQuality) => string) | null>(null)
@@ -406,7 +406,7 @@ function App() {
   // Log mobile lock status on mount
   useEffect(() => {
     if (LOCK_MOBILE_VERSION) {
-      console.log('🔒 Mobile version is LOCKED - desktop layout only')
+      console.log('?? Mobile version is LOCKED - desktop layout only')
     }
   }, [])
 
@@ -1523,170 +1523,6 @@ function App() {
     }} isGuest={isGuest} onGuestSignIn={handleGuestSignIn} />
   }
 
-  // EditorCanvas component for both layouts
-  const editorCanvasElement = (
-    <Suspense fallback={<div style={{ padding: 16 }}>Loading 3D scene...</div>}>
-      <EditorCanvas
-        modelUrl={selectedCar.modelUrl}
-        groundOffsetY={selectedCar.groundOffsetY}
-        classifyWindowClickThrough={classifyWindowClickThrough}
-        classifyBodyClickThrough={classifyBodyClickThrough}
-        classifyShowMeshNames={classifyShowMeshNames}
-        orbitEnabled={orbitEnabled}
-        lightPreset={lightPreset}
-        isRecording={isRecording}
-        recordingQuality={exportQuality}
-        onRendererReady={(fn) => {
-          screenshotRef.current = fn
-          setIsCarSwitching(false)
-          endPerfSpan('editor_canvas_ready', { carModel: selectedCar.modelUrl })
-          endPerfSpan('editor_open', { carModel: selectedCar.modelUrl })
-        }}
-        onGlbExportReady={(fn) => { exportGlbRef.current = fn }}
-        onPrintCaptureReady={(fn) => { printCaptureRef.current = fn }}
-        onResetCameraReady={(fn) => { resetCameraRef.current = fn }}
-        onVideoRecorderReady={(fn) => setVideoStreamGetter(() => fn)}
-        onFirstInteraction={() => endPerfSpan('editor_first_interaction', { carModel: selectedCar.modelUrl })}
-      />
-    </Suspense>
-  )
-
-  // Mobile layout
-  if (isMobileViewport) {
-    const mobileGuestFullAccess = isGuest
-    const mobileIsGuest = mobileGuestFullAccess ? false : isGuest
-    const mobilePlanTier = mobileGuestFullAccess ? 'paid' : accountPlan
-
-    return (
-      <div className="app-root">
-        <TopBar
-          mobileCompact
-          onScreenshot={handleScreenshot}
-          onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}
-          onSocialExport={disableExportActions ? undefined : () => {
-            const url = screenshotRef.current?.()
-            if (url) setSocialPreviewUrl(url)
-          }}
-          onVideoRecord={disableExportActions ? undefined : () => {
-            setExportQuality((prev) => (prev === 'standard' ? 'high' : prev))
-            setVideoRecordOpen(true)
-          }}
-          onPrintExport={disableExportActions ? undefined : () => setPrintExportOpen(true)}
-          onOpen2DEditor={disableExportActions ? undefined : () => setPrintExportOpen(true)}
-          onOpen3DEditor={disableExportActions ? undefined : () => setPrintExportOpen(false)}
-          is2DOpen={is2DOpen}
-          isSvgMakerOpen={svgMakerOpen}
-          onOpenSvgMaker={disableExportActions ? undefined : () => { setSvgMakerOpen((v) => !v); setPrintExportOpen(false) }}
-          onSvgCancel={disableExportActions ? undefined : () => setSvgMakerOpen(false)}
-          onSvgSave={disableExportActions ? undefined : () => svgSaveRef.current?.()}
-          onSvgUndo={disableExportActions ? undefined : () => svgUndoRef.current?.()}
-          onSvgRedo={disableExportActions ? undefined : () => svgRedoRef.current?.()}
-          onSvgExport={disableExportActions ? undefined : () => svgExportRef.current?.()}
-          lightPreset={lightPreset}
-          onLightPreset={setLightPreset}
-          onResetCamera={() => resetCameraRef.current?.()}
-          onChangeCar={handleChangeCar}
-          onGoHome={handleGoHome}
-          onOpenProfile={() => setScreen('profile')}
-          onGuestSignIn={handleGuestSignIn}
-          isGuest={mobileIsGuest}
-          planTier={mobilePlanTier}
-          onUpgradeClick={() => setScreen('profile')}
-          onCaptureProfilePreview={() => screenshotRef.current?.() ?? null}
-          cloudStatusLabel={cloudStatusLabel}
-          cloudStatusTone={cloudStatusTone}
-          exportQuality={exportQuality}
-          onExportQualityChange={setExportQuality}
-          blockGuestSaveToProfile={isGuest}
-          disableExportActions={disableExportActions}
-          isSaving={isSaving}
-          lastSaveMs={lastSaveMs}
-        />
-
-        <MobileEditorLayout
-          editorCanvas={editorCanvasElement}
-          isGuest={mobileIsGuest}
-          onGuestSignIn={handleGuestSignIn}
-          simplified
-        />
-
-        {/* Modals and overlays - same for desktop and mobile */}
-        {!disableExportActions && printExportOpen && (
-          <Suspense fallback={null}>
-            <PrintExportModal
-              captureRef={printCaptureRef}
-              onClose={() => setPrintExportOpen(false)}
-              isGuest={mobileIsGuest}
-              onGuestSignIn={handleGuestSignIn}
-              planTier={mobilePlanTier}
-              onUpgradeClick={() => setScreen('profile')}
-            />
-          </Suspense>
-        )}
-
-        {!disableExportActions && svgMakerOpen && (
-          <Suspense fallback={<div style={{ padding: 16 }}>Loading Create a Logo...</div>}>
-            <SvgMakerPage
-              onClose={() => setSvgMakerOpen(false)}
-              saveRef={svgSaveRef}
-              undoRef={svgUndoRef}
-              redoRef={svgRedoRef}
-              exportRef={svgExportRef}
-              onSave={({ name, imageUrl, svgMarkup }) => {
-                const store = useEditorStore.getState()
-                store.addCustomDecalPreset(name, imageUrl, svgMarkup)
-                store.addDecalLayer(imageUrl)
-                store.setTool('decal')
-                setSvgMakerOpen(false)
-              }}
-            />
-          </Suspense>
-        )}
-
-        {socialPreviewUrl && (
-          <Suspense fallback={null}>
-            <SocialExportModal
-              dataUrl={socialPreviewUrl}
-              onClose={() => setSocialPreviewUrl(null)}
-            />
-          </Suspense>
-        )}
-
-        {videoRecordOpen && (
-          <Suspense fallback={null}>
-            <VideoRecordModal
-              getStream={videoStreamGetter}
-              initialQuality={exportQuality}
-              onQualityChange={setExportQuality}
-              onClose={() => { setVideoRecordOpen(false); setIsRecording(false) }}
-              onRecordingChange={setIsRecording}
-            />
-          </Suspense>
-        )}
-
-        <Suspense fallback={null}>
-          <GuestAuthModal
-            isOpen={guestAuthOpen}
-            onClose={() => setGuestAuthOpen(false)}
-            onSuccess={handleGuestAuthSuccess}
-          />
-        </Suspense>
-
-        {isCarSwitching && (
-          <div className="car-loading-shield" aria-label="Loading car...">
-            <div className="car-loading-spinner">
-              <div className="spinner" />
-              <p>Loading car...</p>
-            </div>
-          </div>
-        )}
-
-        {leavePromptModal}
-      </div>
-    )
-  }
-
-  // Desktop layout
   const fitCarInView = () => {
     setTimeout(() => resetCameraRef.current?.(), 300)
   }
@@ -1709,6 +1545,7 @@ function App() {
   return (
     <div className={isMobileLandscapeViewport ? 'app-root app-root-landscape-desktop' : 'app-root'} style={landscapeRootStyle}>
       <TopBar
+        mobileCompact={isMobileViewport}
         onScreenshot={handleScreenshot}
         onExportGlb={disableExportActions ? undefined : (options) => exportGlbRef.current?.(options)}
         onSocialExport={disableExportActions ? undefined : () => {
@@ -1991,7 +1828,7 @@ function App() {
         )}
       </main>
 
-      {isCarSwitching && isMobileViewport && (
+      {isCarSwitching && (
         <div className="car-loading-shield" aria-label="Loading car...">
           <div className="car-loading-spinner">
             <div className="spinner" />
@@ -2016,7 +1853,7 @@ function App() {
           backdropFilter: 'blur(10px)',
           animation: 'slideInRight 0.3s ease-out',
         }}>
-          ✓ {tabSyncNotification}
+          ? {tabSyncNotification}
         </div>
       )}
 
