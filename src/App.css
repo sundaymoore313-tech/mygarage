@@ -3545,6 +3545,14 @@
   flex: 1;
   background: #0c1219;
   position: relative;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.scene-panel canvas {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .scene-tab-rail {

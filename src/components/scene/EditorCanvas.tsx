@@ -1684,12 +1684,15 @@ function LoadedCarModel({
     <>
       <primitive
         object={prepared.scene}
-        onPointerDown={() => {
+        onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+          event.stopPropagation()
+          event.nativeEvent.preventDefault()
           // Clicking empty car body deselects. Decal/text clicks stopPropagation so they won't reach here.
           setSelectedLayer(null)
         }}
         onPointerMove={handleScenePointerMove}
         onPointerUp={handleScenePointerUp}
+        onPointerCancel={handleScenePointerUp}
       />
 
       {visibleLayers.map((layer, index) => {
@@ -2491,6 +2494,7 @@ function ProjectedImageDecalLayer({
             return
           }
           event.stopPropagation()
+          event.nativeEvent.preventDefault()
           onSelect(layer.id)
           onDragStart(layer.id)
         }}
@@ -2583,6 +2587,7 @@ function ProjectedSolidDecalLayer({
             return
           }
           event.stopPropagation()
+          event.nativeEvent.preventDefault()
           onSelect(layer.id)
           onDragStart(layer.id)
         }}
@@ -2881,6 +2886,7 @@ function ProjectedTextLayer({
             return
           }
           event.stopPropagation()
+          event.nativeEvent.preventDefault()
           onSelect(layer.id)
           onDragStart(layer.id)
         }}
