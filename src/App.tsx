@@ -1806,6 +1806,11 @@ function App() {
         </div>
 
         <section className="bottom-dock" aria-label="Tools and inspector">
+            {/* Tab bar always at the TOP of the dock so it never covers settings */}
+            <div className="bottom-dock-tab-bar" aria-label="Tool tabs">
+              {renderDockTabButtons()}
+            </div>
+
             {floatingPanel === 'prints' && (
               <div className="bottom-dock-panel-area">
                 <Suspense fallback={<div style={{ padding: 12, color: '#8ea0b4' }}>Loading...</div>}>
@@ -1828,11 +1833,6 @@ function App() {
                 />
               </div>
             )}
-
-            <div className="bottom-dock-tab-bar" aria-label="Tool tabs">
-              {renderDockTabButtons()}
-            </div>
-
           </section>
       </main>
 

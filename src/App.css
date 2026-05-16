@@ -2015,11 +2015,10 @@
   z-index: 14;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid #272727;
   background: linear-gradient(180deg, #111111 0%, #0d0d0d 100%);
 }
 
-/* On desktop: hide the dock entirely when no panel is open (tab-bar hidden) */
+/* On desktop: hide when no panel is open (tab-bar is display:none on desktop anyway) */
 .bottom-dock:not(:has(.bottom-dock-inspector)):not(:has(.bottom-dock-panel-area)) {
   display: none;
 }
@@ -2058,13 +2057,16 @@
 }
 
 .bottom-dock-inspector--mobile {
-  min-height: 150px;
-  max-height: min(46dvh, 360px);
+  flex: 1;
+  min-height: 120px;
+  max-height: min(50dvh, 440px);
   transition: max-height 0.22s ease;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .bottom-dock-inspector--mobile.is-tab-open {
-  max-height: min(58dvh, 520px);
+  max-height: min(50dvh, 440px);
 }
 
 .bottom-dock-inspector .mobile-controls-strip--embedded {
@@ -2099,6 +2101,7 @@
 }
 
 /* Tab bar — hidden on desktop, shown only on portrait mobile via media query */
+/* Now sits at TOP of dock, so border-bottom separates it from inspector below */
 .bottom-dock-tab-bar {
   display: none;
   flex-direction: row;
@@ -2107,7 +2110,8 @@
   gap: 6px;
   padding: 6px 8px;
   background: linear-gradient(180deg, #121212 0%, #0f0f0f 100%);
-  border-top: 1px solid #272727;
+  border-top: 1px solid #272727;    /* separates from canvas above */
+  border-bottom: 1px solid #272727; /* separates from inspector below */
   flex-shrink: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -6689,12 +6693,20 @@ hr {
     display: none !important;
   }
 
+  /* Dock always visible on portrait — houses the tab bar + inspector */
   .bottom-dock {
     display: flex !important;
   }
 
+  /* Tab bar displayed as a horizontal scrollable row */
   .bottom-dock-tab-bar {
     display: flex;
+  }
+
+  /* Canvas area: keep a minimum height so the car remains visible */
+  .scene-panel {
+    min-height: 200px !important;
+    flex-shrink: 1;
   }
 
   .bottom-dock-tab {
