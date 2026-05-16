@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Layers, Type, Palette, Printer } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
@@ -326,6 +326,9 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
   const [selectedFont, setSelectedFont] = useState<string>('Impact')
   const [editingTextContent, setEditingTextContent] = useState<string>('')
   const textImportInputRef = useRef<HTMLInputElement>(null)
+  // Track when user is actively closing the Text tab so the onBlur of the text
+  // input does not fire a heavy store update + GPU texture rebuild mid-unmount.
+  const isClosingTextTabRef = useRef(false)
 
   // Elements / decals
   const addDecalLayer = useEditorStore(s => s.addDecalLayer)
@@ -389,14 +392,6 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
     reorderLayer(fromArrIndex, toArrIndex)
   }
 
-  // Refs used by the commit effect so it never re-runs due to textLayer
-  // reference changes (which would cause an infinite updateLayer loop).
-  const editingTextCommitRef = useRef<string>(editingTextContent)
-  const textLayerCommitRef = useRef<typeof textLayer>(textLayer)
-  const prevActiveTabRef = useRef<TabId | null>(null)
-  useLayoutEffect(() => { editingTextCommitRef.current = editingTextContent })
-  useLayoutEffect(() => { textLayerCommitRef.current = textLayer })
-
   // Sync editing text content when selected text layer changes
   useEffect(() => {
     if (activeTab === 'text' && textLayer) {
@@ -411,21 +406,6 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
       setSelectedFont(textLayer.fontFamily)
     }
   }, [textLayer])
-
-  // Commit text to undo history ONLY when leaving the text tab.
-  // Using refs for textLayer/editingTextContent prevents this effect from
-  // re-running when those values change, which would otherwise cause an
-  // infinite updateLayer loop → crash on mobile.
-  useEffect(() => {
-    const prev = prevActiveTabRef.current
-    prevActiveTabRef.current = activeTab
-    if (prev !== 'text') return          // wasn't on text tab, nothing to commit
-    if (activeTab === 'text') return     // still on text tab
-    const tl = textLayerCommitRef.current
-    if (tl) {
-      updateLayer(tl.id, { text: editingTextCommitRef.current } as any)
-    }
-  }, [activeTab, updateLayer])
 
   // Load fonts
   useEffect(() => {
@@ -928,7 +908,10 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
                     setEditingTextContent(nextText)
                     updateLayerTransient(textLayer.id, { text: nextText } as any)
                   }}
-                  onBlur={() => updateLayer(textLayer.id, { text: editingTextContent } as any)}
+                  onBlur={() => {
+                    if (isClosingTextTabRef.current) return
+                    updateLayer(textLayer.id, { text: editingTextContent } as any)
+                  }}
                   placeholder="Change text..."
                   className="mobile-layer-text-input"
                   style={{ fontFamily: textLayer.fontFamily || 'Arial', width: 260, minWidth: 260, flex: '0 0 260px' }}
@@ -1960,7 +1943,14 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
             className={`mobile-tab-button${activeTab === tab.id ? ' active' : ''}`}
             onClick={() => setActiveTab(prev => {
               if (prev === tab.id) {
-                return tab.id === 'text' ? 'layers' : null
+                if (tab.id === 'text') {
+                  // Flag that we're deliberately closing the text tab so that
+                  // the text input's onBlur does NOT trigger a store update +
+                  // GPU texture rebuild during the unmount sequence.
+                  isClosingTextTabRef.current = true
+                  window.setTimeout(() => { isClosingTextTabRef.current = false }, 100)
+                }
+                return null
               }
               return tab.id
             })}

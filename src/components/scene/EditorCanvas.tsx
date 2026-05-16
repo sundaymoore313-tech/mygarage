@@ -1593,7 +1593,10 @@ function LoadedCarModel({
         rotation: {
           x: nextRotation.x,
           y: nextRotation.y,
-          z: selectedLayer.type === 'text' ? 0 : nextRotation.z,
+          // Preserve the user's existing spin (rotation.z) for decals/text.
+          z: selectedLayer.type === 'text' || selectedLayer.type === 'decal'
+            ? selectedLayer.transform.rotation.z
+            : nextRotation.z,
         },
       },
     })
@@ -1623,10 +1626,38 @@ function LoadedCarModel({
   // Only set when the user presses directly on a projected decal/text mesh.
   // Clicking empty car areas does nothing — you must click the decal itself to select,
   // then drag it to reposition.
-  const decalDragRef = useRef<{ layerId: string } | null>(null)
+  const decalDragRef = useRef<{ layerId: string; pointerId: number | null } | null>(null)
 
-  const handleDecalDragStart = (layerId: string) => {
-    decalDragRef.current = { layerId }
+  const finishDecalDrag = (commitToHistory: boolean) => {
+    const active = decalDragRef.current
+    if (!active) return
+
+    decalDragRef.current = null
+    onLayerDragStateChange?.(false)
+
+    // Always re-enable orbit controls when drag ends, including interrupted drags.
+    if (controlsRef?.current) {
+      ;(controlsRef.current as unknown as { enabled: boolean }).enabled = true
+    }
+
+    if (!commitToHistory) {
+      return
+    }
+
+    // Commit the final position to undo history (single step for the whole drag).
+    const layer = useEditorStore.getState().project.layers.find((l) => l.id === active.layerId)
+    if (layer && (layer.type === 'decal' || layer.type === 'text')) {
+      updateLayer(layer.id, {
+        targetPartId: layer.targetPartId,
+        transform: layer.transform,
+      })
+    }
+  }
+
+  const handleDecalDragStart = (layerId: string, pointerId: number | null) => {
+    // If a previous drag was interrupted, safely end it first.
+    finishDecalDrag(false)
+    decalDragRef.current = { layerId, pointerId }
     onLayerDragStateChange?.(true)
     // Disable orbit so the drag moves the decal instead of rotating the car
     if (controlsRef?.current) {
@@ -1635,11 +1666,13 @@ function LoadedCarModel({
   }
 
   const handleScenePointerMove = (event: ThreeEvent<PointerEvent>) => {
-    if (!decalDragRef.current) return
+    const dragState = decalDragRef.current
+    if (!dragState) return
+    if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return
     if (!event.face || !(event.object instanceof THREE.Mesh)) return
     if (!event.object.userData.projectableMesh) return
     event.stopPropagation()
-    const layer = layers.find((l) => l.id === decalDragRef.current?.layerId)
+    const layer = layers.find((l) => l.id === dragState.layerId)
     if (!layer || (layer.type !== 'decal' && layer.type !== 'text')) return
     const normal = event.face.normal
       .clone()
@@ -1654,43 +1687,59 @@ function LoadedCarModel({
     const nextRotation = new THREE.Euler().setFromQuaternion(rotationQ, 'XYZ')
     // Use transient update during drag to avoid flooding the undo history.
     // A single updateLayer (with history) is committed on pointer-up.
-    updateLayerTransient(layer.id, {
-      targetPartId: partId,
-      transform: {
-        ...layer.transform,
-        position: { x: point.x, y: point.y, z: point.z },
-        rotation: {
-          x: nextRotation.x,
-          y: nextRotation.y,
-          // Keep text upright while dragging across side/front/rear panels.
-          z: layer.type === 'text' ? 0 : nextRotation.z,
+    try {
+      updateLayerTransient(layer.id, {
+        targetPartId: partId,
+        transform: {
+          ...layer.transform,
+          position: { x: point.x, y: point.y, z: point.z },
+          rotation: {
+            x: nextRotation.x,
+            y: nextRotation.y,
+            // Keep decal/text upright while dragging — z encodes user spin and
+            // must not be overwritten with the surface-normal euler component.
+            z: (layer.type === 'text' || layer.type === 'decal') ? layer.transform.rotation.z : nextRotation.z,
+          },
         },
-      },
-    })
+      })
+    } catch {
+      // Ensure interrupted/bad frames cannot leave drag state stuck on mobile.
+      finishDecalDrag(false)
+    }
   }
 
-  const handleScenePointerUp = () => {
-    if (!decalDragRef.current) return
-    const layerId = decalDragRef.current.layerId
-    decalDragRef.current = null
-    onLayerDragStateChange?.(false)
-    // Re-enable orbit controls after drag ends
-    if (controlsRef?.current) {
-      ;(controlsRef.current as unknown as { enabled: boolean }).enabled = true
-    }
-    // Commit the final position to undo history (single step for the whole drag).
-    const layer = useEditorStore.getState().project.layers.find((l) => l.id === layerId)
-    if (layer && (layer.type === 'decal' || layer.type === 'text')) {
-      updateLayer(layer.id, {
-        targetPartId: layer.targetPartId,
-        transform: layer.transform,
-      })
-    }
+  const handleScenePointerUp = (event?: ThreeEvent<PointerEvent>) => {
+    const dragState = decalDragRef.current
+    if (!dragState) return
+    if (event && dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return
+    finishDecalDrag(true)
   }
 
   useEffect(() => {
-    return () => onLayerDragStateChange?.(false)
-  }, [onLayerDragStateChange])
+    if (typeof window === 'undefined') return
+
+    const cancelWithoutCommit = () => finishDecalDrag(false)
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        cancelWithoutCommit()
+      }
+    }
+
+    window.addEventListener('pointercancel', cancelWithoutCommit)
+    window.addEventListener('blur', cancelWithoutCommit)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pointercancel', cancelWithoutCommit)
+      window.removeEventListener('blur', cancelWithoutCommit)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [updateLayer])
+
+  useEffect(() => {
+    return () => finishDecalDrag(false)
+  }, [onLayerDragStateChange, updateLayer])
 
   return (
     <>
@@ -2252,53 +2301,51 @@ function makeDecalGeometry(targetMesh: THREE.Mesh, layer: DecalLayer | TextLayer
 
     projectorRotation = new THREE.Euler().setFromQuaternion(baseQ, 'XYZ')
   } else {
-    // Decal layers: position-based front/back roll correction (unchanged).
-    const frontBackEpsilon = 0.02
-    let rollCorrection = safeTransform.position.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
+    // Decal layers: same upright-basis approach as text so decals never flip
+    // when dragged toward the rear of the car.
+    //
+    // The stored rotation comes from setFromUnitVectors(Z, normal) at placement/drag time.
+    // Applying that quaternion (x/y components only, ignoring the user-spin z) to Z always
+    // recovers the original surface normal.
 
-    // Near the car centerline, fall back to nearest vertex normal at placement point.
-    if (Math.abs(safeTransform.position.z) < frontBackEpsilon && targetMesh.geometry instanceof THREE.BufferGeometry) {
-      const positionAttr = targetMesh.geometry.getAttribute('position')
-      const normalAttr = targetMesh.geometry.getAttribute('normal')
+    // 1. Reconstruct surface normal from stored x/y (ignore z so user spin isn't baked in).
+    const storedQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(safeTransform.rotation.x, safeTransform.rotation.y, 0, 'XYZ'),
+    )
+    const surfaceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(storedQ).normalize()
 
-      if (positionAttr && normalAttr && positionAttr.count > 0 && normalAttr.count > 0) {
-        const layerWorldPos = new THREE.Vector3(
-          safeTransform.position.x,
-          safeTransform.position.y,
-          safeTransform.position.z,
-        )
-        const layerLocalPos = targetMesh.worldToLocal(layerWorldPos.clone())
+    // 2. X axis: horizontal on car surface, perpendicular to world-up and normal.
+    const worldUp = new THREE.Vector3(0, 1, 0)
+    const xAxis = new THREE.Vector3().crossVectors(worldUp, surfaceNormal)
+    if (xAxis.lengthSq() < 1e-6) {
+      xAxis.set(1, 0, 0)
+    }
+    xAxis.normalize()
 
-        let nearestIndex = 0
-        let nearestDistSq = Number.POSITIVE_INFINITY
-        for (let i = 0; i < positionAttr.count; i++) {
-          const dx = positionAttr.getX(i) - layerLocalPos.x
-          const dy = positionAttr.getY(i) - layerLocalPos.y
-          const dz = positionAttr.getZ(i) - layerLocalPos.z
-          const distSq = dx * dx + dy * dy + dz * dz
-          if (distSq < nearestDistSq) {
-            nearestDistSq = distSq
-            nearestIndex = i
-          }
-        }
+    // 3. Y axis: upward direction on car surface.
+    const yAxis = new THREE.Vector3().crossVectors(surfaceNormal, xAxis).normalize()
 
-        const nearestNormal = new THREE.Vector3(
-          normalAttr.getX(nearestIndex),
-          normalAttr.getY(nearestIndex),
-          normalAttr.getZ(nearestIndex),
-        )
-        const normalMatrix = new THREE.Matrix3().getNormalMatrix(targetMesh.matrixWorld)
-        nearestNormal.applyMatrix3(normalMatrix).normalize()
-        rollCorrection = nearestNormal.z >= 0 ? DECAL_UPRIGHT_ROLL : 0
-      }
+    // 4. Build rotation from the upright basis.
+    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, surfaceNormal)
+    const baseQ = new THREE.Quaternion().setFromRotationMatrix(basis)
+
+    // 5. Select orientation (0° vs 180° in-plane) whose image-up points higher —
+    //    same flip-guard as text so the decal is never rendered upside-down.
+    const imgUpLocal = new THREE.Vector3(0, -1, 0)
+    const upScoreCurrent = imgUpLocal.clone().applyQuaternion(baseQ).dot(worldUp)
+    const flippedQ = baseQ.clone()
+    flippedQ.premultiply(new THREE.Quaternion().setFromAxisAngle(surfaceNormal, Math.PI))
+    if (imgUpLocal.clone().applyQuaternion(flippedQ).dot(worldUp) > upScoreCurrent) {
+      baseQ.copy(flippedQ)
     }
 
-    projectorRotation = new THREE.Euler(
-      safeTransform.rotation.x,
-      safeTransform.rotation.y,
-      safeTransform.rotation.z + rollCorrection,
-      'XYZ',
-    )
+    // 6. Apply user's manual spin (rotation.z) around the surface normal.
+    if (safeTransform.rotation.z !== 0) {
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(surfaceNormal, safeTransform.rotation.z)
+      baseQ.premultiply(spinQ)
+    }
+
+    projectorRotation = new THREE.Euler().setFromQuaternion(baseQ, 'XYZ')
   }
 
   try {
@@ -2390,7 +2437,7 @@ type ProjectedLayerProps<TLayer extends DecalLayer | TextLayer> = {
   targetMeshes: THREE.Mesh[]
   index: number
   onSelect: (layerId: string) => void
-  onDragStart: (layerId: string) => void
+  onDragStart: (layerId: string, pointerId: number | null) => void
 }
 
 function useProjectedGeometries(
@@ -2508,7 +2555,7 @@ function ProjectedImageDecalLayer({
           event.stopPropagation()
           event.nativeEvent.preventDefault()
           onSelect(layer.id)
-          onDragStart(layer.id)
+          onDragStart(layer.id, event.pointerId ?? null)
         }}
       >
         <sphereGeometry args={[hitRadius, 8, 8]} />
@@ -2601,7 +2648,7 @@ function ProjectedSolidDecalLayer({
           event.stopPropagation()
           event.nativeEvent.preventDefault()
           onSelect(layer.id)
-          onDragStart(layer.id)
+          onDragStart(layer.id, event.pointerId ?? null)
         }}
       >
         <sphereGeometry args={[hitRadius, 8, 8]} />
@@ -2772,8 +2819,14 @@ function ProjectedTextLayer({
 
   const textCanvas = useMemo(() => {
     void fontLoadedTick
-    const W = 4096
-    const H = 1024
+    // Mobile-safe canvas size: 2048x512 uses 4x less GPU memory than the old 4096x1024.
+    // Still high enough resolution for crisp text when projected as a decal.
+    const isMobileDevice = typeof navigator !== 'undefined' && (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints ?? 0) > 1
+    )
+    const W = isMobileDevice ? 2048 : 4096
+    const H = isMobileDevice ? 512 : 1024
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
@@ -2846,7 +2899,14 @@ function ProjectedTextLayer({
     tex.generateMipmaps = true
     tex.minFilter = THREE.LinearMipmapLinearFilter
     tex.magFilter = THREE.LinearFilter
-    tex.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy())
+    // Cap anisotropy at 4 on mobile to avoid expensive GPU state and memory pressure.
+    const isMobileDevice = typeof navigator !== 'undefined' && (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints ?? 0) > 1
+    )
+    tex.anisotropy = isMobileDevice
+      ? Math.min(4, Math.max(1, gl.capabilities.getMaxAnisotropy()))
+      : Math.max(1, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     return tex
   }, [gl, layer.mirrorX, textCanvas])
@@ -2872,7 +2932,13 @@ function ProjectedTextLayer({
     tex.generateMipmaps = true
     tex.minFilter = THREE.LinearMipmapLinearFilter
     tex.magFilter = THREE.LinearFilter
-    tex.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy())
+    const isMobileDeviceMirror = typeof navigator !== 'undefined' && (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints ?? 0) > 1
+    )
+    tex.anisotropy = isMobileDeviceMirror
+      ? Math.min(4, Math.max(1, gl.capabilities.getMaxAnisotropy()))
+      : Math.max(1, gl.capabilities.getMaxAnisotropy())
     tex.needsUpdate = true
     return tex
   }, [gl, mirrorToOtherSide, layer.mirrorX, layer.mirrorMirrorX, layer.mirroredTextReadable, textCanvas])
@@ -2900,7 +2966,7 @@ function ProjectedTextLayer({
           event.stopPropagation()
           event.nativeEvent.preventDefault()
           onSelect(layer.id)
-          onDragStart(layer.id)
+          onDragStart(layer.id, event.pointerId ?? null)
         }}
       >
         <sphereGeometry args={[hitRadius, 8, 8]} />

@@ -22,7 +22,13 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npx vercel --prod",
+    "deploy:preview": "npx vercel",
+    "supabase:link": "npx supabase link",
+    "supabase:push": "npx supabase db push",
+    "supabase:functions:deploy": "npm run backend:functions:deploy:all",
+    "supabase:secrets:set": "npx supabase secrets set"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

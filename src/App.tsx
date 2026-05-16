@@ -24,8 +24,30 @@ const MOBILE_EDITOR_MEDIA_QUERY = '(max-width: 860px) and (orientation: portrait
 const MOBILE_LANDSCAPE_BASE_WIDTH = 1920
 const MOBILE_LANDSCAPE_BASE_HEIGHT = 1080
 const CHUNK_RELOAD_SESSION_KEY = 'mygarage-chunk-reload-attempted'
+const INCIDENT_STORAGE_KEY = 'mygarage-last-incident'
 // Lock mobile version - prevents mobile layout from rendering regardless of viewport size
 const LOCK_MOBILE_VERSION = false
+
+type RuntimeIncident = {
+  code: string
+  reason: string
+  kind: 'crash' | 'blue'
+}
+
+function hashString(input: string): string {
+  let hash = 0
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash).toString(36).toUpperCase().slice(0, 6).padStart(6, '0')
+}
+
+function buildIncidentCode(kind: RuntimeIncident['kind'], reason: string): string {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(2, 12)
+  const kindTag = kind === 'blue' ? 'BS' : 'CR'
+  const digest = hashString(`${kind}:${reason}:${Date.now()}`)
+  return `MG-${kindTag}-${stamp}-${digest}`
+}
 
 function isChunkLoadFailure(error: unknown): boolean {
   if (!error) return false
@@ -37,12 +59,6 @@ function detectMobileEditorViewport(): boolean {
   if (LOCK_MOBILE_VERSION) return false
 
   if (typeof window === 'undefined') return false
-
-  const isPortrait = typeof window.matchMedia === 'function'
-    ? window.matchMedia('(orientation: portrait)').matches
-    : window.innerHeight >= window.innerWidth
-
-  if (!isPortrait) return false
 
   const mediaMatch = typeof window.matchMedia === 'function'
     ? window.matchMedia(MOBILE_EDITOR_MEDIA_QUERY).matches
@@ -57,6 +73,8 @@ function detectMobileEditorViewport(): boolean {
   const shortEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0)
   const touchMobileLike = coarsePointer && shortEdge > 0 && shortEdge <= 1024
 
+  // Treat phone/tablet devices as mobile editor in both portrait and landscape.
+  // This avoids unstable layout transitions during device mirroring/rotation.
   return mediaMatch || uaMobile || touchMobileLike
 }
 
@@ -327,6 +345,7 @@ function App() {
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false)
   const [recoverableProjectId, setRecoverableProjectId] = useState<string | null>(null)
   const [tabSyncNotification, setTabSyncNotification] = useState<string | null>(null)
+  const [runtimeCrashNotice, setRuntimeCrashNotice] = useState<RuntimeIncident | null>(null)
   const [editorProjectHydrated, setEditorProjectHydrated] = useState(false)
   const hasCheckedRecoveryRef = useRef(false)
   const orbitLockToScenePanel = useEditorStore((state) => state.orbitLockToScenePanel)
@@ -376,9 +395,11 @@ function App() {
   const skipHistoryPushRef = useRef(false)
   const historyHydratedRef = useRef(false)
   const autoSaveIntervalRef = useRef<number | null>(null)
+  const quickSaveTimeoutRef = useRef<number | null>(null)
   const lastAutoSaveStateRef = useRef<string>('')
   const lastRealtimeUpdateMsRef = useRef<number>(0)
   const lastSaveMsRef = useRef<number>(lastSaveMs)
+  const lastIncidentSignatureRef = useRef<string>('')
   const accountPlan = isGuest ? 'guest' : userPlan
   const isTouchDevice = typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0
 
@@ -405,15 +426,80 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return
 
+    const reportRuntimeIncident = (kind: RuntimeIncident['kind'], reason: string, shouldPersistDraft: boolean) => {
+      const normalizedReason = reason.trim() || 'unknown'
+      const signature = `${kind}:${normalizedReason}`
+      if (lastIncidentSignatureRef.current === signature) {
+        return
+      }
+      lastIncidentSignatureRef.current = signature
+
+      const code = buildIncidentCode(kind, normalizedReason)
+      const incident: RuntimeIncident = { code, reason: normalizedReason, kind }
+      setRuntimeCrashNotice(incident)
+
+      try {
+        sessionStorage.setItem(INCIDENT_STORAGE_KEY, JSON.stringify({
+          ...incident,
+          at: Date.now(),
+          screen,
+          projectId,
+          modelUrl: selectedCar?.modelUrl ?? null,
+          floatingPanel,
+          selectedLayerId,
+        }))
+      } catch {
+        // Ignore storage failures.
+      }
+
+      window.setTimeout(() => setRuntimeCrashNotice(null), 45000)
+
+      if (!shouldPersistDraft) {
+        return
+      }
+
+      try {
+        const liveState = useEditorStore.getState()
+        const draftId = projectId ?? liveState.project.meta.id
+        if (draftId) {
+          saveDraftProject(
+            draftId,
+            liveState.project,
+            liveState.selectedCar ?? undefined,
+            liveState.targetPaints,
+            liveState.targetPrints,
+          )
+          writeSession({
+            projectId: draftId,
+            screen: 'editor',
+            lastSaveMs: Date.now(),
+            lastAutoSaveMs: Date.now(),
+          })
+        }
+      } catch (err) {
+        console.error('Crash draft save failed:', err)
+      }
+    }
+
     const handleChunkLoadFailure = (event: ErrorEvent) => {
-      if (!isChunkLoadFailure(event.error ?? event.message)) return
+      const message = event.error ?? event.message
+      if (!isChunkLoadFailure(message)) {
+        reportRuntimeIncident('crash', String(event.message ?? 'unknown error'), true)
+        return
+      }
       if (sessionStorage.getItem(CHUNK_RELOAD_SESSION_KEY) === '1') return
       sessionStorage.setItem(CHUNK_RELOAD_SESSION_KEY, '1')
       window.location.reload()
     }
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      if (!isChunkLoadFailure(event.reason)) return
+      if (!isChunkLoadFailure(event.reason)) {
+        const reason = event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason ?? 'unknown rejection')
+        reportRuntimeIncident('crash', reason, true)
+        return
+      }
       if (sessionStorage.getItem(CHUNK_RELOAD_SESSION_KEY) === '1') return
       sessionStorage.setItem(CHUNK_RELOAD_SESSION_KEY, '1')
       window.location.reload()
@@ -425,7 +511,83 @@ function App() {
       window.removeEventListener('error', handleChunkLoadFailure)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
-  }, [])
+  }, [floatingPanel, projectId, screen, selectedCar?.modelUrl, selectedLayerId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || screen !== 'editor') return
+    if (!isMobileViewport && !isMobileLandscapeViewport) return
+
+    let missingCanvasCount = 0
+    let boundCanvas: HTMLCanvasElement | null = null
+
+    const reportBlueIncident = (reason: string) => {
+      const signature = `blue:${reason}`
+      if (lastIncidentSignatureRef.current === signature) {
+        return
+      }
+      lastIncidentSignatureRef.current = signature
+      const code = buildIncidentCode('blue', reason)
+      const incident: RuntimeIncident = { code, reason, kind: 'blue' }
+      setRuntimeCrashNotice(incident)
+      try {
+        sessionStorage.setItem(INCIDENT_STORAGE_KEY, JSON.stringify({
+          ...incident,
+          at: Date.now(),
+          screen,
+          projectId,
+          modelUrl: selectedCar?.modelUrl ?? null,
+          floatingPanel,
+          selectedLayerId,
+        }))
+      } catch {
+        // Ignore storage failures.
+      }
+      window.setTimeout(() => setRuntimeCrashNotice(null), 45000)
+    }
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault()
+      reportBlueIncident('WebGL context lost (mobile blue screen)')
+    }
+
+    const bindCanvasContextListener = () => {
+      const nextCanvas = document.querySelector('canvas') as HTMLCanvasElement | null
+      if (!nextCanvas || nextCanvas === boundCanvas) return
+      if (boundCanvas) {
+        boundCanvas.removeEventListener('webglcontextlost', handleContextLost as EventListener)
+      }
+      boundCanvas = nextCanvas
+      boundCanvas.addEventListener('webglcontextlost', handleContextLost as EventListener, { passive: false })
+    }
+
+    const intervalId = window.setInterval(() => {
+      bindCanvasContextListener()
+
+      if (isCarSwitching) {
+        missingCanvasCount = 0
+        return
+      }
+
+      const hasCanvas = Boolean(document.querySelector('canvas'))
+      if (hasCanvas) {
+        missingCanvasCount = 0
+        return
+      }
+
+      missingCanvasCount += 1
+      if (missingCanvasCount >= 4) {
+        reportBlueIncident('Editor canvas missing for 5s while in mobile editor')
+        missingCanvasCount = 0
+      }
+    }, 1250)
+
+    return () => {
+      window.clearInterval(intervalId)
+      if (boundCanvas) {
+        boundCanvas.removeEventListener('webglcontextlost', handleContextLost as EventListener)
+      }
+    }
+  }, [floatingPanel, isCarSwitching, isMobileLandscapeViewport, isMobileViewport, projectId, screen, selectedCar?.modelUrl, selectedLayerId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -702,6 +864,61 @@ function App() {
     }
   }, [screen, projectId])
 
+  // Quick-save edited state shortly after changes so crash/reload does not drop
+  // newly placed text or layer edits between 15s autosave ticks.
+  useEffect(() => {
+    if (screen !== 'editor' || !projectId || !editorProjectHydrated) {
+      if (quickSaveTimeoutRef.current) {
+        clearTimeout(quickSaveTimeoutRef.current)
+        quickSaveTimeoutRef.current = null
+      }
+      return
+    }
+
+    if (quickSaveTimeoutRef.current) {
+      clearTimeout(quickSaveTimeoutRef.current)
+      quickSaveTimeoutRef.current = null
+    }
+
+    quickSaveTimeoutRef.current = window.setTimeout(() => {
+      const liveState = useEditorStore.getState()
+      const currentStateJson = JSON.stringify({
+        project: liveState.project,
+        targetPaints: liveState.targetPaints,
+        targetPrints: liveState.targetPrints,
+      })
+
+      if (currentStateJson === lastAutoSaveStateRef.current) {
+        return
+      }
+
+      lastAutoSaveStateRef.current = currentStateJson
+      saveDraftProject(
+        projectId,
+        liveState.project,
+        liveState.selectedCar ?? undefined,
+        liveState.targetPaints,
+        liveState.targetPrints,
+      )
+
+      const nowMs = Date.now()
+      setLastSaveMs(nowMs)
+      writeSession({
+        projectId,
+        screen: 'editor',
+        lastSaveMs: nowMs,
+        lastAutoSaveMs: nowMs,
+      })
+    }, 1200)
+
+    return () => {
+      if (quickSaveTimeoutRef.current) {
+        clearTimeout(quickSaveTimeoutRef.current)
+        quickSaveTimeoutRef.current = null
+      }
+    }
+  }, [screen, projectId, editorProjectHydrated, project])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
 
@@ -739,7 +956,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (isMobileViewport || screen !== 'editor' || !selectedLayerId) {
+    if (isMobileViewport || isMobileLandscapeViewport || screen !== 'editor' || !selectedLayerId) {
       return
     }
 
@@ -768,7 +985,7 @@ function App() {
     if (selectedLayer.type === 'decal') {
       setFloatingPanel((cur) => cur === 'elements' ? cur : 'elements')
     }
-  }, [isMobileViewport, screen, selectedLayerId])
+  }, [isMobileViewport, isMobileLandscapeViewport, screen, selectedLayerId])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isMobileLandscapeViewport) return
@@ -1800,6 +2017,56 @@ function App() {
           animation: 'slideInRight 0.3s ease-out',
         }}>
           ✓ {tabSyncNotification}
+        </div>
+      )}
+
+      {runtimeCrashNotice && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: 24,
+          background: 'rgba(251, 191, 36, 0.14)',
+          border: '1px solid rgba(251, 191, 36, 0.4)',
+          borderRadius: 8,
+          padding: '12px 16px',
+          color: '#fbbf24',
+          fontSize: '0.9rem',
+          fontWeight: 500,
+          zIndex: 1000,
+          backdropFilter: 'blur(10px)',
+          maxWidth: 560,
+        }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <strong style={{ color: '#fde68a', fontSize: '0.85rem' }}>
+              {runtimeCrashNotice.kind === 'blue' ? 'Blue Screen Detector' : 'Crash Detector'}
+            </strong>
+            <button
+              type="button"
+              onClick={() => {
+                const payload = `${runtimeCrashNotice.code} | ${runtimeCrashNotice.reason}`
+                if (navigator.clipboard?.writeText) {
+                  void navigator.clipboard.writeText(payload)
+                }
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: '#fef3c7',
+                border: '1px solid rgba(254, 240, 138, 0.45)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              Copy Code
+            </button>
+          </div>
+          <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '0.8rem', color: '#fde68a', marginBottom: 4 }}>
+            {runtimeCrashNotice.code}
+          </div>
+          <div>
+            {runtimeCrashNotice.reason}
+          </div>
         </div>
       )}
 

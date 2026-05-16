@@ -297,28 +297,30 @@ function patchLayer(existing: Layer, patch: Partial<Layer>): Layer {
 
   const existingWithTransform = existing as DecalLayer | TextLayer | StripeLayer | SplitLayer
   const transformPatch = (patch as Partial<DecalLayer | TextLayer | StripeLayer | SplitLayer>).transform
+  const fallbackTransform = defaultTransform()
+  const currentTransform = existingWithTransform.transform ?? fallbackTransform
   const nextTransform = transformPatch
     ? {
-        ...existingWithTransform.transform,
+        ...currentTransform,
         ...transformPatch,
         position: {
-          ...existingWithTransform.transform.position,
+          ...(currentTransform.position ?? fallbackTransform.position),
           ...transformPatch.position,
         },
         rotation: {
-          ...existingWithTransform.transform.rotation,
+          ...(currentTransform.rotation ?? fallbackTransform.rotation),
           ...transformPatch.rotation,
         },
         scale: {
-          ...existingWithTransform.transform.scale,
+          ...(currentTransform.scale ?? fallbackTransform.scale),
           ...transformPatch.scale,
         },
         skew: {
-          ...existingWithTransform.transform.skew,
+          ...(currentTransform.skew ?? fallbackTransform.skew),
           ...transformPatch.skew,
         },
       }
-    : existingWithTransform.transform
+    : currentTransform
 
   if (existing.type === 'stripe') {
     const typedPatch = patch as Partial<StripeLayer>
@@ -986,16 +988,22 @@ export const useEditorStore = create<EditorStore>((set) => ({
   updateLayerTransient: (layerId, patch) =>
     set((state) => {
       let nextStripeLayer: StripeLayer | null = null
+      let didUpdateLayer = false
       const nextLayers = state.project.layers.map((layer) => {
         if (layer.id !== layerId) {
           return layer
         }
+        didUpdateLayer = true
         const updated = patchLayer(layer, patch)
         if (updated.type === 'stripe') {
           nextStripeLayer = updated
         }
         return updated
       })
+
+      if (!didUpdateLayer) {
+        return state
+      }
 
       return {
         project: {
@@ -1010,16 +1018,22 @@ export const useEditorStore = create<EditorStore>((set) => ({
   updateLayer: (layerId, patch) =>
     set((state) => {
       let nextStripeLayer: StripeLayer | null = null
+      let didUpdateLayer = false
       const nextLayers = state.project.layers.map((layer) => {
         if (layer.id !== layerId) {
           return layer
         }
+        didUpdateLayer = true
         const updated = patchLayer(layer, patch)
         if (updated.type === 'stripe') {
           nextStripeLayer = updated
         }
         return updated
       })
+
+      if (!didUpdateLayer) {
+        return state
+      }
 
       return {
         historyPast: pushHistory(state, 'Edit Layer'),
