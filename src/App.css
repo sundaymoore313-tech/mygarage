@@ -6672,6 +6672,44 @@ hr {
   }
 }
 
+@media (max-width: 860px) and (orientation: portrait) {
+  .bottom-dock-tab-bar {
+    gap: 6px;
+    padding: 6px 8px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .bottom-dock-tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bottom-dock-tab {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 44px;
+    min-width: 90px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    letter-spacing: 0.01em;
+  }
+
+  .bottom-dock-tab svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .bottom-dock-tab span {
+    line-height: 1;
+  }
+}
+
 @media (max-width: 860px) and (orientation: landscape) {
   .app-root {
     height: auto;
