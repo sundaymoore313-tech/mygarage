@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Layers, Type, Palette, Printer } from 'lucide-react'
 import { useEditorStore } from '../../store/editorStore'
@@ -389,6 +389,14 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
     reorderLayer(fromArrIndex, toArrIndex)
   }
 
+  // Refs used by the commit effect so it never re-runs due to textLayer
+  // reference changes (which would cause an infinite updateLayer loop).
+  const editingTextCommitRef = useRef<string>(editingTextContent)
+  const textLayerCommitRef = useRef<typeof textLayer>(textLayer)
+  const prevActiveTabRef = useRef<TabId | null>(null)
+  useLayoutEffect(() => { editingTextCommitRef.current = editingTextContent })
+  useLayoutEffect(() => { textLayerCommitRef.current = textLayer })
+
   // Sync editing text content when selected text layer changes
   useEffect(() => {
     if (activeTab === 'text' && textLayer) {
@@ -404,13 +412,20 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
     }
   }, [textLayer])
 
-  // Commit text to undo history when leaving the text tab
+  // Commit text to undo history ONLY when leaving the text tab.
+  // Using refs for textLayer/editingTextContent prevents this effect from
+  // re-running when those values change, which would otherwise cause an
+  // infinite updateLayer loop → crash on mobile.
   useEffect(() => {
-    if (activeTab === 'text') return
-    if (textLayer) {
-      updateLayer(textLayer.id, { text: editingTextContent } as any)
+    const prev = prevActiveTabRef.current
+    prevActiveTabRef.current = activeTab
+    if (prev !== 'text') return          // wasn't on text tab, nothing to commit
+    if (activeTab === 'text') return     // still on text tab
+    const tl = textLayerCommitRef.current
+    if (tl) {
+      updateLayer(tl.id, { text: editingTextCommitRef.current } as any)
     }
-  }, [activeTab, editingTextContent, textLayer, updateLayer])
+  }, [activeTab, updateLayer])
 
   // Load fonts
   useEffect(() => {
@@ -1943,7 +1958,12 @@ export function MobileEditorLayout({ editorCanvas, isGuest, onGuestSignIn, embed
         {tabs.map(tab => (
           <button key={tab.id} type="button"
             className={`mobile-tab-button${activeTab === tab.id ? ' active' : ''}`}
-            onClick={() => setActiveTab(prev => prev === tab.id ? null : tab.id)}
+            onClick={() => setActiveTab(prev => {
+              if (prev === tab.id) {
+                return tab.id === 'text' ? 'layers' : null
+              }
+              return tab.id
+            })}
             aria-label={tab.label} title={tab.label}
           >
             {tab.icon}
