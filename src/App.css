@@ -2019,6 +2019,11 @@
   background: linear-gradient(180deg, #111111 0%, #0d0d0d 100%);
 }
 
+/* On desktop: hide the dock entirely when no panel is open (tab-bar hidden) */
+.bottom-dock:not(:has(.bottom-dock-inspector)):not(:has(.bottom-dock-panel-area)) {
+  display: none;
+}
+
 /* Expanded panel area — tool panels render here */
 .bottom-dock-panel-area {
   flex: 1;
@@ -2093,19 +2098,25 @@
   background: transparent;
 }
 
-/* Tab bar — sits at the BOTTOM of the dock */
+/* Tab bar — hidden on desktop, shown only on portrait mobile via media query */
 .bottom-dock-tab-bar {
-  display: flex;
+  display: none;
   flex-direction: row;
   align-items: center;
-  justify-content: stretch;
-  gap: 10px;
-  padding: 10px 14px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
   background: linear-gradient(180deg, #121212 0%, #0f0f0f 100%);
   border-top: 1px solid #272727;
   flex-shrink: 0;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.bottom-dock-tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .bottom-dock-tab {
@@ -6673,18 +6684,17 @@ hr {
 }
 
 @media (max-width: 860px) and (orientation: portrait) {
-  .bottom-dock-tab-bar {
-    gap: 6px;
-    padding: 6px 8px;
-    justify-content: flex-start;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+  /* On portrait mobile: hide the left scene rail, show the bottom tab bar */
+  .scene-tab-rail {
+    display: none !important;
   }
 
-  .bottom-dock-tab-bar::-webkit-scrollbar {
-    display: none;
+  .bottom-dock {
+    display: flex !important;
+  }
+
+  .bottom-dock-tab-bar {
+    display: flex;
   }
 
   .bottom-dock-tab {

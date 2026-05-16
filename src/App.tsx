@@ -1538,8 +1538,6 @@ function App() {
       '--mobile-landscape-base-height': `${mobileLandscapeBaseHeight}px`,
     } as CSSProperties
     : undefined
-  const useBottomDockTabBar = isMobileViewport && !isMobileLandscapeViewport
-  const showBottomDock = useBottomDockTabBar || Boolean(floatingPanel)
   const effectiveLayerPanelWidth = isMobileLandscapeViewport
     ? Math.min(layerPanelWidth, 180)
     : layerPanelWidth
@@ -1738,7 +1736,7 @@ function App() {
       </Suspense>
 
       <main className="workspace" style={{ display: (printExportOpen || svgMakerOpen) ? 'none' : undefined }}>
-        <div className={showBottomDock ? 'workspace-main' : 'workspace-main workspace-main-no-dock'}>
+        <div className={floatingPanel ? 'workspace-main' : 'workspace-main workspace-main-no-dock'}>
           <section
             className="scene-panel"
             aria-label="3D car viewport"
@@ -1779,11 +1777,9 @@ function App() {
               setClassifyShowMeshNames={setClassifyShowMeshNames}
             />
 
-            {!useBottomDockTabBar && (
-              <div className="scene-tab-rail" aria-label="Tools and inspector tabs">
-                {renderDockTabButtons()}
-              </div>
-            )}
+            <div className="scene-tab-rail" aria-label="Tools and inspector tabs">
+              {renderDockTabButtons()}
+            </div>
           </section>
 
           <section
@@ -1809,8 +1805,7 @@ function App() {
           </section>
         </div>
 
-        {showBottomDock && (
-          <section className="bottom-dock" aria-label="Tools and inspector">
+        <section className="bottom-dock" aria-label="Tools and inspector">
             {floatingPanel === 'prints' && (
               <div className="bottom-dock-panel-area">
                 <Suspense fallback={<div style={{ padding: 12, color: '#8ea0b4' }}>Loading...</div>}>
@@ -1822,7 +1817,7 @@ function App() {
               </div>
             )}
 
-            {floatingPanel !== 'prints' && (
+            {floatingPanel !== null && floatingPanel !== 'prints' && (
               <div className="bottom-dock-inspector bottom-dock-inspector--mobile is-tab-open">
                 <MobileEditorLayout
                   embedded
@@ -1834,14 +1829,11 @@ function App() {
               </div>
             )}
 
-            {useBottomDockTabBar && (
-              <div className="bottom-dock-tab-bar" aria-label="Tool tabs">
-                {renderDockTabButtons()}
-              </div>
-            )}
+            <div className="bottom-dock-tab-bar" aria-label="Tool tabs">
+              {renderDockTabButtons()}
+            </div>
 
           </section>
-        )}
       </main>
 
       {isCarSwitching && (
