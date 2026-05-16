@@ -106,6 +106,7 @@ export default defineConfig({
     ],
   },
   server: {
+    host: true,
     // OneDrive/Windows paths can miss native FS events; polling keeps HMR reliable.
     watch: {
       usePolling: true,
