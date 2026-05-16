@@ -33,7 +33,6 @@ const MOBILE_PORTRAIT_MAX_DISTANCE = 7.25
 
 const CAMERA_START_POSITION: [number, number, number] = CAMERA_PRESETS.side.position
 const CAMERA_START_TARGET: [number, number, number] = CAMERA_PRESETS.side.target
-const DECAL_UPRIGHT_ROLL = Math.PI
 
 let lastAppliedCameraPreset: { view: CameraViewId; modelUrl: string } | null = null
 
